@@ -10,9 +10,13 @@ binding = "ASSETS"
 binding = "DASHBOARD_KV"
 id = "173c4a9bdc9f4c67aa9eadc619334e3e"
 
-# Every 30 min. No-op until KOBO_ASSET_ID + KOBO_TOKEN are both set.
+# Daily kickoff (04:00 UTC) + once-a-minute tick to advance an in-progress
+# refresh one page at a time (~39 pages ≈ 39 min to complete a full run —
+# fine for a daily-cadence, largely historical dataset). No-op ticks when
+# nothing is in progress. No-op entirely until KOBO_ASSET_ID + KOBO_TOKEN
+# are both set.
 [triggers]
-crons = ["*/30 * * * *"]
+crons = ["0 4 * * *", "* * * * *"]
 
 # Not secrets — safe to set here directly.
 # Token goes in via `wrangler secret put KOBO_TOKEN`, never here.

@@ -3,44 +3,61 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>KiuFunza Assessment Dashboard</title>
+<title>KiuFunza Assessment — Progress</title>
 <style>
-  :root {
-    --indigo: #354062; --sunglow: #FFC650; --sky: #5EA6B8;
-    --cedar: #BE6243; --offwhite: #F4F4F4;
-  }
+  :root { --indigo: #354062; --sunglow: #FFC650; --sky: #5EA6B8; --cedar: #BE6243; --offwhite: #F4F4F4; }
   * { box-sizing: border-box; }
   body { margin: 0; font-family: -apple-system, system-ui, sans-serif; background: var(--offwhite); color: var(--indigo); }
   header { background: var(--indigo); color: white; padding: 1.5rem 2rem; }
   header h1 { margin: 0; font-size: 1.4rem; }
   header p { margin: .25rem 0 0; opacity: .8; font-size: .9rem; }
-  main { padding: 2rem; max-width: 500px; margin: 0 auto; }
-  .card { background: white; border-radius: 10px; padding: 1.5rem; box-shadow: 0 1px 3px rgba(0,0,0,.08); border-top: 4px solid var(--sky); }
-  .count { font-size: 2.5rem; font-weight: 700; margin: .5rem 0; }
+  main { padding: 2rem; max-width: 900px; margin: 0 auto; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; margin-bottom: 1.5rem; }
+  .card { background: white; border-radius: 10px; padding: 1.25rem; box-shadow: 0 1px 3px rgba(0,0,0,.08); border-top: 4px solid var(--sky); }
+  .card h2 { margin: 0 0 .5rem; font-size: .95rem; color: #666; text-transform: uppercase; letter-spacing: .03em; }
+  .count { font-size: 2rem; font-weight: 700; }
+  table { width: 100%; border-collapse: collapse; background: white; border-radius: 10px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+  th, td { text-align: left; padding: .6rem 1rem; border-bottom: 1px solid #eee; font-size: .9rem; }
+  th { background: #f9f9f9; color: #666; text-transform: uppercase; font-size: .75rem; }
   .status { display: inline-block; padding: .2rem .6rem; border-radius: 999px; font-size: .75rem; font-weight: 600; }
   .status.ok { background: #dcf5e5; color: #1a7a3f; }
-  .status.pending_first_fetch { background: #fff3cd; color: #8a6416; }
+  .status.pending_first_fetch, .status.refresh_in_progress { background: #fff3cd; color: #8a6416; }
   .status.not_configured { background: #eee; color: #777; }
-  .fetched { color: #888; font-size: .8rem; margin-top: .5rem; }
+  .footer-link { display: block; margin-top: 1.5rem; text-align: center; font-size: .85rem; color: #888; }
+  .footer-link a { color: var(--sky); }
 </style>
 </head>
 <body>
 <header>
-  <h1>KiuFunza Assessment Dashboard</h1>
-  <p>Live learning-level data</p>
+  <h1>KiuFunza Assessment Progress</h1>
+  <p>Submission counts — public view</p>
 </header>
 <main>
-  <div class="card" id="card">Loading…</div>
+  <div id="status-badge" style="margin-bottom:1rem"></div>
+  <div class="grid" id="cards"></div>
+  <table id="grade-table" style="margin-bottom:1.5rem"></table>
+  <table id="region-table"></table>
+  <p class="footer-link">Field team? <a href="/team">Team view →</a></p>
 </main>
 <script>
 async function load() {
-  const data = await fetch('/api/data').then(r => r.json());
-  document.getElementById('card').innerHTML = `
-    <span class="status ${data.status}">${data.status.replace(/_/g,' ')}</span>
-    <div class="count">${data.total_records ?? 0}</div>
-    <div>records</div>
-    ${data.fetched_at ? `<div class="fetched">Last updated: ${new Date(data.fetched_at).toLocaleString()}</div>` : ''}
+  const data = await fetch('/api/public').then(r => r.json());
+  document.getElementById('status-badge').innerHTML =
+    `<span class="status ${data.status}">${(data.status||'').replace(/_/g,' ')}</span>`;
+
+  document.getElementById('cards').innerHTML = `
+    <div class="card"><h2>Total Submissions</h2><div class="count">${data.total_records ?? 0}</div></div>
   `;
+
+  const gradeRows = Object.entries(data.by_grade || {}).sort().map(([g,n]) =>
+    `<tr><td>Grade ${g}</td><td>${n}</td></tr>`).join('');
+  document.getElementById('grade-table').innerHTML =
+    `<tr><th>Grade</th><th>Submissions</th></tr>${gradeRows || '<tr><td colspan=2>No data yet</td></tr>'}`;
+
+  const regionRows = Object.entries(data.by_region || {}).sort((a,b) => b[1]-a[1]).map(([r,n]) =>
+    `<tr><td>${r}</td><td>${n}</td></tr>`).join('');
+  document.getElementById('region-table').innerHTML =
+    `<tr><th>Region</th><th>Submissions</th></tr>${regionRows || '<tr><td colspan=2>No data yet</td></tr>'}`;
 }
 load();
 </script>
