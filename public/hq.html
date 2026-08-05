@@ -3,30 +3,16 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#354062">
 <title>KiuFunza Assessment — HQ Results</title>
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="manifest" href="/manifest.json">
+<link rel="stylesheet" href="/style.css">
 <style>
-  :root { --indigo: #354062; --sunglow: #FFC650; --sky: #5EA6B8; --cedar: #BE6243; --offwhite: #F4F4F4; }
-  * { box-sizing: border-box; }
-  body { margin: 0; font-family: -apple-system, system-ui, sans-serif; background: var(--offwhite); color: var(--indigo); }
-  header { background: var(--indigo); color: white; padding: 1.5rem 2rem; }
-  header h1 { margin: 0; font-size: 1.4rem; }
-  header p { margin: .25rem 0 0; opacity: .8; font-size: .9rem; }
-  main { padding: 2rem; max-width: 900px; margin: 0 auto; }
-  .grade-block { background: white; border-radius: 10px; box-shadow: 0 1px 3px rgba(0,0,0,.08); margin-bottom: 1.5rem; overflow: hidden; }
-  .grade-block h2 { margin: 0; padding: .9rem 1.25rem; background: var(--indigo); color: white; font-size: 1rem; }
-  .domain { padding: 1rem 1.25rem; }
-  .domain h3 { margin: 0 0 .6rem; font-size: .8rem; color: #888; text-transform: uppercase; letter-spacing: .03em; }
-  .skill-row { display: flex; align-items: center; gap: .75rem; margin-bottom: .5rem; }
-  .skill-name { flex: 0 0 180px; font-size: .85rem; }
-  .bar-track { flex: 1; height: 10px; background: #eee; border-radius: 5px; overflow: hidden; }
-  .bar-fill { height: 100%; background: var(--sky); }
-  .skill-pct { flex: 0 0 90px; font-size: .8rem; text-align: right; color: #666; }
-  .footer-link { display: block; margin-top: 1.5rem; text-align: center; font-size: .85rem; color: #888; }
-  .footer-link a { color: var(--sky); }
-  .gate { max-width: 320px; margin: 4rem auto; text-align: center; }
-  .gate input { width: 100%; padding: .6rem .8rem; border: 1px solid #ccc; border-radius: 6px; font-size: 1rem; margin-bottom: .75rem; }
-  .gate button { width: 100%; padding: .6rem; border: none; border-radius: 6px; background: var(--indigo); color: white; font-size: 1rem; cursor: pointer; }
-  .gate .err { color: var(--cedar); font-size: .85rem; margin-top: .5rem; min-height: 1.2em; }
+  .grade-block { background: white; border-radius: 10px; box-shadow: 0 1px 3px rgba(0,0,0,.08); margin-bottom: 1.25rem; overflow: hidden; }
+  .grade-block h3 { margin: 0; padding: .8rem 1.1rem; background: var(--indigo); color: white; font-size: .95rem; }
+  .domain { padding: .9rem 1.1rem; }
+  .domain h4 { margin: 0 0 .5rem; font-size: .75rem; color: #888; text-transform: uppercase; letter-spacing: .03em; }
 </style>
 </head>
 <body>
@@ -34,74 +20,80 @@
   <h1>KiuFunza Assessment — HQ Results</h1>
   <p>Per-skill pass rates by grade (≥3/5 items correct, or ≥30/50 words for reading speed)</p>
 </header>
-<div class="gate" id="gate">
-  <p>HQ passphrase</p>
-  <input type="password" id="passphrase" placeholder="Enter passphrase">
-  <button onclick="tryUnlock()">Unlock</button>
-  <div class="err" id="gate-err"></div>
-</div>
-<main id="content"></main>
-<p class="footer-link" style="max-width:900px;margin:1.5rem auto" id="footer-link"></p>
+<main>
+  <div class="gate" id="gate">
+    <p>HQ passphrase</p>
+    <input type="password" id="passphrase" placeholder="Enter passphrase" onkeydown="if(event.key==='Enter') window.__gateUnlock()">
+    <button class="primary" onclick="window.__gateUnlock()">Unlock</button>
+    <div class="err" id="gate-err"></div>
+  </div>
+  <div id="protected" style="display:none">
+    <div class="toolbar">
+      <button class="small" onclick="exportResults()">Export results (CSV)</button>
+      <button class="small" onclick="lockAndReload('kf_hq_passphrase')" style="margin-left:auto">Lock</button>
+    </div>
+    <div id="freshness" class="freshness"></div>
+    <div id="content"></div>
+    <p class="footer-link"><a href="/team">← Team view</a></p>
+  </div>
+</main>
+<script src="/app.js"></script>
 <script>
-const STORE_KEY = 'kf_hq_passphrase';
+let lastSkills = {};
 
-async function tryUnlock() {
-  const p = document.getElementById('passphrase').value;
-  const ok = await load(p);
-  if (ok) {
-    sessionStorage.setItem(STORE_KEY, p);
-    document.getElementById('gate').style.display = 'none';
-    document.getElementById('footer-link').innerHTML = '<a href="/team">← Team view</a>';
-  } else {
-    document.getElementById('gate-err').textContent = 'Incorrect passphrase.';
-  }
-}
-
-async function load(passphrase) {
-  const res = await fetch('/api/hq?p=' + encodeURIComponent(passphrase));
-  if (!res.ok) return false;
-  const data = await res.json();
-  const skills = data.skills || {};
+function render(data) {
+  lastSkills = data.skills || {};
+  document.getElementById('freshness').textContent = formatFreshness(data.fetched_at);
   const content = document.getElementById('content');
 
-  if (!Object.keys(skills).length) {
-    content.innerHTML = '<p>No data yet.</p>';
-    document.getElementById('footer-link').innerHTML = '<a href="/team">← Team view</a>';
-    return true;
+  if (!Object.keys(lastSkills).length) {
+    content.innerHTML = '<p style="color:#999;font-size:.9rem">No results yet.</p>';
+    return;
   }
 
-  content.innerHTML = Object.entries(skills).sort().map(([grade, domains]) => `
+  content.innerHTML = Object.entries(lastSkills).sort().map(([grade, domains]) => `
     <div class="grade-block">
-      <h2>Grade ${grade}</h2>
+      <h3>Grade ${grade}</h3>
       ${['reading','arithmetic'].map(domain => `
         <div class="domain">
-          <h3>${domain}</h3>
+          <h4>${domain}</h4>
           ${Object.entries(domains[domain] || {}).map(([label, s]) => {
             const pct = s.attempted ? Math.round((s.passed / s.attempted) * 100) : 0;
-            return `
-            <div class="skill-row">
-              <div class="skill-name">${label}</div>
+            return `<div class="bar-row">
+              <div class="bar-label" title="${label}">${label}</div>
               <div class="bar-track"><div class="bar-fill" style="width:${pct}%"></div></div>
-              <div class="skill-pct">${pct}% (${s.passed}/${s.attempted})</div>
+              <div class="bar-value">${pct}% (${s.passed}/${s.attempted})</div>
             </div>`;
           }).join('')}
         </div>
       `).join('')}
     </div>
   `).join('');
-  return true;
 }
 
-const saved = sessionStorage.getItem(STORE_KEY);
-if (saved) {
-  load(saved).then((ok) => {
-    if (ok) {
-      document.getElementById('gate').style.display = 'none';
-    } else {
-      sessionStorage.removeItem(STORE_KEY);
-    }
+function exportResults() {
+  const rows = [['Grade', 'Domain', 'Skill', 'Passed', 'Attempted', 'Pass Rate %']];
+  Object.entries(lastSkills).forEach(([grade, domains]) => {
+    ['reading', 'arithmetic'].forEach((domain) => {
+      Object.entries(domains[domain] || {}).forEach(([label, s]) => {
+        const pct = s.attempted ? Math.round((s.passed / s.attempted) * 100) : 0;
+        rows.push([grade, domain, label, s.passed, s.attempted, pct]);
+      });
+    });
   });
+  downloadCSV('kf-assessments-hq-results.csv', rows);
+  toast('Results CSV downloaded');
 }
+
+initGate({
+  storeKey: 'kf_hq_passphrase',
+  endpoint: '/api/hq',
+  gateEl: document.getElementById('gate'),
+  protectedEl: document.getElementById('protected'),
+  inputEl: document.getElementById('passphrase'),
+  errEl: document.getElementById('gate-err'),
+  onRender: render,
+});
 </script>
 </body>
 </html>

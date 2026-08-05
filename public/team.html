@@ -3,30 +3,11 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#354062">
 <title>KiuFunza Assessment — Team View</title>
-<style>
-  :root { --indigo: #354062; --sunglow: #FFC650; --sky: #5EA6B8; --cedar: #BE6243; --offwhite: #F4F4F4; }
-  * { box-sizing: border-box; }
-  body { margin: 0; font-family: -apple-system, system-ui, sans-serif; background: var(--offwhite); color: var(--indigo); }
-  header { background: var(--indigo); color: white; padding: 1.5rem 2rem; }
-  header h1 { margin: 0; font-size: 1.4rem; }
-  header p { margin: .25rem 0 0; opacity: .8; font-size: .9rem; }
-  main { padding: 2rem; max-width: 900px; margin: 0 auto; }
-  section { margin-bottom: 1.75rem; }
-  h2 { font-size: .95rem; color: #666; text-transform: uppercase; letter-spacing: .03em; margin-bottom: .5rem; }
-  table { width: 100%; border-collapse: collapse; background: white; border-radius: 10px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
-  th, td { text-align: left; padding: .6rem 1rem; border-bottom: 1px solid #eee; font-size: .9rem; }
-  th { background: #f9f9f9; color: #666; text-transform: uppercase; font-size: .75rem; }
-  .dq-card { background: #fff3cd; border-left: 4px solid var(--cedar); border-radius: 8px; padding: 1rem 1.25rem; }
-  .dq-card div { font-size: .9rem; margin-bottom: .3rem; }
-  .footer-link { display: block; margin-top: 1.5rem; text-align: center; font-size: .85rem; color: #888; }
-  .footer-link a { color: var(--sky); }
-  .gate { max-width: 320px; margin: 4rem auto; text-align: center; }
-  .gate input { width: 100%; padding: .6rem .8rem; border: 1px solid #ccc; border-radius: 6px; font-size: 1rem; margin-bottom: .75rem; }
-  .gate button { width: 100%; padding: .6rem; border: none; border-radius: 6px; background: var(--indigo); color: white; font-size: 1rem; cursor: pointer; }
-  .gate .err { color: var(--cedar); font-size: .85rem; margin-top: .5rem; min-height: 1.2em; }
-  #protected { display: none; }
-</style>
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="manifest" href="/manifest.json">
+<link rel="stylesheet" href="/style.css">
 </head>
 <body>
 <header>
@@ -36,45 +17,39 @@
 <main>
   <div class="gate" id="gate">
     <p>Team passphrase</p>
-    <input type="password" id="passphrase" placeholder="Enter passphrase">
-    <button onclick="tryUnlock()">Unlock</button>
+    <input type="password" id="passphrase" placeholder="Enter passphrase" onkeydown="if(event.key==='Enter') window.__gateUnlock()">
+    <button class="primary" onclick="window.__gateUnlock()">Unlock</button>
     <div class="err" id="gate-err"></div>
   </div>
-  <div id="protected">
+  <div id="protected" style="display:none">
+    <div class="toolbar">
+      <button class="small" onclick="exportSchools()">Export schools (CSV)</button>
+      <button class="small" onclick="exportEnumerators()">Export enumerators (CSV)</button>
+      <button class="small" onclick="lockAndReload('kf_team_passphrase')" style="margin-left:auto">Lock</button>
+    </div>
+    <div id="freshness" class="freshness"></div>
     <section>
-      <h2>Data Quality — Possible Queries</h2>
+      <h2 class="section-title">Data Quality — Possible Queries</h2>
       <div class="dq-card" id="dq"></div>
     </section>
     <section>
-      <h2>Submissions by Enumerator</h2>
-      <table id="enum-table"></table>
+      <h2 class="section-title">Submissions by Enumerator</h2>
+      <div class="table-wrap"><table id="enum-table"></table></div>
     </section>
     <section>
-      <h2>Submissions by School</h2>
-      <table id="school-table"></table>
+      <h2 class="section-title">Submissions by School</h2>
+      <div class="table-wrap"><table id="school-table"></table></div>
     </section>
     <p class="footer-link"><a href="/">← Public view</a> · <a href="/hq">HQ results →</a></p>
   </div>
 </main>
+<script src="/app.js"></script>
 <script>
-const STORE_KEY = 'kf_team_passphrase';
+let lastData = {};
 
-async function tryUnlock() {
-  const p = document.getElementById('passphrase').value;
-  const ok = await load(p);
-  if (ok) {
-    sessionStorage.setItem(STORE_KEY, p);
-    document.getElementById('gate').style.display = 'none';
-    document.getElementById('protected').style.display = 'block';
-  } else {
-    document.getElementById('gate-err').textContent = 'Incorrect passphrase.';
-  }
-}
-
-async function load(passphrase) {
-  const res = await fetch('/api/team?p=' + encodeURIComponent(passphrase));
-  if (!res.ok) return false;
-  const data = await res.json();
+function render(data) {
+  lastData = data;
+  document.getElementById('freshness').textContent = formatFreshness(data.fetched_at);
 
   const dq = data.dq_flags || {};
   document.getElementById('dq').innerHTML = `
@@ -84,30 +59,42 @@ async function load(passphrase) {
     <div>Submitted but no skill data recorded (needs follow-up): <strong>${dq.submitted_but_no_skill_data ?? 0}</strong></div>
   `;
 
-  const enumRows = Object.entries(data.by_enumerator || {}).sort((a,b) => b[1]-a[1]).map(([name,n]) =>
-    `<tr><td>${name}</td><td>${n}</td></tr>`).join('');
+  const enumRows = Object.entries(data.by_enumerator || {}).sort((a,b) => b[1]-a[1]);
   document.getElementById('enum-table').innerHTML =
-    `<tr><th>Enumerator</th><th>Submissions</th></tr>${enumRows || '<tr><td colspan=2>No data yet</td></tr>'}`;
+    `<tr><th>Enumerator</th><th>Submissions</th></tr>` +
+    (enumRows.map(([name,n]) => `<tr><td>${name}</td><td>${n}</td></tr>`).join('') || '<tr><td colspan=2>No data yet</td></tr>');
 
-  const schoolRows = Object.entries(data.by_school || {}).sort((a,b) => b[1].count-a[1].count).map(([code,s]) =>
-    `<tr><td>${s.name || code}</td><td>${code}</td><td>${s.count}</td><td>G1: ${s.by_grade[1]||0} · G2: ${s.by_grade[2]||0} · G3: ${s.by_grade[3]||0}</td></tr>`).join('');
+  const schoolRows = Object.entries(data.by_school || {}).sort((a,b) => b[1].count-a[1].count);
   document.getElementById('school-table').innerHTML =
-    `<tr><th>School</th><th>Code</th><th>Total</th><th>By Grade</th></tr>${schoolRows || '<tr><td colspan=4>No data yet</td></tr>'}`;
-  return true;
+    `<tr><th>School</th><th>Code</th><th>Total</th><th>By Grade</th></tr>` +
+    (schoolRows.map(([code,s]) => `<tr><td>${s.name || code}</td><td>${code}</td><td>${s.count}</td><td>G1: ${s.by_grade[1]||0} · G2: ${s.by_grade[2]||0} · G3: ${s.by_grade[3]||0}</td></tr>`).join('') || '<tr><td colspan=4>No data yet</td></tr>');
 }
 
-// Skip the passphrase prompt if already unlocked this session.
-const saved = sessionStorage.getItem(STORE_KEY);
-if (saved) {
-  load(saved).then((ok) => {
-    if (ok) {
-      document.getElementById('gate').style.display = 'none';
-      document.getElementById('protected').style.display = 'block';
-    } else {
-      sessionStorage.removeItem(STORE_KEY);
-    }
+function exportSchools() {
+  const rows = [['School', 'Code', 'Total', 'Grade 1', 'Grade 2', 'Grade 3']];
+  Object.entries(lastData.by_school || {}).forEach(([code, s]) => {
+    rows.push([s.name || code, code, s.count, s.by_grade[1]||0, s.by_grade[2]||0, s.by_grade[3]||0]);
   });
+  downloadCSV('kf-assessments-schools.csv', rows);
+  toast('Schools CSV downloaded');
 }
+
+function exportEnumerators() {
+  const rows = [['Enumerator', 'Submissions']];
+  Object.entries(lastData.by_enumerator || {}).forEach(([name, n]) => rows.push([name, n]));
+  downloadCSV('kf-assessments-enumerators.csv', rows);
+  toast('Enumerators CSV downloaded');
+}
+
+initGate({
+  storeKey: 'kf_team_passphrase',
+  endpoint: '/api/team',
+  gateEl: document.getElementById('gate'),
+  protectedEl: document.getElementById('protected'),
+  inputEl: document.getElementById('passphrase'),
+  errEl: document.getElementById('gate-err'),
+  onRender: render,
+});
 </script>
 </body>
 </html>

@@ -1,0 +1,11 @@
+{
+  "name": "KiuFunza Assessment Dashboard",
+  "short_name": "KF Assessment",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#F4F4F4",
+  "theme_color": "#354062",
+  "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml" }
+  ]
+}
