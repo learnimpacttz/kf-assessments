@@ -1,0 +1,21 @@
+name = "kf-assessments"
+main = "src/index.js"
+compatibility_date = "2026-08-05"
+
+[assets]
+directory = "public"
+binding = "ASSETS"
+
+[[kv_namespaces]]
+binding = "DASHBOARD_KV"
+id = "173c4a9bdc9f4c67aa9eadc619334e3e"
+
+# Every 30 min. No-op until KOBO_ASSET_ID + KOBO_TOKEN are both set.
+[triggers]
+crons = ["*/30 * * * *"]
+
+# Not secrets — safe to set here directly once the real KoBo form exists.
+# Token goes in via `wrangler secret put KOBO_TOKEN`, never here.
+[vars]
+# KOBO_ASSET_ID = ""
+# KOBO_SERVER = "kf.kobotoolbox.org"
