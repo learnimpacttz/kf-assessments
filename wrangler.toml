@@ -14,8 +14,8 @@ id = "173c4a9bdc9f4c67aa9eadc619334e3e"
 [triggers]
 crons = ["*/30 * * * *"]
 
-# Not secrets — safe to set here directly once the real KoBo form exists.
+# Not secrets — safe to set here directly.
 # Token goes in via `wrangler secret put KOBO_TOKEN`, never here.
 [vars]
-# KOBO_ASSET_ID = ""
-# KOBO_SERVER = "kf.kobotoolbox.org"
+KOBO_ASSET_ID = "aDAUSHKkk9aqDbwZfAuxbL"
+KOBO_SERVER = "kf.kobotoolbox.org"
