@@ -97,6 +97,24 @@ export function emptyCounts() {
   };
 }
 
+const COUNT_KEYS = [
+  'total_records', 'by_year', 'by_grade', 'by_region', 'submissions_by_date',
+  'by_enumerator', 'by_school', 'dq_flags', 'skills',
+];
+
+// Pulls just the additive-counts fields back out of a stored `data` doc
+// (which also carries status/fetched_at/last_synced_id) — used to seed a
+// new incremental sync pass on top of what's already been counted, instead
+// of starting from empty.
+export function extractCounts(stored) {
+  const counts = emptyCounts();
+  if (!stored) return counts;
+  for (const key of COUNT_KEYS) {
+    if (stored[key] !== undefined) counts[key] = stored[key];
+  }
+  return counts;
+}
+
 export function addPageToCounts(counts, records) {
   for (const r of records) {
     const year = r.year || null;

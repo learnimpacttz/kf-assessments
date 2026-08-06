@@ -10,11 +10,11 @@ binding = "ASSETS"
 binding = "DASHBOARD_KV"
 id = "173c4a9bdc9f4c67aa9eadc619334e3e"
 
-# Daily kickoff (04:00 UTC) + once-a-minute tick to advance an in-progress
-# refresh one page at a time (~39 pages ≈ 39 min to complete a full run —
-# fine for a daily-cadence, largely historical dataset). No-op ticks when
-# nothing is in progress. No-op entirely until KOBO_ASSET_ID + KOBO_TOKEN
-# are both set.
+# Daily kickoff (04:00 UTC) checks for submissions newer than the last
+# synced watermark; once-a-minute tick advances a multi-page sync one page
+# at a time if there's more than ~1000 new records since the last check.
+# No-op ticks when nothing is in progress. No-op entirely until
+# KOBO_ASSET_ID + KOBO_TOKEN are both set.
 [triggers]
 crons = ["0 4 * * *", "* * * * *"]
 

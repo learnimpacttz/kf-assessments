@@ -1,51 +1,75 @@
 import { fetchKoboPage } from './kobo.js';
-import { emptyCounts, addPageToCounts } from './aggregate.js';
+import { extractCounts, addPageToCounts } from './aggregate.js';
 
-// Processes exactly ONE page per invocation. State (counts + where to
-// resume) lives entirely in KV, advanced by a once-a-minute Cron Trigger —
-// each tick is a fresh invocation with its own CPU budget, which is what
-// actually fits this within the free-tier limit. (Both a single invocation
-// fetching everything at once, AND a Worker-calls-itself subrequest chain,
-// hit problems — this tick-based design avoids both.)
+// Incremental sync — a pass only fetches submissions newer than
+// `last_synced_id` (the highest KoBo `_id` already counted), confirmed live
+// against the real asset to be a supported query. Historical data is
+// append-only in normal operation, so already-synced pages never need to be
+// re-walked; each daily pass just picks up wherever the last one left off.
+// Still processes exactly ONE page per invocation (state lives in KV,
+// advanced by a once-a-minute Cron Trigger) to stay under the free-tier CPU
+// limit — a single invocation fetching everything, or a self-chaining
+// subrequest loop, both hit problems that this tick-based design avoids.
 async function processOnePage(env, cursorUrl) {
   const server = env.KOBO_SERVER || 'kf.kobotoolbox.org';
-  const page = await fetchKoboPage(server, env.KOBO_ASSET_ID, env.KOBO_TOKEN, cursorUrl);
-
-  const progress = (await env.DASHBOARD_KV.get('refresh_progress', 'json')) || {
-    counts: emptyCounts(),
+  const stored = await env.DASHBOARD_KV.get('data', 'json');
+  const progress = (await env.DASHBOARD_KV.get('sync_progress', 'json')) || {
+    counts: extractCounts(stored),
     pages_done: 0,
+    max_id_seen: stored?.last_synced_id || 0,
   };
+
+  const page = await fetchKoboPage(server, env.KOBO_ASSET_ID, env.KOBO_TOKEN, cursorUrl, progress.max_id_seen);
   addPageToCounts(progress.counts, page.results);
+  for (const r of page.results) {
+    if (typeof r._id === 'number' && r._id > progress.max_id_seen) progress.max_id_seen = r._id;
+  }
   progress.pages_done += 1;
   progress.next_cursor = page.next;
 
   if (page.next) {
-    await env.DASHBOARD_KV.put('refresh_progress', JSON.stringify(progress));
+    await env.DASHBOARD_KV.put('sync_progress', JSON.stringify(progress));
     return { done: false, pages_done: progress.pages_done };
   }
 
+  const newRecords = progress.counts.total_records - (stored?.total_records || 0);
   await env.DASHBOARD_KV.put(
     'data',
     JSON.stringify({
       status: 'ok',
       fetched_at: new Date().toISOString(),
-      pages_fetched: progress.pages_done,
+      last_synced_id: progress.max_id_seen,
+      pages_fetched: progress.pages_done, // pages in this sync pass, not all-time
       ...progress.counts,
     })
   );
-  await env.DASHBOARD_KV.delete('refresh_progress');
-  return { done: true, pages_done: progress.pages_done, total_records: progress.counts.total_records };
+  await env.DASHBOARD_KV.delete('sync_progress');
+  return { done: true, pages_done: progress.pages_done, total_records: progress.counts.total_records, new_records_this_sync: newRecords };
 }
 
-async function startRefresh(env) {
-  await env.DASHBOARD_KV.delete('refresh_progress');
+// Kicks off a check for new submissions. No-ops if a pass is already
+// mid-chain (a minute tick will carry it forward) rather than restarting it.
+async function startSync(env) {
+  const inProgress = await env.DASHBOARD_KV.get('sync_progress', 'json');
+  if (inProgress?.next_cursor) return { already_in_progress: true, pages_done: inProgress.pages_done };
   return processOnePage(env, null);
 }
 
-async function continueRefresh(env) {
-  const progress = await env.DASHBOARD_KV.get('refresh_progress', 'json');
+async function continueSync(env) {
+  const progress = await env.DASHBOARD_KV.get('sync_progress', 'json');
   if (!progress || !progress.next_cursor) return { skipped: true };
   return processOnePage(env, progress.next_cursor);
+}
+
+// Escape hatch for the one case incremental sync can't self-heal: a
+// submission getting manually removed from KoBo after already being
+// counted. Wipes the watermark and re-walks everything from _id 0 — same
+// cost as the old daily-full-refetch design, but now opt-in/rare instead of
+// the default.
+async function startFullResync(env) {
+  await env.DASHBOARD_KV.delete('sync_progress');
+  await env.DASHBOARD_KV.delete('data');
+  return processOnePage(env, null);
 }
 
 // Three tiers of the SAME stored aggregate, filtered by field sensitivity —
@@ -70,11 +94,13 @@ function filterTier(data, tier) {
 
 async function getTierData(env, tier) {
   const stored = await env.DASHBOARD_KV.get('data', 'json');
-  const inProgress = await env.DASHBOARD_KV.get('refresh_progress', 'json');
+  // Viewers always see the last COMPLETE pass — `stored` only updates once a
+  // sync pass finishes, so this never exposes partial/mid-sync counts.
   if (stored) return filterTier(stored, tier);
+  const inProgress = await env.DASHBOARD_KV.get('sync_progress', 'json');
   if (inProgress) {
     return {
-      status: 'refresh_in_progress',
+      status: 'sync_in_progress',
       pages_done: inProgress.pages_done,
       total_records_so_far: inProgress.counts.total_records,
     };
@@ -149,21 +175,33 @@ export default {
       });
     }
 
-    // Starts a fresh run (processes page 1 immediately). The once-a-minute
-    // cron tick takes it from there — no self-chaining fetch involved.
+    // Starts an incremental sync pass (processes page 1 immediately — only
+    // submissions newer than the last watermark). The once-a-minute cron
+    // tick takes it from there if more than one page of new data exists.
     if (url.pathname === '/api/refresh' && request.method === 'POST') {
       if (!env.KOBO_ASSET_ID || !env.KOBO_TOKEN) {
         return Response.json({ error: 'not configured' }, { status: 400 });
       }
-      const result = await startRefresh(env);
+      const result = await startSync(env);
       return Response.json({ started: true, ...result });
     }
 
     // Manually advance one page — mainly useful for testing without
     // waiting for the next minute's tick.
     if (url.pathname === '/api/refresh-tick' && request.method === 'POST') {
-      const result = await continueRefresh(env);
+      const result = await continueSync(env);
       return Response.json(result);
+    }
+
+    // Rare manual escape hatch — re-walks everything from scratch. Only
+    // needed if a submission was deleted from KoBo after being counted,
+    // since incremental sync has no way to detect that on its own.
+    if (url.pathname === '/api/full-resync' && request.method === 'POST') {
+      if (!env.KOBO_ASSET_ID || !env.KOBO_TOKEN) {
+        return Response.json({ error: 'not configured' }, { status: 400 });
+      }
+      const result = await startFullResync(env);
+      return Response.json({ started: true, full_resync: true, ...result });
     }
 
     return env.ASSETS.fetch(request);
@@ -173,15 +211,15 @@ export default {
     if (!env.KOBO_ASSET_ID || !env.KOBO_TOKEN) return;
     try {
       if (event.cron === '0 4 * * *') {
-        const result = await startRefresh(env);
-        console.log(`daily refresh started: page 1, ${result.pages_done} pages so far`);
+        const result = await startSync(env);
+        console.log(`daily sync check: ${JSON.stringify(result)}`);
       } else {
-        const result = await continueRefresh(env);
+        const result = await continueSync(env);
         if (result.skipped) return;
         console.log(
           result.done
-            ? `refresh finished: ${result.total_records} records across ${result.pages_done} pages`
-            : `tick: page ${result.pages_done} done`
+            ? `sync finished: +${result.new_records_this_sync} new records (${result.total_records} total) across ${result.pages_done} pages`
+            : `tick: page ${result.pages_done} done, more to sync`
         );
       }
     } catch (err) {
