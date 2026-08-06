@@ -48,7 +48,7 @@ td:first-child, th:first-child { white-space: normal; }
 
 .status { display: inline-block; padding: .2rem .6rem; border-radius: 999px; font-size: .72rem; font-weight: 600; }
 .status.ok { background: #dcf5e5; color: #1a7a3f; }
-.status.pending_first_fetch, .status.refresh_in_progress { background: #fff3cd; color: #8a6416; }
+.status.pending_first_fetch, .status.sync_in_progress { background: #fff3cd; color: #8a6416; }
 .status.not_configured { background: #eee; color: #777; }
 
 .bar-row { display: flex; align-items: center; gap: .6rem; margin-bottom: .45rem; font-size: .85rem; }

@@ -94,16 +94,24 @@ function filterTier(data, tier) {
 
 async function getTierData(env, tier) {
   const stored = await env.DASHBOARD_KV.get('data', 'json');
-  // Viewers always see the last COMPLETE pass — `stored` only updates once a
-  // sync pass finishes, so this never exposes partial/mid-sync counts.
   if (stored) return filterTier(stored, tier);
   const inProgress = await env.DASHBOARD_KV.get('sync_progress', 'json');
   if (inProgress) {
-    return {
-      status: 'sync_in_progress',
-      pages_done: inProgress.pages_done,
-      total_records_so_far: inProgress.counts.total_records,
-    };
+    // Same shape as a completed response (so the dashboard renders it with
+    // zero special-casing) — just built from the in-progress partial counts
+    // instead of the finished aggregate. Real growing numbers with a visible
+    // "sync in progress" status beats a misleading hard zero, which is what
+    // viewers would otherwise see for the full length of the one-time
+    // historical walk (tens of minutes) needed to establish the watermark.
+    return filterTier(
+      {
+        status: 'sync_in_progress',
+        fetched_at: null,
+        pages_fetched: inProgress.pages_done,
+        ...inProgress.counts,
+      },
+      tier
+    );
   }
   return {
     status: env.KOBO_ASSET_ID ? 'pending_first_fetch' : 'not_configured',
