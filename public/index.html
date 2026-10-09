@@ -2,76 +2,25 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>KiuFunza Field Command Centre</title>
 <meta name="theme-color" content="#354062">
-<title>KiuFunza Assessment — Progress</title>
-<link rel="icon" href="/icon.svg" type="image/svg+xml">
 <link rel="manifest" href="/manifest.json">
+<link rel="icon" href="/favicon.ico">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&display=swap">
 <link rel="stylesheet" href="/style.css">
 </head>
 <body>
-<header>
-  <h1>KiuFunza Assessment Progress</h1>
-  <p>Submission counts — public view</p>
-</header>
-<main>
-  <div id="err"></div>
-  <div id="freshness" class="freshness"></div>
-  <div class="grid" id="cards"></div>
-  <section>
-    <h2 class="section-title">Submissions Over Time</h2>
-    <div class="card" id="timeline"></div>
-  </section>
-  <section>
-    <h2 class="section-title">By Grade</h2>
-    <div class="card" id="grade-chart"></div>
-  </section>
-  <section>
-    <h2 class="section-title">By Region</h2>
-    <div class="card" id="region-chart"></div>
-  </section>
-  <p class="footer-link">Field team? <a href="/team">Team view →</a></p>
-</main>
+<header class="top"><div class="in">
+  <img src="/learnimpact-mark-white.png" alt="LearnImpact" height="34">
+  <div class="brand"><b>KiuFunza 4 · Field Command Centre</b><span>LearnImpact · A Strong Foundation in Reading, Writing and Arithmetic (3Rs) for Every Child</span></div>
+  <div class="gswrap" id="gswrap" hidden><input id="gs" type="search" placeholder="Find a school, person or region" autocomplete="off" aria-label="Search everything"><div id="gsr" class="gsr" hidden></div></div>
+  <div class="who" id="who"></div>
+  <nav id="nav" role="tablist"></nav>
+</div></header>
+<main class="wrap" id="app"><div class="empty">Loading…</div></main>
+<div id="drawer" class="drawer" hidden><div class="dback" data-act="dClose"></div><aside class="dpanel" role="dialog" aria-label="Details"><div id="drawerBody"></div></aside></div>
 <script src="/app.js"></script>
-<script>
-const cardsEl = document.getElementById('cards');
-const errEl = document.getElementById('err');
-
-async function load() {
-  skeletonCards(cardsEl, 4);
-  const result = await fetchTier('/api/public');
-  if (!result.ok) {
-    showError(errEl, "Couldn't load data — check your connection.", load);
-    return;
-  }
-  errEl.innerHTML = '';
-  const data = result.data;
-
-  document.getElementById('freshness').textContent = formatFreshness(data.fetched_at);
-
-  cardsEl.innerHTML = `
-    <div class="card"><h2>Status</h2><span class="status ${data.status}">${(data.status||'').replace(/_/g,' ')}</span></div>
-    <div class="card"><h2>Total Submissions</h2><div class="count">${data.total_records ?? 0}</div></div>
-  `;
-
-  const dates = Object.entries(data.submissions_by_date || {}).sort();
-  document.getElementById('timeline').innerHTML = dates.length
-    ? renderBarList(dates.slice(-14), { colorClass: 'cedar' })
-    : '<p style="color:#999;font-size:.85rem;margin:0">No submissions recorded yet.</p>';
-
-  const grades = Object.entries(data.by_grade || {}).sort();
-  document.getElementById('grade-chart').innerHTML = grades.length
-    ? renderBarList(grades.map(([g,n]) => [`Grade ${g}`, n]))
-    : '<p style="color:#999;font-size:.85rem;margin:0">No data yet.</p>';
-
-  const regions = Object.entries(data.by_region || {}).sort((a,b) => b[1]-a[1]);
-  document.getElementById('region-chart').innerHTML = regions.length
-    ? renderBarList(regions)
-    : '<p style="color:#999;font-size:.85rem;margin:0">No data yet.</p>';
-}
-
-load();
-startAutoRefresh(load);
-</script>
 </body>
 </html>

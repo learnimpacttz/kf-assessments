@@ -1,125 +1,601 @@
-// Shared helpers across public/team/hq pages — keeps the three dashboards
-// consistent instead of drifting apart, and avoids repeating the same
-// fetch/error/chart logic three times.
+// KiuFunza 4 Field Command Centre: one page, tabs depend on who signed in.
+const $ = (s, r = document) => r.querySelector(s);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const S = { pred: null, brief: null, qOpen: null, cfg: null, code: null, who: null, tab: null, ov: null, pub: null, cmp: null, plan: null, year: null, explore: { q: '', lga: '', sub: 'schools' }, planRegion: null, selVisit: null, adm: null };
+const store = { get: (k) => { try { return localStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch {} } };
 
-const REFRESH_MS = 120000; // auto-refresh every 2 min — cheap, and lets a
-// dashboard left open on a shared screen stay current without a manual reload.
-
-async function fetchTier(endpoint, passphrase) {
-  const url = passphrase ? `${endpoint}?p=${encodeURIComponent(passphrase)}` : endpoint;
-  const resp = await fetch(url);
-  if (resp.status === 403) return { ok: false, forbidden: true };
-  if (!resp.ok) return { ok: false, forbidden: false };
-  return { ok: true, data: await resp.json() };
+async function api(path, opts = {}) {
+  const headers = { ...(opts.headers || {}) };
+  if (S.code) headers['x-access-code'] = S.code;
+  if (opts.body) headers['content-type'] = 'application/json';
+  const res = await fetch(path, { ...opts, headers, body: opts.body ? JSON.stringify(opts.body) : undefined });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw Object.assign(new Error(data.error || 'Request failed'), { status: res.status, data });
+  return data;
 }
 
-function showError(container, message, onRetry) {
-  container.innerHTML = '';
-  const banner = document.createElement('div');
-  banner.className = 'error-banner';
-  banner.innerHTML = `<span>${message}</span>`;
-  const btn = document.createElement('button');
-  btn.className = 'small';
-  btn.textContent = 'Retry';
-  btn.onclick = onRetry;
-  banner.appendChild(btn);
-  container.appendChild(banner);
+const fmt = (n) => (n == null ? '–' : Number(n).toLocaleString('en-GB'));
+const pc = (a, b) => (b ? Math.round((a / b) * 100) : 0);
+const dayName = (iso) => new Date(iso + 'T00:00:00Z').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' });
+const shortDate = (iso) => (iso ? new Date(iso + 'T00:00:00Z').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' }) : '–');
+const title = (s) => String(s || '').toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
+const FLAG_LABEL = { fast: 'Test too fast', slow: 'Test too slow', window: 'Outside school hours', gps: 'Far from school', skilltime: 'Skills skipped', dup: 'Pupil tested twice', notlist: 'Not on sampling list', team: 'Team size', over: 'Over the sample', short: 'Short of the sample', nosample: 'No sampling record' };
+
+// ---------- shared pieces ----------
+const kpi = (l, v, s = '') => `<div class="kpi"><div class="l">${l}</div><div class="v num">${v}</div><div class="s">${s}</div></div>`;
+const bar = (p, color) => `<div class="bar"><i style="width:${Math.min(100, p)}%;${color ? 'background:' + color : ''}"></i></div>`;
+const statusPill = (s) => (s.done ? '<span class="pill good">Complete</span>' : s.started ? '<span class="pill warn">In progress</span>' : '<span class="pill mute">Not started</span>');
+
+function regionState(r) {
+  if (r.total && r.done >= r.total) return 'good';
+  if (!r.started) return 'mute';
+  const fp = S.pred?.regions?.[r.region];
+  if (fp && S.pred.status !== 'waiting') return fp.level;
+  if (r.behind) return 'bad';
+  return r.pace > 0 ? 'good' : 'warn';
+}
+function tiles(regions) {
+  const word = { good: 'on track', warn: 'slow', bad: 'at risk', mute: 'not started' };
+  return `<div class="tiles">${regions.map((r) => { const st = regionState(r); return `<div class="tile ${st}" ${S.who ? `data-open="region:${esc(r.region)}"` : ""} style="${S.who ? "cursor:pointer" : ""}"><b>${esc(r.region)}</b><div class="n num">${r.done}<small>/${r.total}</small></div><small>${word[st]}</small></div>`; }).join('')}</div>
+  <div class="legend"><span><i style="background:#2f8f5b"></i>on track</span><span><i style="background:#a87400"></i>slow</span><span><i style="background:#b8432a"></i>projected to miss the close date</span></div>`;
 }
 
-function skeletonCards(container, n) {
-  container.innerHTML = Array.from({ length: n }, () => '<div class="card skeleton skeleton-card"></div>').join('');
+function barChart(series, { need, label = 'tests' } = {}) {
+  const data = series.slice(-14);
+  if (!data.length) return '<div class="empty">No tests yet.</div>';
+  const W = 400, H = 170, p = { l: 34, r: 8, t: 12, b: 22 };
+  const max = Math.max(10, ...data.map((d) => d[1]), need || 0) * 1.1;
+  const iw = W - p.l - p.r, ih = H - p.t - p.b;
+  const x = (i) => p.l + ((i + 0.5) * iw) / data.length, y = (v) => p.t + ih - (v / max) * ih;
+  const bw = Math.min(26, iw / data.length - 6);
+  let g = '';
+  for (let k = 0; k <= 4; k++) { const v = (max * k) / 4; g += `<line class="gl" x1="${p.l}" x2="${W - p.r}" y1="${y(v)}" y2="${y(v)}"/><text x="${p.l - 5}" y="${y(v) + 4}" text-anchor="end">${Math.round(v)}</text>`; }
+  const bars = data.map((d, i) => `<rect x="${x(i) - bw / 2}" y="${y(d[1])}" width="${bw}" height="${p.t + ih - y(d[1])}" rx="3" fill="var(--teal)"><title>${shortDate(d[0])}: ${d[1]} ${label}</title></rect>`).join('');
+  const lab = data.map((d, i) => (i % Math.ceil(data.length / 7) === 0 ? `<text x="${x(i)}" y="${H - 6}" text-anchor="middle">${shortDate(d[0])}</text>` : '')).join('');
+  const line = need ? `<line x1="${p.l}" x2="${W - p.r}" y1="${y(need)}" y2="${y(need)}" stroke="var(--gold)" stroke-width="2" stroke-dasharray="5 4"/><text x="${W - p.r}" y="${y(need) - 5}" text-anchor="end">needed ${Math.round(need)}/day</text>` : '';
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Tests per day">${g}${bars}${line}${lab}</svg>`;
 }
 
-function renderBarList(entries, opts = {}) {
-  const { max, colorClass = '' } = opts;
-  const top = max ? entries.slice(0, max) : entries;
-  const highest = Math.max(1, ...top.map(([, n]) => n));
-  return top
-    .map(
-      ([label, n]) => `
-      <div class="bar-row">
-        <div class="bar-label" title="${label}">${label}</div>
-        <div class="bar-track"><div class="bar-fill ${colorClass}" style="width:${Math.round((n / highest) * 100)}%"></div></div>
-        <div class="bar-value">${n}</div>
-      </div>`
-    )
-    .join('');
-}
-
-function formatFreshness(iso) {
-  if (!iso) return '';
-  const d = new Date(iso);
-  return `Last updated: ${d.toLocaleString()}`;
-}
-
-function toCSV(rows) {
-  return rows.map((r) => r.map((cell) => `"${String(cell ?? '').replace(/"/g, '""')}"`).join(',')).join('\r\n');
-}
-
-function downloadCSV(filename, rows) {
-  const blob = new Blob([toCSV(rows)], { type: 'text/csv;charset=utf-8;' });
-  const link = document.createElement('a');
-  link.href = URL.createObjectURL(blob);
-  link.download = filename;
-  link.click();
-  URL.revokeObjectURL(link.href);
-}
-
-// Reusable passphrase gate for team.html / hq.html — handles the prompt,
-// session persistence, and retry so those pages just supply a render callback.
-function initGate({ storeKey, endpoint, gateEl, protectedEl, inputEl, errEl, onRender }) {
-  async function attempt(passphrase) {
-    const result = await fetchTier(endpoint, passphrase);
-    if (!result.ok) return false;
-    onRender(result.data);
-    return true;
-  }
-
-  window.__gateUnlock = async () => {
-    const p = inputEl.value;
-    const ok = await attempt(p);
-    if (ok) {
-      sessionStorage.setItem(storeKey, p);
-      gateEl.style.display = 'none';
-      if (protectedEl) protectedEl.style.display = 'block';
-      startAutoRefresh(() => attempt(p));
-    } else {
-      errEl.textContent = 'Incorrect passphrase.';
-    }
+const isOpen = (f) => !f.q || f.q.status !== 'resolved';
+const fmtAt = (iso) => new Date(iso).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+function flagList(all, { limit = 8, names = true } = {}) {
+  const flags = all.filter(isOpen);
+  if (!flags.length) return '<div class="empty">No open flags. Nothing needs a call right now.</div>';
+  const canResolve = S.who && S.who.role !== 'volunteer';
+  const one = (f) => {
+    const thread = f.q && f.q.thread.length ? `<div class="thread">${f.q.thread.map((m) => `<div><b>${esc(m.by)}</b> <span>${fmtAt(m.at)}</span><br>${esc(m.text)}</div>`).join('')}</div>` : '';
+    const box = S.qOpen === f.qk ? `<div class="qbox"><textarea id="qText" placeholder="Your reply, in a sentence or two"></textarea><div style="display:flex;gap:6px;margin-top:6px"><button class="btn sm" data-act="qSend" data-k="${esc(f.qk)}">Send</button>${canResolve ? `<button class="btn sm sec" data-act="qResolve" data-k="${esc(f.qk)}">Mark resolved</button>` : ''}<button class="btn sm sec" data-act="qOpen" data-k="">Cancel</button></div></div>` : `<button class="btn sm sec" data-act="qOpen" data-k="${esc(f.qk)}" style="margin-top:6px">${f.q && f.q.thread.length ? 'Reply' : 'Reply or explain'}</button>`;
+    return `<div class="flag"><i class="st ${f.sev}"></i><div style="min-width:0;flex:1"><b>${esc(f.school_name || f.school)} · ${esc(FLAG_LABEL[f.type] || f.type)}</b><span>${esc(f.region ? title(f.region) + ' · ' : '')}${esc(f.lga ? title(f.lga) + ' · ' : '')}${f.grade ? 'Grade ' + f.grade + ' · ' : ''}${esc(f.text)}${names && f.admin ? ' · ' + esc(f.admin) : ''}${f.date ? ' · ' + shortDate(f.date) : ''}</span><span>${esc(f.hint || '')}</span>${thread}<details class="fd"><summary>Details to find the records</summary>${flagDetail(f)}</details>${f.qk ? box : ''}</div></div>`;
   };
-
-  const saved = sessionStorage.getItem(storeKey);
-  if (saved) {
-    attempt(saved).then((ok) => {
-      if (ok) {
-        gateEl.style.display = 'none';
-        if (protectedEl) protectedEl.style.display = 'block';
-        startAutoRefresh(() => attempt(saved));
-      } else {
-        sessionStorage.removeItem(storeKey);
-      }
-    });
-  }
+  return flags.slice(0, limit).map(one).join('') + (flags.length > limit ? `<div class="note">+ ${flags.length - limit} more in the data explorer.</div>` : '');
 }
 
-function startAutoRefresh(reloadFn) {
-  setInterval(reloadFn, REFRESH_MS);
+function briefCard(title0 = "Today's briefing") {
+  const b = S.brief; if (!b) return '';
+  const items = b.items.length ? b.items.map((i) => `<div class="flag"><i class="st ${i.sev}"></i><div><span style="color:var(--ink);font-size:14px">${esc(i.text)}</span></div></div>`).join('') : '<div class="empty">Nothing to report yet.</div>';
+  const ai = b.ai ? `<div class="aiwrap"><div class="ai-col"><h4>English</h4><ul>${(b.ai.en || []).map((x) => `<li>${esc(x)}</li>`).join('')}</ul></div><div class="ai-col"><h4>Kiswahili</h4><ul>${(b.ai.sw || []).map((x) => `<li>${esc(x)}</li>`).join('')}</ul></div></div>` : '';
+  const tm = Object.entries(b.tomorrow_schools || {}).map(([r, s]) => `<div class="m"><b>${esc(title(r))}</b>: ${s.map(esc).join(', ')}</div>`).join('');
+  return `<div class="card brief"><h3>${title0}</h3><div class="sub">Worked out from the data and the plans. ${b.ai ? 'Wording by AI from the same facts.' : ''}</div>${items}${ai}${tm ? `<h4 style="margin:12px 0 4px">Tomorrow, ${dayName(b.tomorrow)}</h4>${tm}` : ''}</div>`;
 }
 
-function lockAndReload(storeKey) {
-  sessionStorage.removeItem(storeKey);
-  location.reload();
+function dataBanner() {
+  const o = S.ov || S.pub; if (!o) return '';
+  const years = o.years || [];
+  const sel = years.length > 1 ? `<select id="yearSel" aria-label="Round">${years.map((y) => `<option value="${y}" ${y === o.year ? 'selected' : ''}>${y}${y === (S.cfg && S.cfg.year) ? '' : ' (archive)'}</option>`).join('')}</select>` : '';
+  const warn = o.rehearsal ? `<div class="banner"><b>Rehearsal.</b> No 2026 endline data yet, so you are looking at ${esc(o.year)} data. Use it to practise. Live numbers appear after the first 2026 submission.</div>` : '';
+  return `${warn}<div class="sel" style="margin-top:10px">${sel}<span class="pill mute">Updated ${o.as_of ? new Date(o.as_of).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' }) : '–'}</span></div>`;
 }
 
-function toast(msg) {
-  let t = document.getElementById('_toast');
-  if (!t) {
-    t = document.createElement('div');
-    t.id = '_toast';
-    t.style.cssText = 'position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:#354062;color:#fff;font-size:13px;font-weight:600;padding:10px 18px;border-radius:8px;box-shadow:0 2px 12px rgba(0,0,0,.25);z-index:999;opacity:0;transition:opacity .25s';
-    document.body.appendChild(t);
-  }
-  t.textContent = msg;
-  t.style.opacity = '1';
-  setTimeout(() => { t.style.opacity = '0'; }, 1800);
+// ---------- views ----------
+function viewProgress() {
+  const o = S.pub; if (!o || o.status === 'waiting') return waiting();
+  const n = o.national;
+  return `${dataBanner()}<div class="pagehead"><div><h2>KiuFunza 4 · Endline ${esc(o.year)}</h2><p>Progress across ${o.regions.length} regions. Aggregate only: no names, no school results.</p></div></div>
+  <div class="grid kpis">${kpi('Schools complete', `${fmt(n.done)}<small> / ${fmt(n.schools)}</small>`, pc(n.done, n.schools) + '% of schools')}${kpi('Pupils tested', fmt(n.tested), 'of ' + fmt(n.target) + ' sampled')}${kpi('Schools started', fmt(n.started), '')}${kpi('Projected finish', n.projected === 'done' ? 'Done' : n.projected ? shortDate(n.projected) : '–', 'at the last 5 days\' pace')}</div>
+  <div class="grid two" style="margin-top:14px"><div class="card"><h3>Regions</h3><div class="sub">Schools complete out of planned</div>${tiles(o.regions)}</div>
+  <div class="card"><h3>Tests per day</h3><div class="sub">All regions</div>${barChart(n.series)}</div></div>`;
 }
+
+const dShort = (d) => (d ? shortDate(d) : 'after 4 Dec');
+function forecastCard(regionOnly) {
+  const P = S.pred; if (!P || P.status === 'waiting' || !P.regions) return '';
+  const regs = Object.entries(P.regions).filter(([r]) => !regionOnly || r === regionOnly);
+  const risk = (P.at_risk || []).filter((x) => !regionOnly || x.region === regionOnly);
+  const rows = regs.sort((a, b) => a[1].p_on_time - b[1].p_on_time).map(([r, f]) => `<tr class="click" data-open="region:${esc(r)}"><td><b>${esc(title(r))}</b></td><td class="r num">${f.remaining}</td><td class="r num">${f.needed_per_day}</td><td class="r num">${f.recent_pace ?? '–'}</td><td class="r">${chip(f.p_on_time + '%', f.level)}</td><td>${f.remaining ? esc(dShort(f.likely)) : 'done'}</td><td class="hide-s">${f.remaining ? esc(dShort(f.earliest)) + ' – ' + esc(dShort(f.latest)) : ''}</td></tr>`).join('');
+  const nat = !regionOnly ? `<p style="margin:0 0 10px">All regions: <b>${P.national.p_on_time}%</b> chance of finishing by ${shortDate(P.close)}. Most likely <b>${esc(dShort(P.national.likely))}</b>, range ${esc(dShort(P.national.earliest))} to ${esc(dShort(P.national.latest))}.</p>` : '';
+  const rk = risk.length ? `<h4 style="margin:14px 0 4px">Schools to chase</h4>${risk.slice(0, 8).map((x) => `<div class="flag"><i class="st ${x.kind === 'missed' ? 'bad' : 'warn'}"></i><div><b>${lk('school', x.school, x.name)}</b><span>${esc(title(x.lga))} · planned ${shortDate(x.planned)} · ${x.kind === 'missed' ? 'not visited' : 'started, not finished'} · ${x.days_overdue} day(s) ago</span></div></div>`).join('')}` : '';
+  return `<div class="card"><h3>Forecast</h3><div class="sub">${P.pre_field ? 'Before field work: if 2026 repeats the ' + esc(P.baseline_year || 'earlier') + ' daily pattern.' : 'From each region\'s recent days and last round\'s daily pattern, 1,500 simulated runs.'} The chance is of finishing by ${shortDate(P.close)}.</div>${nat}<div class="tbl"><table><thead><tr><th>Region</th><th class="r">Left</th><th class="r">Need/day</th><th class="r">Pace</th><th class="r">On time</th><th>Likely</th><th class="hide-s">Range</th></tr></thead><tbody>${rows}</tbody></table></div>${rk}</div>`;
+}
+function waiting() { return `<div class="empty"><h3>Waiting for data</h3><p>The first numbers appear a few minutes after the first submissions reach KoBo.</p></div>`; }
+
+function viewRegion() {
+  const o = S.ov; if (!o || o.status === 'waiting') return waiting();
+  const m = o.mine, r = m.region, schools = m.schools;
+  const flags = m.flags.filter(isOpen);
+  const tpg = r.region === 'DODOMA' ? 40 : 20;
+  const remaining = r.total - r.done;
+  const rows = schools.slice().sort((a, b) => (a.done - b.done) || (b.started - a.started) || a.name.localeCompare(b.name)).map((s) => {
+    const t = s.g[1].av + s.g[2].av + s.g[3].av, tg = s.g[1].target + s.g[2].target + s.g[3].target;
+    return `<tr><td><b>${esc(s.name)}</b></td><td class="hide-s">${esc(title(s.lga))}</td><td class="hide-s">${s.mne === 'M&E' ? 'M&amp;E' : 'Test only'}</td><td class="num hide-s">${s.g[1].av}/${s.g[1].target}</td><td class="num hide-s">${s.g[2].av}/${s.g[2].target}</td><td class="num hide-s">${s.g[3].av}/${s.g[3].target}</td><td>${bar(pc(t, tg))}</td><td>${statusPill(s)}</td></tr>`;
+  }).join('');
+  const neededPerDay = remaining > 0 ? remaining / Math.max(1, workingLeft(o.today)) : 0;
+  return `${dataBanner()}<div class="pagehead"><div><h2>${esc(title(r.region))} · ${esc(S.who.position || 'Coordinator')}</h2><p>${r.total} schools · target ${tpg} pupils per grade per school</p></div></div>
+  <div class="grid kpis">${kpi('Schools complete', `${r.done}<small> / ${r.total}</small>`, pc(r.done, r.total) + '%')}${kpi('Pupils tested', fmt(r.tested), 'of ' + fmt(r.target))}${kpi('Open flags', flags.length, flags.filter((f) => f.sev === 'bad').length + ' need a call')}${kpi('Pace', r.pace + ' / day', 'schools per field day, last 5 days')}${kpi('Projected finish', r.projected === 'done' ? 'Done' : r.projected ? shortDate(r.projected) : '–', r.behind ? 'after the 4 Dec close' : 'before the 4 Dec close')}</div>
+  <div class="grid two" style="margin-top:14px"><div class="card"><h3>Schools in ${esc(title(r.region))}</h3><div class="sub">Pupils tested against sample, by grade</div><div class="tbl"><table><thead><tr><th>School</th><th class="hide-s">LGA</th><th class="hide-s">Type</th><th class="hide-s">Gr 1</th><th class="hide-s">Gr 2</th><th class="hide-s">Gr 3</th><th>Progress</th><th>Status</th></tr></thead><tbody>${rows}</tbody></table></div></div>
+  <div style="display:grid;gap:14px;align-content:start">${briefCard()}${forecastCard(r.region)}<div class="card"><h3>Needs your call</h3><div class="sub">Checked after every submission</div>${flagList(flags)}</div>
+  <div class="card"><h3>Tests per day</h3><div class="sub">Dashed line is the daily pace needed to finish by 4 Dec</div>${barChart(r.series, { need: neededPerDay * (tpg * 3 / 1) })}</div></div></div>`;
+}
+function workingLeft(today) {
+  let n = 0, d = new Date(today + 'T00:00:00Z'); const end = new Date(S.cfg.field.end + 'T00:00:00Z');
+  while (d < end) { d.setUTCDate(d.getUTCDate() + 1); const w = d.getUTCDay(); if (w && w < 6) n++; }
+  return Math.max(1, n);
+}
+
+function bandsText() { const b = S.ov?.bands; return b ? [1, 2, 3].map((g) => `Gr ${g}: ${b[g].p3.toFixed(1)}-${b[g].p99.toFixed(0)} min`).join(' · ') : ''; }
+
+// ----- test admin screens -----
+function viewDay() {
+  const o = S.ov; if (!o || o.status === 'waiting') return waiting();
+  const plan = S.plan?.plan;
+  const today = o.today;
+  const me = S.who;
+  const mine = (plan?.visits || []).filter((v) => !v.team?.length || v.team.includes(me.name));
+  const todays = mine.filter((v) => v.date === today);
+  const next = mine.filter((v) => v.date > today).sort((a, b) => (a.date < b.date ? -1 : 1)).slice(0, 4);
+  const sch = Object.fromEntries((o.mine.schools || []).map((s) => [s.id, s]));
+  const card = (v) => { const s = sch[v.school]; const g = s?.g; return `<div class="sch"><h4>${esc(v.school_name)}</h4><div class="m">${esc(title(v.lga))} · ${v.mne === 'M&E' ? 'M&amp;E school' : 'test-only school'} · starts ${esc(v.start)}</div>${g ? `<div class="gr">${[1, 2, 3].map((k) => `<div><b>${g[k].av}/${g[k].target}</b><small>Darasa ${k}</small></div>`).join('')}</div>` : ''}${s?.done ? '<div class="note" style="margin-top:8px">Shule imekamilika · School complete</div>' : ''}</div>`; };
+  const mf = o.mine.flags.filter(isOpen).length;
+  return `${dataBanner()}<div class="pagehead"><div><h2>Habari, ${esc(me.name.split(' ')[0])}</h2><p>${dayName(today)} · ${esc(title(me.region))}</p></div></div>
+  ${mf ? `<div class="banner bad">You have <b>${mf}</b> query(ies) to look at. Open "My queries".</div>` : ''}
+  <h3 style="margin:14px 0 8px">Leo · Today</h3>${todays.length ? todays.map(card).join('') : '<div class="note">No school in the plan for you today. Check with your RC.</div>'}
+  <h3 style="margin:18px 0 8px">Zinazofuata · Coming up</h3>${next.length ? next.map((v) => `<div class="sch"><h4>${esc(v.school_name)}</h4><div class="m">${dayName(v.date)} · ${esc(v.start)} · ${esc(title(v.lga))}</div></div>`).join('') : '<div class="note">Nothing planned yet.</div>'}`;
+}
+function viewWork() {
+  const rows = (S.ov.mine.work || []).map((w) => `<tr><td>${shortDate(w[0])}</td><td>${esc(schoolName(w[1]))}</td><td class="r">${w[2]}</td><td class="num r">${w[3]}</td><td class="num r">${w[4] ?? '–'}</td></tr>`).join('');
+  return `<div class="pagehead"><div><h2>My work</h2><p>Everything you tested, by day and school. Pupils appear as numbers only.</p></div></div><div class="card"><div class="tbl"><table><thead><tr><th>Day</th><th>School</th><th class="r">Grade</th><th class="r">Tested</th><th class="r">Avg min</th></tr></thead><tbody>${rows || '<tr><td colspan="5" class="empty">Nothing recorded yet.</td></tr>'}</tbody></table></div></div>`;
+}
+function schoolName(id) { const s = (S.ov.mine?.schools || []).find((x) => x.id === id); return s ? s.name : id; }
+function viewQueries() {
+  const f = S.ov.mine.flags;
+  return `<div class="pagehead"><div><h2>My queries</h2><p>Automatic checks on your records. Talk to your RC about anything here.</p></div></div><div class="card">${flagList(f.map((x) => ({ ...x, school_name: schoolName(x.school) })), { limit: 50, names: false })}</div>`;
+}
+function viewStats() {
+  const me = S.ov.mine.me, b = S.ov.bands;
+  if (!me) return `<div class="empty"><h3>No tests yet</h3><p>Your numbers appear after your first submission.</p></div>`;
+  const band = (g) => { const lo = b[g].p3, hi = b[g].p99, v = me.by_grade[g]; if (v == null) return ''; const span = hi * 1.3; const left = (lo / span) * 100, width = ((hi - lo) / span) * 100, pos = Math.min(100, (v / span) * 100); return `<div class="m" style="margin-top:8px">Grade ${g}: your average ${v} min · normal ${lo.toFixed(1)}–${hi.toFixed(0)} min</div><div class="band"><i style="left:${left}%;width:${width}%"></i><b style="left:${pos}%"></b></div>`; };
+  return `<div class="pagehead"><div><h2>My stats</h2><p>${esc(me.name)}</p></div></div>
+  <div class="grid kpis">${kpi('Pupils tested', fmt(me.tested))}${kpi('Avg test time', (me.avg_min ?? '–') + ' min')}${kpi('Quality', me.quality ?? '–', 'out of 100')}${kpi('School days', me.days, me.schools + ' schools')}</div>
+  <div class="card" style="margin-top:14px"><h3>Test speed</h3><div class="sub">Your average against the normal range for each grade, from earlier rounds</div>${[1, 2, 3].map(band).join('')}</div>
+  <div class="card" style="margin-top:14px"><h3>What makes up your quality score</h3><div class="sub">Tests in the normal time range, pupils from the sampling list, clean records</div><div class="m">Too fast: <b>${me.fast}</b> · Too slow: <b>${me.slow}</b> · Outside school hours: <b>${me.late}</b> · Not on sampling list: <b>${me.not_list}</b></div></div>`;
+}
+
+// ----- compare -----
+function viewCompare() {
+  const c = S.cmp; if (!c || c.status === 'waiting') return waiting();
+  const reg = c.regions.map((r, i) => `<div class="rank ${S.who?.region === r.region ? 'me' : ''}" ${S.who ? `data-open="region:${esc(r.region)}"` : ''}><span class="p">${i + 1}</span><span class="nm">${esc(title(r.region))}</span>${bar(r.tested_pct, r.behind ? 'var(--bad)' : 'var(--teal)')}<span class="num" style="width:44px;text-align:right">${r.tested_pct}%</span></div>`).join('');
+  const ppl = (c.people || []).map((p) => `<div class="rank ${p.you ? 'me' : ''}"><span class="p">${p.rank}</span><span class="nm">${esc(p.name)}${p.region ? ' · ' + esc(title(p.region)) : ''}</span><span class="num">${p.quality}</span></div>`).join('');
+  return `<div class="pagehead"><div><h2>Compare and keep pace</h2><p>See what is happening elsewhere. Pupils tested against the sample.</p></div></div>
+  <div class="grid three"><div class="card"><h3>Regions</h3><div class="sub">Share of sampled pupils tested</div>${reg}</div>
+  ${S.who ? `<div class="card"><h3>${S.who.role === 'hq' ? 'Top test admins' : 'Test admins in my region'}</h3><div class="sub">Quality score out of 100. ${S.who.role === 'volunteer' ? 'The top five are named; you always see your own place.' : ''}</div>${ppl || '<div class="empty">Ranks appear after tests are submitted.</div>'}</div>` : ''}</div>`;
+}
+
+// ----- plan & calendar -----
+function workDays(from, to) { const out = []; let d = new Date(from + 'T00:00:00Z'); const e = new Date(to + 'T00:00:00Z'); for (; d <= e; d.setUTCDate(d.getUTCDate() + 1)) { const w = d.getUTCDay(); if (w && w < 6) out.push(d.toISOString().slice(0, 10)); } return out; }
+function suggest(schools, region) {
+  const cap = region === 'DODOMA' ? 5 : 3; const days = workDays(S.cfg.field.start, S.cfg.field.end);
+  const sorted = schools.slice().sort((a, b) => a.lga.localeCompare(b.lga) || a.name.localeCompare(b.name));
+  return sorted.map((s, i) => ({ school: s.id, date: days[Math.floor(i / cap)], start: '08:00', team: [] }));
+}
+function viewPlan() {
+  const P = S.plan; if (!P) return `<div class="banner bad">${S.planErr ? esc(S.planErr) : 'The plan could not be loaded.'} <button class="btn sm sec" data-act="retryPlan">Try again</button></div>`;
+  const plan = P.plan, region = S.planRegion || S.who.region;
+  const canEdit = S.who.role !== 'volunteer';
+  const head = `<div class="pagehead"><div><h2>Plan and calendar · ${esc(title(region))}</h2><p>The whole field period is planned up front. After you submit, changes need a reason and the team is told.</p></div>${S.who.role === 'hq' ? `<div class="sel"><select id="planRegion">${S.cfg.regions.map((r) => `<option ${r === region ? 'selected' : ''} value="${r}">${title(r)}</option>`).join('')}</select></div>` : ''}</div>`;
+  if (plan.status !== 'locked') return head + planBuilder(P, canEdit, region);
+  const today = P.today;
+  const days = workDays(S.cfg.field.start, S.cfg.field.end);
+  const byDate = {}; plan.visits.forEach((v) => (byDate[v.date] ||= []).push(v));
+  const weeks = []; for (let i = 0; i < days.length; i += 5) weeks.push(days.slice(i, i + 5));
+  const slotCls = (v) => (v.outcome === 'visited' ? 'done' : v.outcome === 'missed' ? 'miss' : v.outcome === 'visited_other_day' || v.status === 'moved' ? 'moved' : '');
+  const cal = weeks.map((w, wi) => `<h4 style="margin:14px 0 6px">Week ${wi + 1}</h4><div class="cal">${w.map((d) => `<div class="day ${d === today ? 'today' : ''}"><h5>${dayName(d)}<span>${(byDate[d] || []).length || ''}</span></h5>${(byDate[d] || []).map((v) => `<button class="slot ${slotCls(v)}" data-act="selVisit" data-id="${v.id}"><b>${esc(v.school_name)}</b>${esc(title(v.lga))} · ${esc(v.start)}${v.status === 'moved' ? ' · moved' : ''}</button>`).join('')}</div>`).join('')}</div>`).join('');
+  const notice = (st) => ({ sent: '<span class="pill good">sent</span>', late: '<span class="pill bad">late</span>', due: '<span class="pill warn">due today</span>', upcoming: '<span class="pill mute">upcoming</span>' }[st]);
+  const nrows = plan.visits.filter((v) => v.date >= today).sort((a, b) => (a.date < b.date ? -1 : 1)).slice(0, 14).map((v) => `<tr><td><b>${esc(v.school_name)}</b><br><span class="m" style="font-size:12px;color:var(--ink3)">${dayName(v.date)}</span></td><td>${notice(v.aek_state)} <span style="font-size:12px;color:var(--ink3)">by ${shortDate(v.aek_due)}</span>${canEdit && !v.notices.aek ? ` <button class="btn sm sec" data-act="notice" data-kind="aek" data-id="${v.id}">Mark sent</button>` : ''}</td><td>${notice(v.ht_state)} <span style="font-size:12px;color:var(--ink3)">by ${shortDate(v.ht_due)}</span>${canEdit && !v.notices.ht ? ` <button class="btn sm sec" data-act="notice" data-kind="ht" data-id="${v.id}">Mark sent</button>` : ''}</td><td>${notice(v.team_state)}${canEdit && !v.notices.team ? ` <button class="btn sm sec" data-act="notice" data-kind="team" data-id="${v.id}">Mark told</button>` : ''}</td></tr>`).join('');
+  const changes = plan.changes.slice().reverse().slice(0, 8).map((c) => `<div class="flag"><i class="st ${c.late ? 'bad' : 'warn'}"></i><div><b>${esc(SCH(c.school))} · ${shortDate(c.from.date)} → ${shortDate(c.to.date)}${c.late ? ' · late change' : ''}</b><span>${esc(c.reason)}${c.note ? ': ' + esc(c.note) : ''} · ${esc(c.by)}</span></div></div>`).join('') || '<div class="empty">No changes yet.</div>';
+  const v = plan.visits.find((x) => x.id === S.selVisit);
+  const editor = v && canEdit ? `<div class="card" style="margin-top:14px"><h3>Change ${esc(v.school_name)}</h3><div class="sub">Planned ${dayName(v.date)} at ${esc(v.start)}. The team and the ward and head teacher notices are re-sent for a new date.</div><div class="f"><label>New date<input type="date" id="chDate" value="${v.date}" min="${S.cfg.field.start}" max="${S.cfg.field.end}"></label><label>Start<input type="time" id="chStart" value="${esc(v.start)}"></label><label>Reason<select id="chReason">${Object.entries(S.cfg.reasons).map(([k, t]) => `<option value="${k}">${esc(t)}</option>`).join('')}</select></label><textarea id="chNote" placeholder="Short note (required for Other)"></textarea></div><div style="margin-top:10px;display:flex;gap:8px"><button class="btn" data-act="applyChange" data-id="${v.id}">Save change</button><button class="btn sec" data-act="selVisit" data-id="">Cancel</button></div><div id="chErr" class="banner bad" hidden></div></div>` : '';
+  const n = plan.visits.length;
+  const done = plan.visits.filter((x) => x.outcome === 'visited').length, past = plan.visits.filter((x) => x.date <= today && x.date < today).length;
+  return `${head}<div class="grid kpis">${kpi('Schools planned', n, 'submitted ' + (plan.submitted_at ? shortDate(plan.submitted_at.slice(0, 10)) : '') + ' by ' + esc(plan.submitted_by || ''))}${kpi('Changes', plan.changes.length, plan.changes.filter((c) => c.late).length + ' late')}${kpi('On plan so far', past ? pc(done, past) + '%' : '–', done + ' of ' + past + ' visits due')}${kpi('Plan version', 'v' + plan.version)}</div>
+  <div class="card" style="margin-top:14px"><h3>Calendar</h3><div class="sub">Planned (grey), done (green), moved (amber), missed (red). Tap a school to change it.</div>${cal}</div>${editor}
+  <div class="grid two" style="margin-top:14px"><div class="card"><h3>Notice tracker</h3><div class="sub">Ward officer 5 working days before, head teacher 3 working days before, team told at the same time</div><div class="tbl"><table><thead><tr><th>Visit</th><th>Ward officer</th><th>Head teacher</th><th>Team</th></tr></thead><tbody>${nrows || '<tr><td colspan="4" class="empty">No upcoming visits.</td></tr>'}</tbody></table></div></div>
+  <div class="card"><h3>Changes and reasons</h3><div class="sub">Every change is recorded with who made it and why</div>${changes}</div></div>`;
+}
+const SCH = (id) => (S.plan?.schools || []).find((s) => s.id === id)?.name || id;
+function planBuilder(P, canEdit, region) {
+  if (!canEdit) return '<div class="note">The plan has not been submitted yet.</div>';
+  const cur = S.draft || (P.plan.visits.length ? P.plan.visits : suggest(P.schools, region));
+  S.draft = cur;
+  const byId = Object.fromEntries(cur.map((v) => [v.school, v]));
+  const rows = P.schools.map((s) => { const v = byId[s.id] || { school: s.id, date: '', start: '08:00', team: [] }; return `<tr><td><b>${esc(s.name)}</b></td><td class="hide-s">${esc(title(s.lga))}</td><td class="hide-s">${s.mne === 'M&E' ? 'M&amp;E' : 'Test only'}</td><td><input type="date" data-pl="date" data-s="${s.id}" value="${esc(v.date)}" min="${S.cfg.field.start}" max="${S.cfg.field.end}"></td><td><input type="time" data-pl="start" data-s="${s.id}" value="${esc(v.start)}"></td></tr>`; }).join('');
+  return `<div class="banner">Not submitted yet. Dates below are a suggestion grouped by LGA (${region === 'DODOMA' ? 5 : 3} schools a day). Change anything, then submit. After you submit the plan locks.</div>
+  <div class="card" style="margin-top:12px"><div class="tbl"><table><thead><tr><th>School</th><th class="hide-s">LGA</th><th class="hide-s">Type</th><th>Date</th><th>Start</th></tr></thead><tbody>${rows}</tbody></table></div>
+  <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn sec" data-act="resuggest">Re-suggest dates</button><button class="btn sec" data-act="saveDraft">Save draft</button><button class="btn" data-act="submitPlan">Submit plan</button></div><div id="plErr" class="banner bad" hidden></div></div>`;
+}
+
+// ----- HQ -----
+function viewHQ() {
+  const o = S.ov; if (!o || o.status === 'waiting') return waiting();
+  const openF = o.flags.filter(isOpen);
+  const n = o.national, bad = openF.filter((f) => f.sev === 'bad').length;
+  const atRisk = o.regions.filter((r) => regionState(r) === 'bad').length;
+  const byType = {}; openF.forEach((f) => (byType[f.type] = (byType[f.type] || 0) + 1));
+  const types = Object.entries(byType).sort((a, b) => b[1] - a[1]);
+  const mx = Math.max(1, ...types.map((t) => t[1]));
+  return `${dataBanner()}<div class="pagehead"><div><h2>HQ command centre</h2><p>All regions · ${esc(o.year)}</p></div></div>
+  <div class="grid kpis">${kpi('Schools complete', `${fmt(n.done)}<small> / ${fmt(n.schools)}</small>`, pc(n.done, n.schools) + '%')}${kpi('Pupils tested', fmt(n.tested), 'of ' + fmt(n.target))}${kpi('Open flags', fmt(openF.length), bad + ' serious')}${kpi('Regions at risk', atRisk, 'projected after 4 Dec')}${kpi('Projected finish', n.projected === 'done' ? 'Done' : n.projected ? shortDate(n.projected) : '–', 'at current pace')}</div>
+  ${S.brief ? '<div style="margin-top:14px">' + briefCard() + '</div>' : ''}<div style="margin-top:14px">${forecastCard()}</div><div class="card" style="margin-top:14px"><h3>Regions</h3><div class="sub">Schools complete out of ${fmt(n.schools)}</div>${tiles(o.regions)}</div>
+  <div class="grid two" style="margin-top:14px"><div class="card"><h3>Flags to act on</h3><div class="sub">Newest checks across all regions</div>${flagList(openF.slice().sort((a, b) => (a.sev === 'bad' ? 0 : 1) - (b.sev === 'bad' ? 0 : 1)), { limit: 12 })}</div>
+  <div style="display:grid;gap:14px;align-content:start"><div class="card"><h3>Checks running</h3><div class="sub">Open flags by type</div>${types.map(([t, c]) => `<div style="display:flex;gap:10px;align-items:center;padding:6px 0;border-bottom:1px solid var(--line)"><span style="flex:1">${esc(FLAG_LABEL[t] || t)}</span>${bar(pc(c, mx))}<span class="num" style="width:34px;text-align:right">${c}</span></div>`).join('') || '<div class="empty">No flags.</div>'}</div>
+  <div class="card"><h3>Tests per day</h3><div class="sub">All regions</div>${barChart(n.series)}</div></div></div>`;
+}
+function viewRegionsHQ() {
+  const o = S.ov;
+  const rows = o.regions.map((r) => { const p = o.plans[r.region] || {}; return `<tr class="click" data-open="region:${esc(r.region)}"><td><b>${esc(title(r.region))}</b> <span class="pill mute">${esc(r.partner || '')}</span></td><td class="num r">${r.done}/${r.total}</td><td class="num r">${fmt(r.tested)}/${fmt(r.target)}</td><td>${bar(pc(r.tested, r.target))}</td><td class="num r">${r.pace}</td><td>${r.projected === 'done' ? 'Done' : r.projected ? shortDate(r.projected) : '–'}</td><td>${p.status === 'locked' ? `<span class="pill good">submitted</span> <span style="font-size:12px;color:var(--ink3)">${p.changes} changes${p.late_changes ? ', ' + p.late_changes + ' late' : ''}</span>` : '<span class="pill warn">not submitted</span>'}</td></tr>`; }).join('');
+  return `${dataBanner()}<div class="pagehead"><div><h2>Regions and plans</h2><p>Progress, pace and whether each coordinator has submitted the field plan</p></div></div><div class="card"><div class="tbl"><table><thead><tr><th>Region</th><th class="r">Schools</th><th class="r">Pupils</th><th>Progress</th><th class="r">Pace/day</th><th>Finish</th><th>Field plan</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
+}
+// ----- data explorer -----
+// ----- HQ admin -----
+function viewAdmin() {
+  const a = S.adm; if (!a) return '<div class="empty">Loading…</div>';
+  const sync = Object.entries(a.status.sync).map(([k, v]) => `<tr><td><b>${esc(k)}</b></td><td>${v.configured ? '<span class="pill good">connected</span>' : '<span class="pill bad">not set</span>'}</td><td class="num r">${fmt(v.records_last_pass)}</td><td>${v.in_progress ? `<span class="pill warn">syncing · page ${v.pages}</span>` : '<span class="pill good">idle</span>'}</td><td>${v.last_done ? new Date(v.last_done).toLocaleString('en-GB') : '–'}</td></tr>`).join('');
+  const codes = a.codes ? a.codes.codes.map((c) => `<tr><td>${esc(title(c.region))}</td><td>${esc(c.position)}</td><td>${esc(c.name)}</td><td class="num"><b>${esc(c.code)}</b></td></tr>`).join('') : '';
+  return `<div class="pagehead"><div><h2>Admin</h2><p>Data connections, access codes and form checks</p></div><button class="btn" data-act="refreshNow">Sync now</button></div>
+  <div class="card"><h3>Data connections</h3><div class="sub">Student tests, sampling and teacher forms are read from KoBo every 5 minutes in field hours</div><div class="tbl"><table><thead><tr><th>Form</th><th>Status</th><th class="r">Records read</th><th>State</th><th>Last complete</th></tr></thead><tbody>${sync}</tbody></table></div></div>
+  ${S.ov.unlisted?.length ? `<div class="banner" style="margin-top:14px"><b>Names in KoBo that are not in the staff roster:</b> ${S.ov.unlisted.map(esc).join(', ')}. Their tests still count, but they have no region or access code.</div>` : ''}
+  <div class="card" style="margin-top:14px"><h3>Email digests</h3><div class="sub">Morning brief 07:00 and evening check 17:30 (East Africa Time). ${a.rec?.sending?.domain_ready && a.rec?.sending?.enabled ? '<span class="pill good">sending is on</span>' : '<span class="pill warn">preview only: no sending domain connected yet</span>'}</div>
+  <div class="f"><label style="grid-column:1/-1">Recipients, one per line: email, name, role (hq, rc or arc), region, copy (write copy for copy-only), last column: paused, or a start date like 2026-10-16<textarea id="recText" placeholder="name@example.org, Hatibu Lugendo, rc, TANGA">${esc(Object.entries(a.rec?.recipients || {}).map(([e, r]) => [e, r.name, r.role, r.region || '', r.copy ? 'copy' : '', r.active === false ? 'paused' : (r.from || '')].join(', ')).join('\n'))}</textarea></label></div>
+  <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn sm" data-act="saveRec">Save recipients</button><button class="btn sm sec" data-act="prevMail" data-kind="morning" data-region="">Preview national morning</button><button class="btn sm sec" data-act="prevMail" data-kind="morning" data-region="TANGA">Preview Tanga morning</button><button class="btn sm sec" data-act="prevMail" data-kind="evening" data-region="">Preview evening</button><button class="btn sm sec" data-act="prevRem" data-region="TANGA">Preview notice reminder (Tanga)</button></div>
+  ${a.preview ? `<p style="margin:12px 0 4px"><b>${esc(a.preview.subject)}</b></p><iframe sandbox title="Email preview" style="width:100%;height:420px;border:1px solid var(--line);border-radius:8px;background:#fff" srcdoc="${esc(a.preview.html)}"></iframe>` : ''}</div>
+  <div class="card" style="margin-top:14px"><h3>Phone alerts</h3><div class="sub">${a.push?.ready ? '<span class="pill good">server ready</span>' : '<span class="pill warn">not set up</span>'} ${a.push ? a.push.devices + ' device(s) subscribed' : ''}${a.push && a.push.devices ? ' (' + Object.entries(a.push.by_role).map(([k, v]) => v + ' ' + k).join(', ') + ')' : ''}. Each person turns alerts on from the header button on their own phone. On iPhone the page must be on the home screen first.</div><button class="btn sm" data-act="pushTest">Send a test alert to HQ devices</button></div>\n  <div class="card" style="margin-top:14px"><h3>Access codes</h3><div class="sub">One code per person. Send each person their own code; do not share this list. HQ code stays with you.</div><div class="tbl"><table><thead><tr><th>Region</th><th>Role</th><th>Name</th><th>Code</th></tr></thead><tbody>${codes}</tbody></table></div></div>`;
+}
+
+
+// ---------- reusable table: search, filter, sort, click-to-open ----------
+S.tbl = {};
+function dataTable(id, cols, rows, opts = {}) {
+  const T = (S.tbl[id] ||= { q: '', sort: opts.sort || null, dir: opts.dir ?? -1, f: {} });
+  const filters = opts.filters || [];
+  const q = T.q.toLowerCase();
+  let list = rows.filter((r) => (!q || cols.some((c) => c.search && String(c.search(r) ?? '').toLowerCase().includes(q))) && filters.every((f) => !T.f[f.k] || String(f.get(r)) === T.f[f.k]));
+  const sc = cols.find((c) => c.k === T.sort);
+  if (sc) list = list.slice().sort((x, y) => { const a = sc.val(x), b = sc.val(y); if (a == null && b == null) return 0; if (a == null) return 1; if (b == null) return -1; return (typeof a === 'string' ? a.localeCompare(b) : a - b) * T.dir; });
+  const tool = `<div class="toolbar"><input data-tq="${id}" type="search" placeholder="${esc(opts.placeholder || 'Search')}" value="${esc(T.q)}" aria-label="Search">${filters.map((f) => `<select data-tf="${id}:${f.k}" aria-label="${esc(f.label)}"><option value="">${esc(f.label)}: all</option>${f.options(rows).map((o) => `<option value="${esc(o[0])}" ${T.f[f.k] === String(o[0]) ? 'selected' : ''}>${esc(o[1])}</option>`).join('')}</select>`).join('')}<span class="count">${list.length} of ${rows.length}</span></div>`;
+  const head = cols.map((c) => `<th class="${c.cls || ''} ${c.small ? 'hide-s' : ''} ${c.val ? 'sortable' : ''} ${T.sort === c.k ? 'sorted' : ''}" ${c.val ? `data-ts="${id}:${c.k}"` : ''}>${c.label}${T.sort === c.k ? (T.dir < 0 ? ' ▼' : ' ▲') : ''}</th>`).join('');
+  const body = list.slice(0, opts.limit || 300).map((r) => `<tr class="${opts.open && opts.open(r) ? 'click' : ''}" ${opts.open && opts.open(r) ? `data-open="${esc(opts.open(r))}"` : ''}>${cols.map((c) => `<td class="${c.cls || ''} ${c.small ? 'hide-s' : ''}">${c.html(r)}</td>`).join('')}</tr>`).join('');
+  return `${tool}<div class="tbl dt-wrap"><table class="dt"><thead><tr>${head}</tr></thead><tbody>${body || `<tr><td colspan="${cols.length}" class="empty">Nothing matches. Clear the search or filters.</td></tr>`}</tbody></table></div>`;
+}
+const chip = (txt, cls) => `<span class="chip c-${cls}">${txt}</span>`;
+const qChip = (v) => (v == null ? chip('–', 'mute') : chip(v, v >= 90 ? 'good' : v >= 75 ? 'warn' : 'bad'));
+function speedChip(v, g) {
+  if (v == null) return chip('–', 'mute');
+  const b = S.ov?.bands?.[g]; if (!b) return chip(v, 'teal');
+  return chip(v, v < b.p3 || v > b.p99 ? 'bad' : v < b.p10 || v > b.p90 ? 'warn' : 'good');
+}
+const partnerOf = (r) => Object.entries(S.cfg.partners).find(([, rs]) => rs.includes(r))?.[0] || '';
+const roleLabel = (a) => (a.position || (a.role === 'unlisted' ? 'Not in roster' : a.role));
+
+// ---------- links and the detail panel ----------
+const isVol = () => S.who && S.who.role === 'volunteer';
+const lk = (kind, id, text) => (kind === 'person' && isVol() && S.ov?.mine?.me?.name !== id ? esc(text) : `<a href="#" class="lk" data-open="${esc(kind)}:${esc(id)}">${esc(text)}</a>`);
+const schoolsAll = () => (S.who?.role === 'hq' ? S.allSchools || [] : S.ov?.mine?.schools || []);
+const adminsAll = () => (S.who?.role === 'hq' ? S.ov.admins : S.ov?.mine?.admins || (S.ov?.mine?.me ? [S.ov.mine.me] : []));
+const flagsAll = () => (S.who?.role === 'hq' ? S.ov.flags : S.ov?.mine?.flags || []);
+const workOf = (name) => (S.ov?.work || S.ov?.mine?.work_all || {})[name] || (S.ov?.mine?.me?.name === name ? S.ov.mine.work : []) || [];
+S.stack = []; S.cur = null;
+
+function openDetail(spec, push = true) {
+  if (push && S.cur) S.stack.push(S.cur);
+  S.cur = spec;
+  const [kind, ...rest] = spec.split(':'); const id = rest.join(':');
+  const body = kind === 'person' ? personCard(id) : kind === 'school' ? schoolCard(id) : kind === 'region' ? regionCard(id) : '<p>Not found.</p>';
+  $('#drawerBody').innerHTML = `<div class="dnav">${S.stack.length ? '<button class="btn sm sec" data-act="dBack">‹ Back</button>' : ''}<button class="btn sm sec" data-act="dClose" style="margin-left:auto">Close ✕</button></div>${body}`;
+  $('#drawer').hidden = false; $('#drawerBody').scrollTop = 0;
+}
+function closeDetail() { $('#drawer').hidden = true; S.cur = null; S.stack = []; }
+
+function personCard(name) {
+  const a = adminsAll().find((x) => x.name === name);
+  if (!a) return `<h2>${esc(name)}</h2><p class="m">No tests recorded for this year yet.</p>`;
+  const b = S.ov.bands, flags = flagsAll().filter((f) => f.admin === name && isOpen(f));
+  const speed = [1, 2, 3].map((g) => { const v = a.by_grade[g]; const span = b[g].p99 * 1.25; return `<div class="m" style="margin-top:8px">Grade ${g}: ${v ?? '–'} min average ${speedChip(v, g)} · normal ${b[g].p3.toFixed(1)}–${b[g].p99.toFixed(0)} min</div><div class="band"><i style="left:${(b[g].p3 / span) * 100}%;width:${((b[g].p99 - b[g].p3) / span) * 100}%"></i>${v != null ? `<b style="left:${Math.min(100, (v / span) * 100)}%"></b>` : ''}</div>`; }).join('');
+  const rows = workOf(name).slice(0, 25).map((w) => `<tr><td>${shortDate(w[0])}</td><td>${lk('school', w[1], schoolNameOf(w[1]))}</td><td class="r">${w[2]}</td><td class="r num">${w[3]}</td><td class="r num">${w[4] ?? '–'}</td></tr>`).join('');
+  return `<h2>${esc(a.name)}</h2><p class="m">${esc(roleLabel(a))}${a.region ? ' · ' + lk('region', a.region, title(a.region)) + ' · ' + esc(partnerOf(a.region)) : ''}</p>
+  <div class="grid kpis" style="margin-top:12px">${kpi('Pupils tested', fmt(a.tested))}${kpi('Avg test time', (a.avg_min ?? '–') + ' min')}${kpi('Quality', a.quality ?? '–', 'out of 100')}${kpi('Days · schools', a.days + ' · ' + a.schools)}</div>
+  <h3 style="margin:16px 0 4px">Test speed</h3>${speed}
+  <h3 style="margin:16px 0 4px">What counts against the score</h3><div class="m">Too fast <b>${a.fast}</b> · too slow <b>${a.slow}</b> · outside school hours <b>${a.late}</b> · not on sampling list <b>${a.not_list}</b> · far from school <b>${a.far}</b></div>
+  <h3 style="margin:16px 0 4px">Open queries (${flags.length})</h3>${flags.length ? flagList(flags, { limit: 20, names: false }) : '<div class="note">No open queries.</div>'}
+  <h3 style="margin:16px 0 4px">Recent work</h3><div class="tbl"><table><thead><tr><th>Day</th><th>School</th><th class="r">Gr</th><th class="r">Tested</th><th class="r">Avg min</th></tr></thead><tbody>${rows || '<tr><td colspan="5" class="empty">No work recorded.</td></tr>'}</tbody></table></div>`;
+}
+const schoolNameOf = (id) => schoolsAll().find((x) => x.id === id)?.name || S.plan?.schools?.find((x) => x.id === id)?.name || id;
+function schoolCard(id) {
+  const s = schoolsAll().find((x) => x.id === id);
+  if (!s) return `<h2>School</h2><p class="m">Details are not available for ${esc(id)}.</p>`;
+  const flags = flagsAll().filter((f) => f.school === id && isOpen(f));
+  const rows = [1, 2, 3].map((g) => `<tr><td>Grade ${g}</td><td class="r num">${s.g[g].att ?? '–'}</td><td class="r num">${s.g[g].target}</td><td class="r num">${s.g[g].av}</td><td>${s.g[g].done ? '<span class="pill good">complete</span>' : s.g[g].n ? '<span class="pill warn">in progress</span>' : '<span class="pill mute">not started</span>'}</td></tr>`).join('');
+  return `<h2>${esc(s.name)}</h2><p class="m">${s.region ? lk('region', s.region, title(s.region)) + ' · ' : ''}${esc(title(s.lga))} LGA · ${esc(title(s.ward || ''))} ward · ${esc(s.id)}</p>
+  <p style="margin:8px 0">${statusPill(s)} <span class="pill mute">${s.mne === 'M&E' ? 'M&amp;E (team visit)' : 'Test only (one person)'}</span> <span class="pill mute">${esc(s.arm)}</span></p>
+  <div class="grid kpis">${kpi('Visit', s.first ? shortDate(s.first) + (s.last && s.last !== s.first ? ' – ' + shortDate(s.last) : '') : 'not yet')}${kpi('Team size', s.max_team || '–')}${kpi('Teacher forms', s.teacher_forms)}${kpi('Test admins', s.admins.length)}</div>
+  <h3 style="margin:16px 0 4px">Pupils by grade</h3><div class="tbl"><table><thead><tr><th>Grade</th><th class="r">Attended</th><th class="r">Sample</th><th class="r">Tested</th><th>Status</th></tr></thead><tbody>${rows}</tbody></table></div>
+  <h3 style="margin:16px 0 4px">Who tested here</h3><p>${s.admins.length ? s.admins.map((n) => lk('person', n, n)).join(' · ') : '<span class="m">Nobody yet.</span>'}</p>
+  <h3 style="margin:16px 0 4px">Open queries (${flags.length})</h3>${flags.length ? flagList(flags, { limit: 20 }) : '<div class="note">No open queries.</div>'}`;
+}
+function regionCard(r) {
+  const R = (S.ov.regions || []).find((x) => x.region === r); if (!R) return `<h2>${esc(title(r))}</h2>`;
+  const schools = schoolsAll().filter((s) => s.region === r || !s.region).slice().sort((a, b) => a.done - b.done || a.name.localeCompare(b.name));
+  const p = S.ov.plans?.[r];
+  return `<h2>${esc(title(r))}</h2><p class="m">${esc(partnerOf(r) || 'Training region')}</p>
+  <div class="grid kpis" style="margin-top:12px">${kpi('Schools complete', `${R.done}<small> / ${R.total}</small>`)}${kpi('Pupils tested', fmt(R.tested), 'of ' + fmt(R.target))}${kpi('Pace', R.pace + ' / day')}${kpi('Projected finish', R.projected === 'done' ? 'Done' : R.projected ? shortDate(R.projected) : '–')}</div>
+  ${p ? `<p style="margin-top:10px">Field plan: ${p.status === 'locked' ? `<span class="pill good">submitted</span> ${p.changes} change(s), ${p.late_changes} late` : '<span class="pill warn">not submitted</span>'}</p>` : ''}
+  <h3 style="margin:16px 0 4px">Tests per day</h3>${barChart(R.series)}
+  <h3 style="margin:16px 0 4px">Schools</h3><div class="tbl"><table><thead><tr><th>School</th><th>LGA</th><th>Status</th></tr></thead><tbody>${schools.map((s) => `<tr><td>${lk('school', s.id, s.name)}</td><td>${esc(title(s.lga))}</td><td>${statusPill(s)}</td></tr>`).join('') || '<tr><td colspan="3" class="empty">Open the Data explorer to load schools.</td></tr>'}</tbody></table></div>`;
+}
+
+function flagDetail(f) {
+  const s = SCHOOL_INFO(f.school);
+  const recs = (f.recs || []).map((r) => `<tr><td class="num">${esc(r[0] || '–')}</td><td class="r num">${esc(r[1] === '' ? '–' : r[1])}</td><td class="r num">${r[2] === '' ? '–' : esc(r[2])}</td><td class="r num">${esc(r[3] || '–')}</td><td class="r num">${esc(r[4] === '' || r[4] == null ? '–' : r[4])}</td><td class="r num">${esc(r[5] === '' ? '–' : r[5])}</td></tr>`).join('');
+  return `<div class="fdetail"><table class="kv"><tbody>
+  <tr><th>Region</th><td>${f.region ? lk('region', f.region, title(f.region)) : '–'}</td><th>LGA</th><td>${esc(title(f.lga || s.lga || ''))}</td></tr>
+  <tr><th>Ward</th><td>${esc(title(f.ward || s.ward || ''))}</td><th>School</th><td>${lk('school', f.school, f.school_name || s.name || f.school)} <span class="m">(${esc(f.school)})</span></td></tr>
+  <tr><th>Grade</th><td>${f.grade ? 'Grade ' + f.grade : 'All grades'}</td><th>Test admin</th><td>${f.admin ? lk('person', f.admin, f.admin) : '–'}</td></tr>
+  <tr><th>Test date</th><td>${f.date ? dayName(f.date) : '–'}</td><th>Normal</th><td>${esc(f.normal || '–')}</td></tr></tbody></table>
+  ${recs ? `<div class="tbl"><table class="dt"><thead><tr><th>Pupil ID</th><th class="r">Pupil no.</th><th class="r">Test min</th><th class="r">Started</th><th class="r">Test set</th><th class="r">KoBo ID</th></tr></thead><tbody>${recs}</tbody></table></div>` : '<div class="note">Pupil-level detail is shown for newly submitted data. Older records list only the school, grade, admin and date.</div>'}
+  <div class="note" style="margin-top:8px">To find these in KoBo: open the student form's data table, filter on <b>school</b> ${esc(f.school)}, <b>grade</b> ${esc(f.grade || '')}, <b>date</b> ${esc(f.date || '')}, then look up the Pupil ID (stuid) or the KoBo ID (_id). Pupil names are never shown here.</div></div>`;
+}
+const SCHOOL_INFO = (id) => schoolsAll().find((x) => x.id === id) || {};
+
+// ---------- People (HQ) and My team (coordinator) ----------
+function peopleTable(rows, hq) {
+  const cols = [
+    { k: 'name', label: 'Name', val: (a) => a.name, search: (a) => a.name, html: (a) => `<b>${lk('person', a.name, a.name)}</b>` },
+    ...(hq ? [{ k: 'region', label: 'Region', val: (a) => a.region || '', search: (a) => a.region, html: (a) => (a.region ? lk('region', a.region, title(a.region)) : '–') }] : []),
+    { k: 'role', label: 'Role', val: (a) => roleLabel(a), search: (a) => roleLabel(a), html: (a) => `<span class="chip c-${a.role === 'rc' ? 'navy' : a.role === 'arc' ? 'teal' : a.role === 'unlisted' ? 'mute' : 'gold'}">${esc(roleLabel(a))}</span>` },
+    { k: 'tested', label: 'Tested', cls: 'r', val: (a) => a.tested, html: (a) => `<span class="num">${fmt(a.tested)}</span>` },
+    { k: 'g1', label: 'Gr 1 min', cls: 'r', small: true, val: (a) => a.by_grade[1], html: (a) => speedChip(a.by_grade[1], 1) },
+    { k: 'g2', label: 'Gr 2 min', cls: 'r', small: true, val: (a) => a.by_grade[2], html: (a) => speedChip(a.by_grade[2], 2) },
+    { k: 'g3', label: 'Gr 3 min', cls: 'r', small: true, val: (a) => a.by_grade[3], html: (a) => speedChip(a.by_grade[3], 3) },
+    { k: 'fast', label: 'Too fast', cls: 'r', val: (a) => a.fast_share ?? 0, html: (a) => chip((a.fast_share ?? 0) + '%', (a.fast_share ?? 0) >= 8 ? 'bad' : (a.fast_share ?? 0) >= 3 ? 'warn' : 'good') },
+    { k: 'notlist', label: 'Not on list', cls: 'r', small: true, val: (a) => a.not_list, html: (a) => chip(a.not_list, a.not_list >= 10 ? 'bad' : a.not_list ? 'warn' : 'good') },
+    { k: 'late', label: 'After hours', cls: 'r', small: true, val: (a) => a.late, html: (a) => chip(a.late, a.late >= 10 ? 'bad' : a.late ? 'warn' : 'good') },
+    { k: 'days', label: 'Days', cls: 'r', small: true, val: (a) => a.days, html: (a) => `<span class="num">${a.days}</span>` },
+    { k: 'quality', label: 'Quality', cls: 'r', val: (a) => a.quality, html: (a) => qChip(a.quality) },
+  ];
+  const filters = [
+    ...(hq ? [{ k: 'region', label: 'Region', get: (a) => a.region || '', options: (r) => [...new Set(r.map((a) => a.region).filter(Boolean))].sort().map((x) => [x, title(x)]) }] : []),
+    { k: 'role', label: 'Role', get: (a) => a.role, options: () => [['rc', 'Regional coordinator'], ['arc', 'Assistant coordinator'], ['volunteer', 'Volunteer'], ['unlisted', 'Not in roster']] },
+    { k: 'qb', label: 'Quality', get: (a) => (a.quality == null ? 'none' : a.quality >= 90 ? 'good' : a.quality >= 75 ? 'mid' : 'low'), options: () => [['good', '90 and above'], ['mid', '75 to 89'], ['low', 'below 75'], ['none', 'no score yet']] },
+  ];
+  return dataTable(hq ? 'people' : 'team', cols, rows, { filters, sort: 'quality', dir: 1, open: (a) => 'person:' + a.name, placeholder: 'Search a name or region' });
+}
+function viewPeopleHQ() {
+  return `${dataBanner()}<div class="pagehead"><div><h2>Coordinators and volunteers</h2><p>Click a name for the full card. Click a column to sort. Chips are coloured against the normal range for each grade.</p></div></div><div class="card">${peopleTable(S.ov.admins, true)}<div class="legend"><span><i style="background:var(--good)"></i>normal</span><span><i style="background:var(--gold)"></i>borderline</span><span><i style="background:var(--bad)"></i>outside the normal range</span><span>Normal test time: ${bandsText()}</span></div></div>`;
+}
+function viewTeam() {
+  return `${dataBanner()}<div class="pagehead"><div><h2>My team</h2><p>Pace, test speed and quality for everyone in ${esc(title(S.who.region))}. Click a name for their card.</p></div></div><div class="card">${peopleTable(S.ov.mine.admins, false)}</div>`;
+}
+
+// ---------- Data explorer (schools) ----------
+function schoolTable(rows, hq) {
+  const t = (s) => s.g[1].av + s.g[2].av + s.g[3].av, tg = (s) => s.g[1].target + s.g[2].target + s.g[3].target;
+  const cols = [
+    { k: 'name', label: 'School', val: (s) => s.name, search: (s) => s.name + ' ' + s.id, html: (s) => `<b>${lk('school', s.id, s.name)}</b>` },
+    ...(hq ? [{ k: 'region', label: 'Region', val: (s) => s.region, search: (s) => s.region, html: (s) => lk('region', s.region, title(s.region)) }] : []),
+    { k: 'lga', label: 'LGA', val: (s) => s.lga, search: (s) => s.lga + ' ' + (s.ward || ''), small: true, html: (s) => esc(title(s.lga)) },
+    { k: 'type', label: 'Type', val: (s) => s.mne, small: true, html: (s) => chip(s.mne === 'M&E' ? 'M&amp;E' : 'Test only', s.mne === 'M&E' ? 'teal' : 'mute') },
+    { k: 'att', label: 'Attended 1/2/3', cls: 'r', small: true, val: (s) => s.g[1].att, html: (s) => `<span class="num">${s.g[1].att ?? '–'}/${s.g[2].att ?? '–'}/${s.g[3].att ?? '–'}</span>` },
+    ...[1, 2, 3].map((g) => ({ k: 'g' + g, label: 'Gr ' + g, cls: 'r', small: true, val: (s) => pc(s.g[g].av, s.g[g].target), html: (s) => chip(`${s.g[g].av}/${s.g[g].target}`, s.g[g].done ? 'good' : s.g[g].av ? 'warn' : 'mute') })),
+    { k: 'prog', label: 'Progress', val: (s) => pc(t(s), tg(s)), html: (s) => `<div style="min-width:90px">${bar(pc(t(s), tg(s)))}</div>` },
+    { k: 'team', label: 'Team', cls: 'r', small: true, val: (s) => s.max_team, html: (s) => `<span class="num">${s.max_team || '–'}</span>` },
+    { k: 'tf', label: 'Teacher forms', cls: 'r', small: true, val: (s) => s.teacher_forms, html: (s) => `<span class="num">${s.teacher_forms}</span>` },
+    { k: 'visit', label: 'Visit', small: true, val: (s) => s.first || '', html: (s) => (s.first ? shortDate(s.first) + (s.last && s.last !== s.first ? ' – ' + shortDate(s.last) : '') : '–') },
+    { k: 'status', label: 'Status', val: (s) => (s.done ? 2 : s.started ? 1 : 0), html: (s) => statusPill(s) },
+  ];
+  const filters = [
+    ...(hq ? [{ k: 'region', label: 'Region', get: (s) => s.region, options: (r) => [...new Set(r.map((s) => s.region))].sort().map((x) => [x, title(x)]) }] : []),
+    { k: 'lga', label: 'LGA', get: (s) => s.lga, options: (r) => [...new Set(r.map((s) => s.lga))].sort().map((x) => [x, title(x)]) },
+    { k: 'type', label: 'Type', get: (s) => s.mne, options: () => [['M&E', 'M&E (team)'], ['No-M&E', 'Test only']] },
+    { k: 'status', label: 'Status', get: (s) => (s.done ? 'done' : s.started ? 'prog' : 'new'), options: () => [['done', 'Complete'], ['prog', 'In progress'], ['new', 'Not started']] },
+  ];
+  return dataTable(hq ? 'schools-hq' : 'schools', cols, rows, { filters, sort: 'name', dir: 1, open: (s) => 'school:' + s.id, placeholder: 'Search a school, ward or LGA', limit: 400 });
+}
+function viewExplore() {
+  const o = S.ov; if (!o || o.status === 'waiting') return waiting();
+  const hq = S.who.role === 'hq';
+  const rows = hq ? S.allSchools || [] : o.mine.schools;
+  return `${dataBanner()}<div class="pagehead"><div><h2>Data explorer</h2><p>Every school with attendance, pupils tested by grade, team size and teacher forms. Click a school for its card.</p></div></div><div class="card">${hq && !S.allSchools ? '<div class="empty">Loading schools…</div>' : schoolTable(rows, hq)}</div>`;
+}
+
+// ---------- Queries (all) ----------
+function viewAllQueries() {
+  const hq = S.who.role === 'hq';
+  const all = flagsAll();
+  const F = (S.qf ||= { q: '', type: '', sev: '', region: '', st: 'open' });
+  const list = all.filter((f) => (F.st === 'all' || (F.st === 'resolved' ? !isOpen(f) : isOpen(f))) && (!F.type || f.type === F.type) && (!F.sev || f.sev === F.sev) && (!F.region || f.region === F.region) && (!F.q || [f.school_name, f.school, f.admin, f.lga, f.ward, f.text].join(' ').toLowerCase().includes(F.q.toLowerCase())));
+  const types = [...new Set(all.map((f) => f.type))];
+  const sel = (key, label, opts) => `<select data-qf="${key}" aria-label="${label}"><option value="">${label}: all</option>${opts.map(([v, t]) => `<option value="${esc(v)}" ${F[key] === v ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select>`;
+  return `${dataBanner()}<div class="pagehead"><div><h2>Queries</h2><p>Automatic checks on submitted tests. Open a query for the exact region, school, pupils and times so the person involved can find the records.</p></div></div><div class="card"><div class="toolbar"><input data-qf="q" type="search" placeholder="Search school, person, LGA" value="${esc(F.q)}">${sel('type', 'Check', types.map((t) => [t, FLAG_LABEL[t] || t]))}${sel('sev', 'Severity', [['bad', 'Serious'], ['warn', 'Review']])}${hq ? sel('region', 'Region', S.cfg.regions.map((r) => [r, title(r)])) : ''}<select data-qf="st"><option value="open" ${F.st === 'open' ? 'selected' : ''}>Open</option><option value="resolved" ${F.st === 'resolved' ? 'selected' : ''}>Resolved</option><option value="all" ${F.st === 'all' ? 'selected' : ''}>All</option></select><span class="count">${list.length} shown</span></div>${flagListFull(list, 60)}</div>`;
+}
+function flagListFull(list, limit) {
+  const open = list.filter(() => true);
+  if (!open.length) return '<div class="empty">No queries match.</div>';
+  return flagList(open.map((f) => ({ ...f, q: f.q && f.q.status === 'resolved' ? { ...f.q, status: 'open' } : f.q })), { limit });
+}
+
+// ---------- global search ----------
+function searchItems() {
+  const items = [];
+  if (!S.who) return items;
+  for (const r of S.cfg.regions) items.push({ kind: 'region', id: r, label: title(r), sub: 'Region' });
+  for (const s of schoolsAll()) items.push({ kind: 'school', id: s.id, label: s.name, sub: `School · ${title(s.lga)}${s.region ? ', ' + title(s.region) : ''}` });
+  if (!isVol()) for (const a of adminsAll()) items.push({ kind: 'person', id: a.name, label: a.name, sub: `${roleLabel(a)}${a.region ? ' · ' + title(a.region) : ''}` });
+  return items;
+}
+function doSearch(q) {
+  const box = $('#gsr'); q = q.trim().toLowerCase();
+  if (q.length < 2) { box.hidden = true; return; }
+  const res = searchItems().filter((i) => i.label.toLowerCase().includes(q) || i.id.toLowerCase().includes(q)).slice(0, 8);
+  box.innerHTML = res.length ? res.map((i) => `<a href="#" class="gsi" data-open="${esc(i.kind)}:${esc(i.id)}"><b>${esc(i.label)}</b><span>${esc(i.sub)}</span></a>`).join('') : '<div class="gsi"><span>No match</span></div>';
+  box.hidden = false;
+}
+
+// ---------- shell ----------
+const TABS = {
+  public: [['progress', 'Progress'], ['compare', 'Compare']],
+  volunteer: [['day', 'My day'], ['work', 'My work'], ['queries', 'My queries'], ['stats', 'My stats'], ['compare', 'Compare']],
+  rc: [['region', 'Region'], ['plan', 'Plan & calendar'], ['team', 'My team'], ['allq', 'Queries'], ['compare', 'Compare'], ['explore', 'Data explorer']],
+  hq: [['hq', 'HQ'], ['regions', 'Regions & plans'], ['plan', 'Plan & calendar'], ['people', 'People'], ['allq', 'Queries'], ['compare', 'Compare'], ['explore', 'Data explorer'], ['admin', 'Admin']],
+};
+const roleKey = () => (!S.who ? 'public' : S.who.role === 'arc' ? 'rc' : S.who.role);
+const VIEWS = { progress: viewProgress, compare: viewCompare, day: viewDay, work: viewWork, queries: viewQueries, stats: viewStats, region: viewRegion, plan: viewPlan, team: viewTeam, explore: viewExplore, hq: viewHQ, regions: viewRegionsHQ, people: viewPeopleHQ, admin: viewAdmin, allq: viewAllQueries };
+
+function render() {
+  const tabs = TABS[roleKey()];
+  if (!tabs.find((t) => t[0] === S.tab)) S.tab = tabs[0][0];
+  $('#nav').innerHTML = tabs.map(([k, t]) => `<button role="tab" aria-selected="${k === S.tab}" data-tab="${k}">${t}</button>`).join('');
+  $('#who').innerHTML = S.who ? `<span>${esc(S.who.name)}${S.who.position ? ' · ' + esc(S.who.position) : ''}</span><button class="ghost" data-act="alerts" id="alertsBtn">${alertsLabel()}</button><button class="ghost" data-act="logout">Sign out</button>` : '<button class="ghost" data-act="showLogin">Sign in</button>';
+  $('#app').innerHTML = VIEWS[S.tab]();
+  $('#gswrap').hidden = !S.who;
+}
+
+// ---------- phone alerts ----------
+const pushSupported = () => 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+function alertsLabel() {
+  if (!pushSupported()) return 'Alerts: not on this device';
+  if (Notification.permission === 'denied') return 'Alerts blocked';
+  return S.alertsOn ? 'Alerts on' : 'Turn on alerts';
+}
+const keyBytes = (b64) => { const p = '='.repeat((4 - (b64.length % 4)) % 4); const raw = atob((b64 + p).replace(/-/g, '+').replace(/_/g, '/')); return Uint8Array.from([...raw].map((c) => c.charCodeAt(0))); };
+async function checkAlerts() {
+  try { if (!pushSupported()) return; const reg = await navigator.serviceWorker.ready; S.alertsOn = Boolean(await reg.pushManager.getSubscription()) && Notification.permission === 'granted'; const b = document.getElementById('alertsBtn'); if (b) b.textContent = alertsLabel(); } catch {}
+}
+async function toggleAlerts() {
+  if (!pushSupported()) { alert('Alerts need a newer browser. On iPhone, first add this page to the home screen (Share, then Add to Home Screen), then open it from there.'); return; }
+  const reg = await navigator.serviceWorker.ready;
+  const existing = await reg.pushManager.getSubscription();
+  if (existing && S.alertsOn) { await api('/api/push/unsubscribe', { method: 'POST', body: { endpoint: existing.endpoint } }); await existing.unsubscribe(); S.alertsOn = false; render(); return; }
+  const cfg = await api('/api/push/config');
+  if (!cfg.ready) { alert('Alerts are not switched on at the server yet.'); return; }
+  const perm = await Notification.requestPermission();
+  if (perm !== 'granted') { render(); return; }
+  const sub = existing || (await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: keyBytes(cfg.public_key) }));
+  await api('/api/push/subscribe', { method: 'POST', body: { subscription: sub.toJSON() } });
+  S.alertsOn = true; render();
+}
+
+function loginScreen(msg) {
+  $('#nav').innerHTML = ''; $('#who').innerHTML = '';
+  $('#app').innerHTML = `<div class="login"><img src="/learnimpact-logo.png" alt="LearnImpact" style="filter:none"><h2 style="margin-top:14px">Karibu · Welcome</h2><p style="color:var(--ink2)">Enter your access code. Your coordinator or HQ gives you one.</p><input id="code" maxlength="12" autocomplete="off" autocapitalize="characters" aria-label="Access code"><button class="btn" data-act="login" style="width:100%">Sign in</button>${msg ? `<div class="banner bad">${esc(msg)}</div>` : ''}<p style="margin-top:20px"><button class="btn sec sm" data-act="goPublic">See public progress</button></p></div>`;
+  $('#code')?.focus();
+}
+
+async function loadData() {
+  const q = S.year ? '?year=' + S.year : '';
+  if (!S.who) { S.pub = await api('/api/public' + q); S.cmp = await api('/api/public' + q).then(() => null).catch(() => null); S.cmp = publicCompare(S.pub); return; }
+  S.ov = await api('/api/overview' + q);
+  S.pub = S.ov;
+  S.cmp = await api('/api/compare' + q);
+  S.pred = S.who.role === 'volunteer' ? null : await api('/api/predict').catch(() => null);
+  S.brief = S.who.role === 'volunteer' ? null : await api('/api/brief').catch(() => null);
+  if (S.who.role === 'hq' && !S.allSchools) S.allSchools = await loadAllSchools();
+  if (S.tab === 'plan' || S.who.role === 'volunteer') await loadPlan();
+  if (S.tab === 'admin') await loadAdmin();
+}
+function publicCompare(pub) {
+  if (!pub || !pub.regions) return { status: 'waiting' };
+  return { regions: pub.regions.map((r) => ({ ...r, tested_pct: pc(r.tested, r.target) })).sort((a, b) => b.tested_pct - a.tested_pct), people: [] };
+}
+async function loadAllSchools() {
+  const yq = S.year ? '&year=' + S.year : '';
+  // HQ: pull each region's school rows once, through the plan endpoint's school list plus overview data
+  const out = [];
+  for (const r of S.cfg.regions) { try { const x = await api('/api/region?region=' + r + yq); out.push(...x.schools); } catch {} }
+  return out;
+}
+async function loadPlan(region) {
+  const r = region || S.planRegion || S.who.region || S.cfg.regions[0];
+  S.planRegion = r;
+  S.planErr = null;
+  try { S.plan = await api('/api/plan?region=' + r); } catch (e) { S.plan = null; S.planErr = e.message; }
+}
+async function loadAdmin() {
+  const [status, codes, rec] = await Promise.all([api('/api/admin/status'), api('/api/admin/codes').catch(() => null), api('/api/admin/recipients').catch(() => null)]);
+  const push = await api('/api/admin/push-status').catch(() => null);
+  S.adm = { status, codes, rec, push, preview: S.adm?.preview || null };
+}
+
+async function go() {
+  if (!S.tab && location.hash && !location.hash.includes(':')) S.tab = location.hash.slice(1);
+  try { await loadData(); render(); if (location.hash.includes(':')) { try { openDetail(decodeURIComponent(location.hash.slice(1))); } catch {} } } catch (e) { if (e.status === 401 && S.code) { S.code = null; S.who = null; store.set('kf_code', null); loginScreen('Your code was not recognised. Try again.'); } else $('#app').innerHTML = `<div class="banner bad">${esc(e.message)}</div>`; }
+}
+
+document.addEventListener('click', async (e) => {
+  const op = e.target.closest('[data-open]');
+  if (op && !e.target.closest('summary,button,select,input,textarea')) { e.preventDefault(); $('#gsr') && ($('#gsr').hidden = true); openDetail(op.dataset.open); return; }
+  const th = e.target.closest('[data-ts]');
+  if (th) { const [id, k] = th.dataset.ts.split(':'); const T = S.tbl[id]; if (T.sort === k) T.dir = -T.dir; else { T.sort = k; T.dir = 1; } render(); return; }
+  const t = e.target.closest('[data-tab],[data-act]'); if (!t) return;
+  if (t.dataset.tab) { S.tab = t.dataset.tab; S.selVisit = null; if (S.tab === 'plan') { await loadPlan(); } if (S.tab === 'admin') await loadAdmin(); render(); return; }
+  const a = t.dataset.act;
+  try {
+    if (a === 'login') { const c = $('#code').value.trim().toUpperCase(); if (!c) return; S.code = c; try { const r = await api('/api/login'); S.who = r.who; store.set('kf_code', c); S.tab = null; await go(); } catch { S.code = null; loginScreen('That code was not recognised.'); } }
+    else if (a === 'logout') { S.code = null; S.who = null; S.ov = null; S.plan = null; S.draft = null; store.set('kf_code', null); S.tab = null; loginScreen(); }
+    else if (a === 'showLogin') loginScreen();
+    else if (a === 'alerts') await toggleAlerts();
+    else if (a === 'pushTest') { const r = await api('/api/admin/push-test', { method: 'POST', body: { role: 'hq' } }); alert(r.skipped || `Sent to ${r.sent} device(s)` + (r.errors?.length ? ', errors: ' + r.errors.join(', ') : '')); }
+    else if (a === 'prevRem') { S.adm.preview = await api('/api/admin/reminder-preview?region=' + t.dataset.region); render(); }
+    else if (a === 'retryPlan') { await loadPlan(); render(); }
+    else if (a === 'dClose') closeDetail();
+    else if (a === 'dBack') { const prev = S.stack.pop(); openDetail(prev, false); }
+    else if (a === 'goPublic') { S.tab = null; await go(); }
+    else if (a === 'selVisit') { S.selVisit = t.dataset.id || null; render(); if (S.selVisit) $('#chDate')?.scrollIntoView({ block: 'center' }); }
+    else if (a === 'notice') { S.plan = await api('/api/plan?region=' + S.planRegion, { method: 'POST', body: { action: 'notice', visit_id: t.dataset.id, kind: t.dataset.kind } }).then(async () => api('/api/plan?region=' + S.planRegion)); render(); }
+    else if (a === 'applyChange') {
+      try { await api('/api/plan?region=' + S.planRegion, { method: 'POST', body: { action: 'change', visit_id: t.dataset.id, new_date: $('#chDate').value, new_start: $('#chStart').value, reason_code: $('#chReason').value, note: $('#chNote').value } }); S.selVisit = null; await loadPlan(); render(); }
+      catch (er) { const b = $('#chErr'); b.hidden = false; b.textContent = er.message; }
+    }
+    else if (a === 'resuggest') { S.draft = suggest(S.plan.schools, S.planRegion); render(); }
+    else if (a === 'saveDraft' || a === 'submitPlan') {
+      const visits = S.plan.schools.map((s) => ({ school: s.id, date: document.querySelector(`[data-pl="date"][data-s="${s.id}"]`)?.value || null, start: document.querySelector(`[data-pl="start"][data-s="${s.id}"]`)?.value || '08:00', team: [] }));
+      S.draft = visits;
+      try { await api('/api/plan?region=' + S.planRegion, { method: 'POST', body: { action: a === 'submitPlan' ? 'submit' : 'draft', visits } }); if (a === 'submitPlan') S.draft = null; await loadPlan(); render(); }
+      catch (er) { const b = $('#plErr'); b.hidden = false; b.innerHTML = esc(er.message) + (er.data?.errors ? '<ul>' + er.data.errors.slice(0, 8).map((x) => '<li>' + esc(x) + '</li>').join('') + '</ul>' : ''); }
+    }
+    else if (a === 'qOpen') { S.qOpen = t.dataset.k || null; render(); $('#qText')?.focus(); }
+    else if (a === 'qSend' || a === 'qResolve') { const text = ($('#qText') || {}).value || ''; await api('/api/query', { method: 'POST', body: { key: t.dataset.k, text, action: a === 'qResolve' ? 'resolve' : 'reply' } }); S.qOpen = null; await loadData(); render(); }
+    else if (a === 'saveRec') { const rows = ($('#recText').value || '').split('\n').map((l) => l.split(',').map((x) => x.trim())).filter((p) => p[0]).map((p) => ({ email: p[0], name: p[1], role: p[2], region: p[3], copy: (p[4] || '').toLowerCase() === 'copy', paused: (p[5] || '').toLowerCase() === 'paused', from: /^\d{4}-\d\d-\d\d$/.test(p[5] || '') ? p[5] : '' })); await api('/api/admin/recipients', { method: 'POST', body: { rows } }); await loadAdmin(); render(); }
+    else if (a === 'prevMail') { const p = await api(`/api/admin/digest-preview?kind=${t.dataset.kind}&region=${t.dataset.region}`); S.adm.preview = p; render(); }
+    else if (a === 'refreshNow') { t.disabled = true; await api('/api/admin/refresh', { method: 'POST' }); await loadAdmin(); render(); }
+  } catch (er) { alert(er.message); }
+});
+document.addEventListener('change', async (e) => {
+  const tf = e.target.dataset?.tf; if (tf) { const [id, k] = tf.split(':'); S.tbl[id].f[k] = e.target.value; render(); return; }
+  const qf = e.target.dataset?.qf; if (qf) { S.qf[qf] = e.target.value; render(); return; }
+  if (e.target.id === 'yearSel') { S.year = e.target.value; S.allSchools = null; await go(); }
+  else if (e.target.id === 'planRegion') { S.draft = null; await loadPlan(e.target.value); render(); }
+  else if (e.target.id === 'exLga') { S.explore.lga = e.target.value; render(); }
+});
+document.addEventListener('input', (e) => {
+  if (e.target.id === 'gs') { doSearch(e.target.value); return; }
+  const tq = e.target.dataset?.tq; if (tq) { S.tbl[tq].q = e.target.value; const pos = e.target.selectionStart; render(); const el = document.querySelector(`[data-tq="${tq}"]`); if (el) { el.focus(); el.setSelectionRange(pos, pos); } return; }
+  if (e.target.dataset?.qf === 'q') { S.qf.q = e.target.value; const pos = e.target.selectionStart; render(); const el = document.querySelector('[data-qf="q"]'); if (el) { el.focus(); el.setSelectionRange(pos, pos); } return; } if (e.target.id === 'exQ') { S.explore.q = e.target.value; const pos = e.target.selectionStart; render(); const el = $('#exQ'); el.focus(); el.setSelectionRange(pos, pos); } });
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') closeDetail(); if (e.key === 'Enter' && e.target.id === 'code') document.querySelector('[data-act="login"]').click(); });
+
+(async function boot() {
+  setTimeout(() => { checkAlerts(); }, 1500);
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
+  try { S.cfg = await api('/api/config'); } catch { $('#app').innerHTML = '<div class="banner bad">Cannot reach the server.</div>'; return; }
+  const saved = store.get('kf_code');
+  if (saved) { S.code = saved; try { S.who = (await api('/api/login')).who; } catch { S.code = null; S.who = null; store.set('kf_code', null); } }
+  if (!S.who) { loginScreen(); return; }
+  await go();
+})();
