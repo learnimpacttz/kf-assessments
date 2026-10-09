@@ -5,7 +5,7 @@
 // capped at the 2 to 3 schools a day the protocol allows (5 in Dodoma).
 // It reports the chance of finishing by the close date and a likely finish range.
 import { kv } from './store.js';
-import { REGIONS, FIELD_START, FIELD_END, CURRENT_YEAR, isWorkingDay, addDays, MAX_SCHOOLS_PER_DAY, DODOMA_MAX_SCHOOLS_PER_DAY } from './config.js';
+import { REGIONS, FIELD_START, FIELD_END, PILOT_DAY, CURRENT_YEAR, isWorkingDay, addDays, MAX_SCHOOLS_PER_DAY, DODOMA_MAX_SCHOOLS_PER_DAY } from './config.js';
 import { getPlan } from './plan.js';
 
 const SIMS = 1500;
@@ -78,6 +78,12 @@ export async function forecast(env, sum, today) {
     let pool = [];
     if (recent.length >= 3) { for (let i = 0; i < 3; i++) pool.push(...recent); pool.push(...hist); }
     else pool = hist.length ? hist.slice() : [2, 2, 3, 2, 1, 3, 0];
+    if (r === 'DODOMA' && remaining > 0 && today <= PILOT_DAY) {
+      // the 5 pilot schools are all visited on the pilot day, so no simulation is needed until that day passes
+      regions[r] = { remaining, days_left: 1, needed_per_day: remaining, recent_pace: null, basis: 'pilot day ' + PILOT_DAY, p_on_time: 100, earliest: PILOT_DAY, likely: PILOT_DAY, latest: PILOT_DAY, level: 'good' };
+      sims[r] = new Array(SIMS).fill(PILOT_DAY);
+      continue;
+    }
     const rand = rng(hash(`${r}|${today}|${R.done}`));
     const fin = remaining === 0 ? new Array(SIMS).fill(today) : simulateRegion(rand, remaining, window, pool, cap);
     sims[r] = fin;

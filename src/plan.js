@@ -5,7 +5,7 @@
 // per visit, and the team is told what is expected at the same time.
 import { kv } from './store.js';
 import {
-  SCHOOL_BY_ID, SCHOOLS_BY_REGION, FIELD_START, FIELD_END, MAX_SCHOOLS_PER_DAY, DODOMA_MAX_SCHOOLS_PER_DAY, REASONS,
+  SCHOOL_BY_ID, SCHOOLS_BY_REGION, FIELD_START, FIELD_END, PILOT_DAY, planWindow, MAX_SCHOOLS_PER_DAY, DODOMA_MAX_SCHOOLS_PER_DAY, REASONS,
   NOTICE_AEK_WORKING_DAYS, NOTICE_HT_WORKING_DAYS, addWorkingDays, workingDaysBetween, isWorkingDay,
 } from './config.js';
 
@@ -29,7 +29,9 @@ function validateVisits(region, visits) {
     seen.add(v.school);
     if (!/^\d{4}-\d\d-\d\d$/.test(v.date || '')) errors.push(`${SCHOOL_BY_ID[v.school]?.name || v.school}: date missing`);
     else {
-      if (v.date < FIELD_START || v.date > FIELD_END) errors.push(`${SCHOOL_BY_ID[v.school]?.name}: ${v.date} is outside ${FIELD_START} to ${FIELD_END}`);
+      const [w0, w1] = planWindow(region);
+      if (v.date < w0 || v.date > w1) errors.push(`${SCHOOL_BY_ID[v.school]?.name}: ${v.date} is outside ${w0} to ${w1}`);
+      if (region === 'DODOMA' && v.date !== PILOT_DAY) errors.push(`${SCHOOL_BY_ID[v.school]?.name}: the pilot schools are visited on the pilot day, ${PILOT_DAY}`);
       if (!isWorkingDay(v.date)) errors.push(`${SCHOOL_BY_ID[v.school]?.name}: ${v.date} is a weekend`);
       perDay[v.date] = (perDay[v.date] || 0) + 1;
     }
@@ -66,7 +68,8 @@ export async function changeVisit(env, who, region, { visit_id, new_date, new_st
   if (!REASONS[reason_code]) return { error: 'Choose a reason from the list', status: 422 };
   if (reason_code === 'other' && !(note || '').trim()) return { error: 'Write a short note for "Other"', status: 422 };
   const date = new_date || v.date;
-  if (date < FIELD_START || date > FIELD_END || !isWorkingDay(date)) return { error: 'Pick a working day inside the field window', status: 422 };
+  const [w0, w1] = planWindow(region);
+  if (date < w0 || date > w1 || !isWorkingDay(date)) return { error: `Pick a working day between ${w0} and ${w1}`, status: 422 };
   const cap = region === 'DODOMA' ? DODOMA_MAX_SCHOOLS_PER_DAY : MAX_SCHOOLS_PER_DAY;
   if (plan.visits.filter((x) => x.date === date && x.id !== v.id).length >= cap) return { error: `That day already has ${cap} schools`, status: 422 };
   const lead = workingDaysBetween(today, date);

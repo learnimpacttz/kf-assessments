@@ -8,7 +8,7 @@ import { subscribe, unsubscribe, takeAlert, hashEndpoint, pushTo, pushStatus, pu
 import { tick, syncStatus, recomputeSummaries, resetAll, resetKind, loadState, loadYear } from './sync.js';
 import { getPlan, submitPlan, saveDraft, changeVisit, markNotice, withNotices } from './plan.js';
 import {
-  REGIONS, PARTNERS, REASONS, FIELD_START, FIELD_END, CURRENT_YEAR, STAFF, SCHOOLS_BY_REGION, SCHOOL_BY_ID, eatToday,
+  REGIONS, PARTNERS, REASONS, FIELD_START, FIELD_END, PILOT_DAY, TRAINING_START, CURRENT_YEAR, STAFF, SCHOOLS_BY_REGION, SCHOOL_BY_ID, eatToday,
   TARGET_PER_GRADE, DODOMA_TARGET_PER_GRADE, NOTICE_AEK_WORKING_DAYS, NOTICE_HT_WORKING_DAYS,
 } from './config.js';
 
@@ -70,7 +70,7 @@ export default {
     try {
       if (path === '/api/config') {
         return json({
-          year: CURRENT_YEAR, field: { start: FIELD_START, end: FIELD_END }, regions: REGIONS, partners: PARTNERS, reasons: REASONS,
+          year: CURRENT_YEAR, field: { start: FIELD_START, end: FIELD_END }, pilot_day: PILOT_DAY, training_start: TRAINING_START, regions: REGIONS, partners: PARTNERS, reasons: REASONS,
           targets: { per_grade: TARGET_PER_GRADE, dodoma_per_grade: DODOMA_TARGET_PER_GRADE },
           notice: { aek_working_days: NOTICE_AEK_WORKING_DAYS, head_teacher_working_days: NOTICE_HT_WORKING_DAYS },
           today: eatToday(),

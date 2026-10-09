@@ -4,6 +4,9 @@ import { ROSTER } from './data/roster.js';
 
 export const FIELD_START = '2026-10-19';
 export const FIELD_END = '2026-12-04';
+export const PILOT_DAY = '2026-10-15'; // Dodoma pilot schools (5) are all visited on this training-week day
+export const TRAINING_START = '2026-10-12';
+export const planWindow = (region) => (region === 'DODOMA' ? [TRAINING_START, FIELD_END] : [FIELD_START, FIELD_END]);
 export const CURRENT_YEAR = '2026';
 
 export const TARGET_PER_GRADE = 20; // 20 pupils per grade per school (60 a school)
