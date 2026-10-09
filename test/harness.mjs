@@ -1,0 +1,58 @@
+// Local rehearsal server: the real Worker code against an in-memory store and synthetic 2026 submissions.
+import http from 'node:http';
+import fs from 'node:fs';
+import path from 'node:path';
+import worker from '../src/index.js';
+import { addStudents, addSampling } from '../src/ingest.js';
+import { recomputeSummaries } from '../src/sync.js';
+import { SCHOOLS_BY_REGION, STAFF, REGIONS } from '../src/config.js';
+
+const mem = new Map();
+const locks = new Map();
+const stub = {
+  get: async (k) => mem.get(k) ?? null, put: async (k, v) => void mem.set(k, v), del: async (k) => void mem.delete(k),
+  acquire: async () => true, release: async () => {},
+};
+const PUB = path.resolve('../public');
+const env = {
+  STORE: { idFromName: () => 'x', get: () => stub }, HQ_SECRET: 'HQTEST', AUTH_SALT: 'salt', KOBO_SERVER: 'x',
+  ASSETS: { fetch: async (req) => { const u = new URL(req.url); let p = path.join(PUB, u.pathname === '/' ? 'index.html' : u.pathname); if (!fs.existsSync(p)) return new Response('nf', { status: 404 }); const ext = path.extname(p); const types = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.png': 'image/png', '.json': 'application/json' }; return new Response(fs.readFileSync(p), { headers: { 'content-type': types[ext] || 'application/octet-stream' } }); } },
+};
+
+// ---- synthetic data: 2025 (history for bands) and 2026 (live) ----
+const state = { yrs: {} };
+let id = 1;
+const rnd = (a, b) => a + Math.random() * (b - a);
+function visit(year, region, schoolIdx, date, nSchoolsStaff) {
+  const s = SCHOOLS_BY_REGION[region][schoolIdx]; let staff = STAFF.filter((x) => x.region === region); if (!staff.length) staff = [{ name: 'Dodoma Team' }];
+  const recs = [], samp = [];
+  for (const g of [1, 2, 3]) {
+    const att = 40 + Math.floor(Math.random() * 60);
+    samp.push({ year, 'id_data/school': s.id, 'id_data/grade': String(g), 'id_data/enumerator': staff[0].name, 'att_gr/att': String(att), ...Object.fromEntries(Array.from({ length: 20 }, (_, k) => ['att_gr/int' + (k + 1), String((k + 1) * 3)])), date });
+    for (let i = 1; i <= 20; i++) {
+      const adm = staff[(i + g) % staff.length].name;
+      const rushed = region === 'TANGA' && g === 2 && i % 7 === 0 && schoolIdx === 1;
+      recs.push({ _id: id++, year, today: date, 'group_intro/date': date, 'id_data/school': s.id, 'id_data/grade': String(g), 'id_data/enumerator': adm, 'stu_info/rand_nr': String(i * 3), start: `${date}T0${8 + (i % 4)}:${10 + i}:00+03:00`, 'end_note_gr/testtime_rounded': String(rushed ? 1.5 : (g * 2.6 + rnd(2, 5)).toFixed(1)), stu_avail: '1', ['k' + g + '_g_words']: '1', _submission_time: date + 'T10:00:00' });
+    }
+  }
+  return { recs, samp };
+}
+for (const region of REGIONS) {
+  const cnt = SCHOOLS_BY_REGION[region].length;
+  for (let i = 0; i < Math.min(9, cnt); i++) { const { recs } = visit('2025', region, i, `2025-10-${String(15 + i).padStart(2, '0')}`); addStudents(state, recs); }
+  const n = { TANGA: 11, SINGIDA: 12, MARA: 3, MTWARA: 2 }[region] ?? 6;
+  for (let i = 0; i < Math.min(n, cnt); i++) { const day = 19 + Math.floor(i / 3) + (i >= 12 ? 2 : 0); const { recs, samp } = visit('2026', region, i, `2026-10-${String(day).padStart(2, '0')}`); addStudents(state, recs); addSampling(state, samp); }
+}
+await stub.put('v2:state', JSON.stringify(state));
+await recomputeSummaries(env);
+
+const sess = {};
+http.createServer(async (req, res) => {
+  const u = new URL(req.url, 'http://localhost:8788');
+  const m = /^\/__as\/(\w+)\/?$/.exec(u.pathname);
+  if (m) { const html = fs.readFileSync(path.join(PUB, 'index.html'), 'utf8').replace('<script src="/app.js">', `<script>localStorage.setItem('kf_code','${m[1]}')</script><script src="/app.js">`); res.writeHead(200, { 'content-type': 'text/html' }); return res.end(html); }
+  const body = await new Promise((r) => { const c = []; req.on('data', (d) => c.push(d)); req.on('end', () => r(Buffer.concat(c))); });
+  const r = new Request(u, { method: req.method, headers: req.headers, body: ['GET', 'HEAD'].includes(req.method) ? undefined : body });
+  const out = await worker.fetch(r, env, {});
+  res.writeHead(out.status, Object.fromEntries(out.headers)); res.end(Buffer.from(await out.arrayBuffer()));
+}).listen(8788, () => console.log('ready'));

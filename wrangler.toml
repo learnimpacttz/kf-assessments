@@ -16,10 +16,23 @@ id = "173c4a9bdc9f4c67aa9eadc619334e3e"
 # No-op ticks when nothing is in progress. No-op entirely until
 # KOBO_ASSET_ID + KOBO_TOKEN are both set.
 [triggers]
-crons = ["0 4 * * *", "* * * * *"]
+crons = ["* * * * *"]
 
 # Not secrets — safe to set here directly.
 # Token goes in via `wrangler secret put KOBO_TOKEN`, never here.
 [vars]
 KOBO_ASSET_ID = "aDAUSHKkk9aqDbwZfAuxbL"
 KOBO_SERVER = "kf.kobotoolbox.org"
+EMAIL_ENABLED = "true"
+VAPID_PUBLIC = "BGZ47uJDJgsnLC1BYaR6QN-XTBTrXP270XZKWpZ4SEXR6Jrl3g9Asb2pzHbambLnFnN-MvZO_bql4mkXZOyR1Ww"
+EMAIL_FROM = "kfupdates@apshot.michaelkamukulu.com"
+KOBO_ASSET_SAMPLING = "arXRD4CHk6VLKw6mz8EtTR"
+KOBO_ASSET_TEACHER = "aSBSJhNLfTADFFoA5fU5Be"
+
+[[durable_objects.bindings]]
+name = "STORE"
+class_name = "Store"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Store"]
