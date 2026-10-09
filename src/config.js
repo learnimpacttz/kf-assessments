@@ -16,9 +16,9 @@ export const FIELD_HOURS = [7, 14]; // from the student form's own time-limit no
 
 export const REGIONS = ['TANGA', 'MANYARA', 'MARA', 'LINDI', 'MTWARA', 'SHINYANGA', 'RUKWA', 'SONGWE', 'SINGIDA', 'KIGOMA', 'DODOMA'];
 export const PARTNERS = {
-  GEP: ['TANGA', 'MANYARA', 'LINDI', 'MTWARA', 'RUKWA', 'SONGWE'],
-  KACODA: ['MARA', 'SHINYANGA', 'SINGIDA'],
-  NDELA: ['KIGOMA'],
+  GEP: ['TANGA', 'MANYARA', 'LINDI', 'MTWARA'],
+  KACODA: ['SHINYANGA', 'MARA', 'SINGIDA'],
+  FAWOCHIWE: ['KIGOMA', 'RUKWA', 'SONGWE'],
 };
 
 export const REASONS = {
