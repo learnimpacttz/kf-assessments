@@ -415,7 +415,7 @@ export default {
       if (path === '/api/admin/fields') {
         // Field NAMES only (never values) from the first records of a form, so the importer can be written against the real layout.
         const kind = url.searchParams.get('kind') === 'sampling' ? 'KOBO_ASSET_SAMPLING' : url.searchParams.get('kind') === 'teachers' ? 'KOBO_ASSET_TEACHER' : 'KOBO_ASSET_ID';
-        const page = await fetchKoboPage(env.KOBO_SERVER || 'kf.kobotoolbox.org', env[kind], env.KOBO_TOKEN, null, 0);
+        const page = await fetchKoboPage(env.KOBO_SERVER || 'kf.kobotoolbox.org', env[kind], env.KOBO_TOKEN, null, Number(url.searchParams.get('since')) || 0);
         const keys = new Set(); for (const r of page.results.slice(0, 40)) for (const k of Object.keys(r)) keys.add(k);
         // optional: how often each value of a few SAFE coded fields occurs (counts only, never free text)
         const SAFE = /(^|\/)(deviceid|_submitted_by|rc_username|username|phonenumber|subscriberid|position|position_new|position_label_eng|position_label_eng_new|gender|gender_new|smartphone|smartphone_new|grade[123]|grade[123]_subs|grade[123]_subs_label|s[123]_(kisw|arit)|weo_att|mne|arm|year|confirm|assi_confirm|no_teachers|no_kf_teachers)$/;
@@ -538,6 +538,23 @@ export default {
           return json({ ok: true });
         }
         return json({ devices: (sum?.devices || []).map(({ raw, ...d }) => d).sort((a, b) => b.tests - a.tests) });
+      }
+      if (path === '/api/admin/form-meta') {
+        // What each deployed KoBo form contains in the way of device/user metadata (names and types only, no data)
+        const srv = env.KOBO_SERVER || 'kf.kobotoolbox.org';
+        const out = {};
+        for (const [label, key] of [['students', 'KOBO_ASSET_ID'], ['sampling', 'KOBO_ASSET_SAMPLING'], ['teachers', 'KOBO_ASSET_TEACHER']]) {
+          const r = await fetch(`https://${srv}/api/v2/assets/${env[key]}/?format=json`, { headers: { Authorization: `Token ${env.KOBO_TOKEN}` } });
+          if (!r.ok) { out[label] = { error: r.status }; continue; }
+          const a = await r.json();
+          const survey = a.content?.survey || [];
+          out[label] = {
+            name: a.name, deployed_version_count: (a.deployed_versions?.count ?? null), date_deployed: a.date_deployed || null, date_modified: a.date_modified || null, submissions: a.deployment__submission_count ?? null,
+            metadata_rows: survey.filter((q) => ['start', 'end', 'today', 'deviceid', 'phonenumber', 'username', 'subscriberid', 'simserial', 'audit', 'start-geopoint'].includes(q.type)).map((q) => `${q.type}:${q.name || q.$autoname || ''}`),
+            has_deviceid: survey.some((q) => q.type === 'deviceid'), question_count: survey.length,
+          };
+        }
+        return json(out);
       }
       if (path === '/api/admin/push-status') return json(await pushStatus(env));
       if (path === '/api/admin/push-test' && method === 'POST') {
