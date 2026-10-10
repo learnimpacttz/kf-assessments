@@ -4,8 +4,9 @@ import { morningDigest, eveningGap, loadRecipients, saveRecipients, runDigests, 
 import { loadQueries, decorate, postQuery, flagKey } from './queries.js';
 import { identify, staffCodes, canSeeRegion } from './auth.js';
 import { forecast, atRiskSchools } from './predict.js';
+import { fetchKoboPage } from './kobo.js';
 import { subscribe, unsubscribe, takeAlert, hashEndpoint, pushTo, pushStatus, pushReady, runAlerts } from './push.js';
-import { tick, syncStatus, recomputeSummaries, resetAll, resetKind, loadState, loadYear } from './sync.js';
+import { tick, syncStatus, recomputeSummaries, resetAll, resetKind, loadState, loadYear, saveYear, stateYears } from './sync.js';
 import { getPlan, submitPlan, saveDraft, changeVisit, markNotice, withNotices } from './plan.js';
 import {
   REGIONS, PARTNERS, REASONS, FIELD_START, FIELD_END, PILOT_DAY, TRAINING_START, CURRENT_YEAR, STAFF, SCHOOLS_BY_REGION, SCHOOL_BY_ID, eatToday,
@@ -194,6 +195,52 @@ export default {
         return json({ work: sum.work[name] || [] });
       }
 
+      // ---------- teacher data (baseline school visits) and the links between sources ----------
+      if (path === '/api/teachers' || path === '/api/linked') {
+        if (who.role === 'volunteer') return err('Not available to test admins', 403);
+        const regs = who.role === 'hq' ? REGIONS : [who.region];
+        const base = await loadSummary(env, CURRENT_YEAR);               // teacher forms are the 2026 baseline
+        const live = await loadSummary(env, url.searchParams.get('year')); // assessments/sampling: selected year (rehearsal until 2026 tests exist)
+        if (!base.sum) return json({ status: 'waiting' });
+        const baseSchools = regs.flatMap((r) => (SCHOOLS_BY_REGION[r] || []).map((s) => base.sum.schools[s.id]).filter(Boolean));
+        const wm = await kv(env).get('v2:wm:teachers');
+        const sources = { teachers: { records: baseSchools.reduce((a, s) => a + (s.tch ? s.tch.n : 0), 0), updated: wm?.done_at || wm?.last_check || null, phase: 'Baseline 2026' }, assessments: { year: live.year, rehearsal: live.rehearsal, updated: live.sum?.as_of || null, phase: 'Endline ' + (live.year || '') } };
+        if (path === '/api/teachers') {
+          const roll = {};
+          for (const s of baseSchools) {
+            const R = (roll[s.region] ||= { region: s.region, expected: 0, with_forms: 0, teachers: 0, head: 0, subj: 0, male: 0, female: 0, smart: 0, replaced: 0, enrol: { 1: [0, 0, 0], 2: [0, 0, 0], 3: [0, 0, 0] }, weo: { 1: 0, 2: 0, 3: 0 }, gaps: { r1: 0, a1: 0, r2: 0, a2: 0, r3: 0, a3: 0 }, nt: 0, nkf: 0, nsch_nt: 0 });
+            if (s.arm !== 'Control') R.expected += 1;
+            const t = s.tch; if (!t) continue;
+            R.with_forms += 1; R.teachers += t.n; R.head += t.head; R.subj += t.subj; R.male += t.male; R.female += t.female; R.smart += t.smart; R.replaced += t.replaced;
+            if (t.enrol) for (const g of [1, 2, 3]) if (t.enrol[g]) for (let k = 0; k < 3; k++) R.enrol[g][k] += t.enrol[g][k];
+            if (t.weo) R.weo[t.weo] = (R.weo[t.weo] || 0) + 1;
+            for (const g of [1, 2, 3]) { if (!t.teach[g].r) R.gaps['r' + g] += 1; if (!t.teach[g].a) R.gaps['a' + g] += 1; }
+            if (t.nt != null) { R.nt += t.nt; R.nkf += t.nkf || 0; R.nsch_nt += 1; }
+          }
+          const schools = baseSchools.filter((s) => s.arm !== 'Control' || s.tch).map((s) => ({ id: s.id, name: s.name, region: s.region, lga: s.lga, arm: s.arm, mne: s.mne, t: s.tch || null }));
+          return json({ status: 'ok', sources, regions: Object.values(roll), schools });
+        }
+        // linked: coverage + enrolment vs attendance for everyone with access; results by grade and subject for HQ only
+        const out = { status: 'ok', sources, coverage: [], attendance: [], hq_only: who.role === 'hq' };
+        const cov = {};
+        for (const s of baseSchools) {
+          const L = live.sum?.schools?.[s.id];
+          const c = (cov[s.region] ||= { region: s.region, expected_teacher: 0, with_teacher: 0, assessed: 0, assessed_no_teacher: 0, teacher_not_assessed: 0 });
+          const expected = s.arm !== 'Control'; if (expected) c.expected_teacher += 1;
+          if (s.tch) c.with_teacher += 1;
+          if (L?.started) c.assessed += 1;
+          if (L?.started && expected && !s.tch) c.assessed_no_teacher += 1;
+          if (s.tch && !L?.started) c.teacher_not_assessed += 1;
+          if (s.tch?.enrol && L) for (const g of [1, 2, 3]) { const e = s.tch.enrol[g], att = L.g[g].att; if (e && att != null && e[2] > 0) out.attendance.push({ school: s.id, name: s.name, region: s.region, lga: s.lga, grade: g, enrolled: e[2], attended: att, rate: Math.round((att / e[2]) * 100) }); }
+        }
+        out.coverage = Object.values(cov);
+        if (who.role === 'hq') {
+          out.results = [];
+          for (const s of baseSchools) { const L = live.sum?.schools?.[s.id]; if (!L) continue; for (const g of [1, 2, 3]) for (const [dom, label] of [['r', 'Reading'], ['a', 'Arithmetic']]) { const [p, n] = L.res[g][dom]; out.results.push({ school: s.id, name: s.name, region: s.region, grade: g, subject: label, teachers: s.tch ? s.tch.teach[g][dom] : null, tested: L.g[g].av, pass_rate: n ? Math.round((p / n) * 100) : null }); } }
+        }
+        return json(out);
+      }
+
       // ---------- compare (regions are public; people are role-limited) ----------
       if (path === '/api/compare') {
         const { sum, year } = await loadSummary(env, url.searchParams.get('year'));
@@ -321,6 +368,17 @@ export default {
         plans.forEach((p, k) => { if (p.status !== 'locked') return; for (const v of p.visits) { const s = SCHOOL_BY_ID[v.school]; rows.push([v.school, v.date, s?.name?.trim() || '', REGIONS[k], s?.lga || '', v.start || '', (v.team || []).join('; ')]); n++; } });
         return new Response(rows.map((r) => r.map(q).join(',')).join('\n') + '\n', { headers: { 'content-type': 'text/csv; charset=utf-8', 'content-disposition': `attachment; filename="ref_calendar.csv"`, 'x-calendar-rows': String(n), 'x-calendar-version': `v${version}`, 'cache-control': 'no-store' } });
       }
+      if (path === '/api/admin/fields') {
+        // Field NAMES only (never values) from the first records of a form, so the importer can be written against the real layout.
+        const kind = url.searchParams.get('kind') === 'sampling' ? 'KOBO_ASSET_SAMPLING' : url.searchParams.get('kind') === 'teachers' ? 'KOBO_ASSET_TEACHER' : 'KOBO_ASSET_ID';
+        const page = await fetchKoboPage(env.KOBO_SERVER || 'kf.kobotoolbox.org', env[kind], env.KOBO_TOKEN, null, 0);
+        const keys = new Set(); for (const r of page.results.slice(0, 40)) for (const k of Object.keys(r)) keys.add(k);
+        // optional: how often each value of a few SAFE coded fields occurs (counts only, never free text)
+        const SAFE = /(^|\/)(position|position_new|position_label_eng|position_label_eng_new|gender|gender_new|smartphone|smartphone_new|grade[123]|grade[123]_subs|grade[123]_subs_label|s[123]_(kisw|arit)|weo_att|mne|arm|year|confirm|assi_confirm|no_teachers|no_kf_teachers)$/;
+        const counts = {};
+        for (const k of (url.searchParams.get('counts') || '').split(',').filter((x) => SAFE.test(x))) { const c = {}; for (const r of page.results) { const v = String(r[k] ?? '(blank)').slice(0, 60); c[v] = (c[v] || 0) + 1; } counts[k] = Object.fromEntries(Object.entries(c).sort((a, b) => b[1] - a[1]).slice(0, 12)); }
+        return json({ kind, counts, records_seen: page.results.length, total: page.count, keys: [...keys].filter((k) => !/bank|acc_|account|mobile|tin|checkno|name$|_name|branch|geolocation|gps/i.test(k)).sort() });
+      }
       if (path === '/api/admin/push-status') return json(await pushStatus(env));
       if (path === '/api/admin/push-test' && method === 'POST') {
         const b = await request.json();
@@ -331,7 +389,11 @@ export default {
       if (path === '/api/admin/reminder-preview') { const m = await reminderEmail(env, (url.searchParams.get('region') || 'TANGA').toUpperCase(), eatToday(), env.SITE_URL || url.origin); return json(m || { subject: 'Nothing to remind', html: '<p>Nothing due right now.</p>', text: '' }); }
       if (path === '/api/admin/status') { const years = (await kv(env).get('v2:years')) || []; const archived = {}; for (const y of years) { const m = await kv(env).get(`v2:arch:${y}`); if (m) archived[y] = m; } return json({ sync: await syncStatus(env), years, archived }); }
       if (path === '/api/admin/refresh' && method === 'POST') return json({ ran: await tick(env, { force: true }) });
-      if (path === '/api/admin/resync' && method === 'POST') { const b = await request.json(); await resetKind(env, b.kind); return json({ ok: true, kind: b.kind }); }
+      if (path === '/api/admin/resync' && method === 'POST') {
+        const b = await request.json();
+        if (b.kind === 'teachers') for (const y of await stateYears(env)) { const Y = await loadYear(env, y); if (Y && Object.keys(Y.tf || {}).length) { Y.tf = {}; await saveYear(env, y, Y); } } // teacher aggregates are rebuilt from scratch so nothing is counted twice
+        await resetKind(env, b.kind); return json({ ok: true, kind: b.kind });
+      }
       if (path === '/api/admin/recompute' && method === 'POST') { await recomputeSummaries(env); return json({ ok: true }); }
       if (path === '/api/admin/full-resync' && method === 'POST') { await resetAll(env); return json({ ok: true, note: 'State cleared. The next ticks re-read every form from the start.' }); }
       if (path === '/api/admin/state-size') { const s = await loadState(env); return json({ years: Object.fromEntries(Object.entries(s.yrs).map(([y, Y]) => [y, { records: Y.n, cells: Object.keys(Y.cells).length, sg: Object.keys(Y.sg).length, teacher_schools: Object.keys(Y.tf).length }])) }); }

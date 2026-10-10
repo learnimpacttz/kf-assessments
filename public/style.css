@@ -110,3 +110,15 @@ details.fd{margin-top:6px}details.fd summary{cursor:pointer;font-size:12.5px;fon
 @media(max-width:640px){.gswrap{max-width:none;flex:1 1 100%;order:3}}
 .vsel{background:rgba(255,255,255,.14);color:#fff;border:1px solid rgba(255,255,255,.35);border-radius:999px;padding:5px 10px;font:600 12.5px var(--f-body);max-width:210px}.vsel option,.vsel optgroup{color:#1d2340;background:#fff}
 .banner.preview{background:var(--gold);color:var(--on-gold);display:flex;gap:10px;align-items:center;flex-wrap:wrap;position:sticky;top:96px;z-index:5}
+
+/* source tags: one colour per source so tables are never confused */
+.src{display:inline-flex;align-items:center;border-radius:6px;padding:3px 10px;font:700 12px var(--f-body);letter-spacing:.03em}
+.src-assess{background:color-mix(in srgb,var(--teal) 30%,var(--surface));color:var(--ink);box-shadow:inset 0 -2px 0 var(--teal)}
+.src-samp{background:color-mix(in srgb,var(--gold) 40%,var(--surface));color:var(--ink);box-shadow:inset 0 -2px 0 var(--gold)}
+.src-teach{background:var(--brand);color:#fff}
+.src-school{background:var(--terra);color:#fff}
+.src-linked{background:linear-gradient(90deg,var(--brand),var(--teal));color:#fff}
+.srcbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:0 0 10px}
+.dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px;vertical-align:0}
+.dot.src-assess{background:var(--teal)}.dot.src-samp{background:var(--gold)}.dot.src-teach{background:var(--brand)}.dot.src-school{background:var(--terra)}.dot.src-linked{background:linear-gradient(90deg,var(--brand),var(--teal))}
+.tabs2 button[aria-selected="true"] .dot{box-shadow:0 0 0 2px #fff}

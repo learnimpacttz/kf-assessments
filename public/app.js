@@ -1,7 +1,7 @@
 // KiuFunza 4 Field Command Centre: one page, tabs depend on who signed in.
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const S = { real: null, viewAs: null, staffList: [], pred: null, brief: null, qOpen: null, cfg: null, code: null, who: null, tab: null, ov: null, pub: null, cmp: null, plan: null, year: null, explore: { q: '', lga: '', sub: 'schools' }, planRegion: null, selVisit: null, adm: null };
+const S = { exTab: 'assess', tch: null, linked: null, exErr: null, real: null, viewAs: null, staffList: [], pred: null, brief: null, qOpen: null, cfg: null, code: null, who: null, tab: null, ov: null, pub: null, cmp: null, plan: null, year: null, explore: { q: '', lga: '', sub: 'schools' }, planRegion: null, selVisit: null, adm: null };
 const store = { get: (k) => { try { return localStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch {} } };
 
 async function api(path, opts = {}) {
@@ -412,11 +412,147 @@ function schoolTable(rows, hq) {
   ];
   return dataTable(hq ? 'schools-hq' : 'schools', cols, rows, { filters, sort: 'name', dir: 1, open: (s) => 'school:' + s.id, placeholder: 'Search a school, ward or LGA', limit: 400 });
 }
+// ---- source tags: every table says which form it comes from and which phase ----
+const SRC = {
+  assess: { cls: 'src-assess', label: 'Assessments', form: 'Student test form' },
+  samp: { cls: 'src-samp', label: 'Sampling', form: 'Sampling form' },
+  teach: { cls: 'src-teach', label: 'Teachers', form: 'Teacher form' },
+  school: { cls: 'src-school', label: 'School baseline', form: 'School block of the teacher form' },
+  linked: { cls: 'src-linked', label: 'Linked', form: 'Two or more sources joined on the school' },
+};
+function srcTag(kind, extra) {
+  const s = SRC[kind]; const o = S.ov || {}; const T = S.tch?.sources;
+  const phase = kind === 'teach' || kind === 'school' ? 'Baseline 2026' : kind === 'linked' ? 'Baseline 2026 + Endline ' + (o.year || '') : 'Endline ' + (o.year || '');
+  const recs = (kind === 'teach' || kind === 'school') && T ? ` · ${fmt(T.teachers.records)} teacher records` : '';
+  const upd = (kind === 'teach' || kind === 'school') ? T?.teachers.updated : o.as_of;
+  return `<div class="srcbar"><span class="src ${s.cls}">${s.label}</span><span class="m">${esc(s.form)} · ${esc(phase)}${recs}${upd ? ' · updated ' + new Date(upd).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' }) : ''}${extra ? ' · ' + extra : ''}</span></div>`;
+}
+const exTabs = () => [['assess', 'Assessments'], ['samp', 'Sampling'], ['teach', 'Teachers'], ['school', 'School baseline'], ['linked', 'Linked']];
+async function loadExplore(tab) {
+  S.exTab = tab; S.exErr = null;
+  render();
+  const hq = S.who.role === 'hq';
+  try {
+    if ((tab === 'teach' || tab === 'school') && !S.tch) { S.tch = await api('/api/teachers'); render(); }
+    if (tab === 'linked' && !S.linked) { S.linked = await api('/api/linked' + (S.year ? '?year=' + S.year : '')); if (!S.tch) S.tch = await api('/api/teachers'); render(); }
+  } catch (e) { S.exErr = e.message; render(); }
+}
 function viewExplore() {
   const o = S.ov; if (!o || o.status === 'waiting') return waiting();
   const hq = S.who.role === 'hq';
+  const tab = S.exTab || 'assess';
+  const bar = `<div class="tabs2" id="extabs">${exTabs().map(([k, t]) => `<button class="${'x-' + k}" aria-selected="${k === tab}" data-ex="${k}"><i class="dot ${SRC[k].cls}"></i>${t}</button>`).join('')}</div>`;
   const rows = hq ? S.allSchools || [] : o.mine.schools;
-  return `${dataBanner()}<div class="pagehead"><div><h2>Data explorer</h2><p>Every school with attendance, pupils tested by grade, team size and teacher forms. Click a school for its card.</p></div></div><div class="card">${hq && !S.allSchools ? '<div class="empty">Loading schools…</div>' : schoolTable(rows, hq)}</div>`;
+  let body;
+  if (hq && !S.allSchools && (tab === 'assess' || tab === 'samp')) body = '<div class="empty">Loading schools…</div>';
+  else if (tab === 'assess') body = srcTag('assess') + `<div class="card">${schoolTable(rows, hq)}</div>`;
+  else if (tab === 'samp') body = srcTag('samp') + `<div class="card">${samplingTable(rows, hq)}</div>`;
+  else if (tab === 'teach') body = S.exErr ? `<div class="banner bad">${esc(S.exErr)}</div>` : !S.tch ? '<div class="empty">Loading teacher data…</div>' : teachersView(hq);
+  else if (tab === 'school') body = !S.tch ? '<div class="empty">Loading school baseline…</div>' : schoolBaselineView(hq);
+  else body = !S.linked || !S.tch ? '<div class="empty">Linking the sources…</div>' : linkedView(hq);
+  return `${dataBanner()}<div class="pagehead"><div><h2>Data explorer</h2><p>Four sources, kept apart, plus the links between them. The colour tag on each table says where the numbers come from.</p></div></div>${bar}${body}`;
+}
+
+function samplingTable(rows, hq) {
+  const cols = [
+    { k: 'name', label: 'School', val: (s) => s.name, search: (s) => s.name + ' ' + s.id, html: (s) => `<b>${lk('school', s.id, s.name)}</b>` },
+    ...(hq ? [{ k: 'region', label: 'Region', val: (s) => s.region, search: (s) => s.region, html: (s) => lk('region', s.region, title(s.region)) }] : []),
+    { k: 'lga', label: 'LGA', small: true, val: (s) => s.lga, search: (s) => s.lga, html: (s) => esc(title(s.lga)) },
+    ...[1, 2, 3].map((g) => ({ k: 'a' + g, label: 'Present Gr ' + g, cls: 'r', val: (s) => s.g[g].att, html: (s) => `<span class="num">${s.g[g].att ?? '–'}</span>` })),
+    ...[1, 2, 3].map((g) => ({ k: 't' + g, label: 'Tested vs sample Gr ' + g, cls: 'r', small: g > 1, val: (s) => pc(s.g[g].av, s.g[g].target), html: (s) => (s.g[g].att == null && s.g[g].n ? chip('no sampling', 'bad') : chip(`${s.g[g].av}/${s.g[g].target}`, s.g[g].done ? 'good' : s.g[g].av ? 'warn' : 'mute')) })),
+    { k: 'sampled', label: 'Sampled', val: (s) => (s.g[1].att != null) + (s.g[2].att != null) + (s.g[3].att != null), html: (s) => { const n = (s.g[1].att != null) + (s.g[2].att != null) + (s.g[3].att != null); return chip(n + ' of 3', n === 3 ? 'good' : n ? 'warn' : 'mute'); } },
+  ];
+  const filters = [
+    ...(hq ? [{ k: 'region', label: 'Region', get: (s) => s.region, options: (r) => [...new Set(r.map((s) => s.region))].sort().map((x) => [x, title(x)]) }] : []),
+    { k: 'smp', label: 'Sampling', get: (s) => ((s.g[1].att != null) + (s.g[2].att != null) + (s.g[3].att != null)) === 3 ? 'all' : ((s.g[1].att != null) + (s.g[2].att != null) + (s.g[3].att != null)) ? 'part' : 'none', options: () => [['all', 'All 3 grades'], ['part', 'Some grades'], ['none', 'Not sampled']] },
+  ];
+  return dataTable(hq ? 'samp-hq' : 'samp', cols, rows, { filters, sort: 'name', dir: 1, open: (s) => 'school:' + s.id, placeholder: 'Search a school', limit: 400 });
+}
+
+const pctOf = (a, b) => (b ? Math.round((a / b) * 100) + '%' : '–');
+function teachersView(hq) {
+  const T = S.tch, R = T.regions;
+  const sum = (k) => R.reduce((a, r) => a + (r[k] || 0), 0);
+  const withF = sum('with_forms'), exp = sum('expected');
+  const gap = (r, g, d) => r.gaps[d + g];
+  const regRows = R.map((r) => `<tr class="click" data-open="region:${esc(r.region)}"><td><b>${esc(title(r.region))}</b></td><td class="r num">${r.with_forms}/${r.expected}</td><td class="r num">${fmt(r.teachers)}</td><td class="r num">${r.head}</td><td class="r num">${r.subj}</td><td class="r num">${pctOf(r.female, r.male + r.female)}</td><td class="r num">${pctOf(r.smart, r.teachers)}</td><td class="r num">${r.replaced}</td><td class="r">${chip(r.gaps.r1 + r.gaps.a1 + r.gaps.r2 + r.gaps.a2 + r.gaps.r3 + r.gaps.a3, (r.gaps.r1 + r.gaps.a1 + r.gaps.r2 + r.gaps.a2 + r.gaps.r3 + r.gaps.a3) ? 'warn' : 'good')}</td></tr>`).join('');
+  const cols = [
+    { k: 'name', label: 'School', val: (s) => s.name, search: (s) => s.name + ' ' + s.id, html: (s) => `<b>${lk('school', s.id, s.name)}</b>` },
+    ...(hq ? [{ k: 'region', label: 'Region', val: (s) => s.region, search: (s) => s.region, html: (s) => lk('region', s.region, title(s.region)) }] : []),
+    { k: 'n', label: 'Teachers', cls: 'r', val: (s) => s.t?.n ?? -1, html: (s) => (s.t ? `<span class="num">${s.t.n}</span>` : chip('no form', 'bad')) },
+    { k: 'head', label: 'Head / Subject', cls: 'r', small: true, val: (s) => s.t?.head ?? -1, html: (s) => (s.t ? `<span class="num">${s.t.head} / ${s.t.subj}</span>` : '–') },
+    { k: 'sex', label: 'Women', cls: 'r', small: true, val: (s) => (s.t ? s.t.female / Math.max(1, s.t.male + s.t.female) : -1), html: (s) => (s.t ? pctOf(s.t.female, s.t.male + s.t.female) : '–') },
+    ...[1, 2, 3].flatMap((g) => [['r', 'Read'], ['a', 'Math']].map(([d, l]) => ({ k: `g${g}${d}`, label: `Gr ${g} ${l}`, cls: 'r', small: g > 1 || d === 'a', val: (s) => s.t?.teach[g][d] ?? -1, html: (s) => (s.t ? chip(s.t.teach[g][d], s.t.teach[g][d] ? 'good' : 'bad') : '–') }))),
+    { k: 'smart', label: 'Smartphone', cls: 'r', small: true, val: (s) => (s.t ? s.t.smart / Math.max(1, s.t.n) : -1), html: (s) => (s.t ? pctOf(s.t.smart, s.t.n) : '–') },
+    { k: 'rep', label: 'Replaced', cls: 'r', small: true, val: (s) => s.t?.replaced ?? -1, html: (s) => (s.t ? `<span class="num">${s.t.replaced}</span>` : '–') },
+  ];
+  const filters = [
+    ...(hq ? [{ k: 'region', label: 'Region', get: (s) => s.region, options: (r) => [...new Set(r.map((s) => s.region))].sort().map((x) => [x, title(x)]) }] : []),
+    { k: 'has', label: 'Teacher form', get: (s) => (s.t ? 'yes' : 'no'), options: () => [['yes', 'Has teacher forms'], ['no', 'No teacher form yet']] },
+    { k: 'gap', label: 'Coverage', get: (s) => (s.t && [1, 2, 3].every((g) => s.t.teach[g].r && s.t.teach[g].a) ? 'full' : s.t ? 'gap' : 'none'), options: () => [['full', 'Every grade and subject covered'], ['gap', 'A grade or subject has no teacher'], ['none', 'No form']] },
+  ];
+  return `${srcTag('teach')}
+  <div class="grid kpis">${kpi('Schools with teacher forms', `${withF}<small> / ${exp}</small>`, 'treatment and pilot schools')}${kpi('Teacher records', fmt(sum('teachers')), sum('head') + ' head · ' + sum('subj') + ' subject teachers')}${kpi('Women', pctOf(sum('female'), sum('male') + sum('female')), 'of teachers with a recorded gender')}${kpi('Own a smartphone', pctOf(sum('smart'), sum('teachers')))}${kpi('Replacement teachers', fmt(sum('replaced')), 'recorded in place of the listed teacher')}</div>
+  <div class="card" style="margin-top:14px"><h3>By region</h3><div class="sub">"Gaps" counts school, grade and subject combinations with no teacher recorded (reading or arithmetic, grades 1 to 3).</div><div class="tbl"><table><thead><tr><th>Region</th><th class="r">Schools</th><th class="r">Teachers</th><th class="r">Head</th><th class="r">Subject</th><th class="r">Women</th><th class="r">Smartphone</th><th class="r">Replaced</th><th class="r">Gaps</th></tr></thead><tbody>${regRows}</tbody></table></div></div>
+  <div class="card" style="margin-top:14px"><h3>By school</h3><div class="sub">Teachers recorded as teaching reading (Read) and arithmetic (Math) in each grade. Red means nobody is recorded. Names, phone numbers and bank details are never brought into the dashboard.</div>${dataTable(hq ? 'tch-hq' : 'tch', cols, T.schools, { filters, sort: 'name', dir: 1, open: (s) => 'school:' + s.id, placeholder: 'Search a school', limit: 400 })}</div>`;
+}
+
+function schoolBaselineView(hq) {
+  const T = S.tch, R = T.regions;
+  const E = (g, k) => R.reduce((a, r) => a + (r.enrol[g][k] || 0), 0);
+  const w = (c) => R.reduce((a, r) => a + (r.weo[c] || 0), 0);
+  const wTot = w(1) + w(2) + w(3);
+  const regRows = R.map((r) => `<tr class="click" data-open="region:${esc(r.region)}"><td><b>${esc(title(r.region))}</b></td>${[1, 2, 3].map((g) => `<td class="r num">${fmt(r.enrol[g][2])}</td>`).join('')}<td class="r num">${pctOf(r.enrol[1][0] + r.enrol[2][0] + r.enrol[3][0], r.enrol[1][2] + r.enrol[2][2] + r.enrol[3][2])}</td><td class="r num">${r.nsch_nt ? (r.nt / r.nsch_nt).toFixed(1) : '–'}</td><td class="r num">${r.nsch_nt ? (r.nkf / r.nsch_nt).toFixed(1) : '–'}</td><td class="r num">${pctOf(r.weo[1] || 0, (r.weo[1] || 0) + (r.weo[2] || 0) + (r.weo[3] || 0))}</td></tr>`).join('');
+  const cols = [
+    { k: 'name', label: 'School', val: (s) => s.name, search: (s) => s.name + ' ' + s.id, html: (s) => `<b>${lk('school', s.id, s.name)}</b>` },
+    ...(hq ? [{ k: 'region', label: 'Region', val: (s) => s.region, search: (s) => s.region, html: (s) => lk('region', s.region, title(s.region)) }] : []),
+    { k: 'lga', label: 'LGA', small: true, val: (s) => s.lga, search: (s) => s.lga, html: (s) => esc(title(s.lga)) },
+    ...[1, 2, 3].map((g) => ({ k: 'e' + g, label: 'Enrolled Gr ' + g, cls: 'r', small: g > 1, val: (s) => s.t?.enrol?.[g]?.[2] ?? -1, html: (s) => (s.t?.enrol?.[g] ? `<span class="num">${s.t.enrol[g][2]}</span> <span class="m">(${s.t.enrol[g][0]}G/${s.t.enrol[g][1]}B)</span>` : '–') })),
+    { k: 'nt', label: 'Teachers', cls: 'r', small: true, val: (s) => s.t?.nt ?? -1, html: (s) => `<span class="num">${s.t?.nt ?? '–'}</span>` },
+    { k: 'nkf', label: 'KiuFunza teachers', cls: 'r', small: true, val: (s) => s.t?.nkf ?? -1, html: (s) => `<span class="num">${s.t?.nkf ?? '–'}</span>` },
+    { k: 'weo', label: 'Ward officer', small: true, val: (s) => s.t?.weo || '', html: (s) => (s.t?.weo === '1' ? chip('took part', 'good') : s.t?.weo === '3' ? chip('representative', 'warn') : s.t?.weo === '2' ? chip('did not', 'bad') : chip('–', 'mute')) },
+  ];
+  const filters = [
+    ...(hq ? [{ k: 'region', label: 'Region', get: (s) => s.region, options: (r) => [...new Set(r.map((s) => s.region))].sort().map((x) => [x, title(x)]) }] : []),
+    { k: 'weo', label: 'Ward officer', get: (s) => s.t?.weo || '', options: () => [['1', 'Took part'], ['3', 'Sent a representative'], ['2', 'Did not take part']] },
+  ];
+  return `${srcTag('school')}
+  <div class="grid kpis">${kpi('Pupils enrolled, Grade 1', fmt(E(1, 2)), fmt(E(1, 0)) + ' girls · ' + fmt(E(1, 1)) + ' boys')}${kpi('Grade 2', fmt(E(2, 2)), fmt(E(2, 0)) + ' girls · ' + fmt(E(2, 1)) + ' boys')}${kpi('Grade 3', fmt(E(3, 2)), fmt(E(3, 0)) + ' girls · ' + fmt(E(3, 1)) + ' boys')}${kpi('Ward officer took part', pctOf(w(1), wTot), pctOf(w(3), wTot) + ' sent a representative')}</div>
+  <div class="card" style="margin-top:14px"><h3>By region</h3><div class="sub">Enrolment in grades 1 to 3 as counted at the baseline visit. Teachers are the average per school.</div><div class="tbl"><table><thead><tr><th>Region</th><th class="r">Gr 1</th><th class="r">Gr 2</th><th class="r">Gr 3</th><th class="r">Girls</th><th class="r">Teachers</th><th class="r">KiuFunza</th><th class="r">Ward officer</th></tr></thead><tbody>${regRows}</tbody></table></div></div>
+  <div class="card" style="margin-top:14px"><h3>By school</h3><div class="sub">G = girls, B = boys.</div>${dataTable(hq ? 'sb-hq' : 'sb', cols, T.schools.filter((s) => s.t), { filters, sort: 'name', dir: 1, open: (s) => 'school:' + s.id, placeholder: 'Search a school', limit: 400 })}</div>`;
+}
+
+function linkedView(hq) {
+  const L = S.linked, T = S.tch;
+  const covRows = L.coverage.map((c) => `<tr class="click" data-open="region:${esc(c.region)}"><td><b>${esc(title(c.region))}</b></td><td class="r num">${c.with_teacher}/${c.expected_teacher}</td><td class="r num">${c.assessed}</td><td class="r">${chip(c.assessed_no_teacher, c.assessed_no_teacher ? 'warn' : 'good')}</td><td class="r">${chip(c.teacher_not_assessed, 'mute')}</td></tr>`).join('');
+  const attCols = [
+    { k: 'name', label: 'School', val: (a) => a.name, search: (a) => a.name, html: (a) => `<b>${lk('school', a.school, a.name)}</b>` },
+    ...(hq ? [{ k: 'region', label: 'Region', val: (a) => a.region, search: (a) => a.region, html: (a) => lk('region', a.region, title(a.region)) }] : []),
+    { k: 'grade', label: 'Grade', cls: 'r', val: (a) => a.grade, html: (a) => a.grade },
+    { k: 'enrolled', label: 'Enrolled (baseline)', cls: 'r', val: (a) => a.enrolled, html: (a) => `<span class="num">${a.enrolled}</span>` },
+    { k: 'attended', label: 'Present on test day', cls: 'r', val: (a) => a.attended, html: (a) => `<span class="num">${a.attended}</span>` },
+    { k: 'rate', label: 'Attendance', cls: 'r', val: (a) => a.rate, html: (a) => chip(a.rate + '%', a.rate > 100 ? 'bad' : a.rate < 30 ? 'bad' : a.rate < 55 ? 'warn' : 'good') },
+  ];
+  const attFilters = [{ k: 'band', label: 'Attendance', get: (a) => (a.rate > 100 ? 'over' : a.rate < 30 ? 'low' : a.rate < 55 ? 'mid' : 'ok'), options: () => [['over', 'Above 100% (check the numbers)'], ['low', 'Below 30%'], ['mid', '30 to 54%'], ['ok', '55% and above']] }];
+  const resCols = [
+    { k: 'name', label: 'School', val: (a) => a.name, search: (a) => a.name, html: (a) => `<b>${lk('school', a.school, a.name)}</b>` },
+    { k: 'region', label: 'Region', val: (a) => a.region, search: (a) => a.region, html: (a) => lk('region', a.region, title(a.region)) },
+    { k: 'grade', label: 'Grade', cls: 'r', val: (a) => a.grade, html: (a) => a.grade },
+    { k: 'subject', label: 'Subject', val: (a) => a.subject, html: (a) => esc(a.subject) },
+    { k: 'teachers', label: 'Teachers recorded', cls: 'r', val: (a) => a.teachers ?? -1, html: (a) => (a.teachers == null ? chip('no form', 'mute') : chip(a.teachers, a.teachers ? 'good' : 'bad')) },
+    { k: 'tested', label: 'Pupils tested', cls: 'r', val: (a) => a.tested, html: (a) => `<span class="num">${a.tested}</span>` },
+    { k: 'pass', label: 'Skills passed', cls: 'r', val: (a) => a.pass_rate ?? -1, html: (a) => (a.pass_rate == null ? '–' : chip(a.pass_rate + '%', a.pass_rate >= 60 ? 'good' : a.pass_rate >= 35 ? 'warn' : 'bad')) },
+  ];
+  const resFilters = [
+    { k: 'region', label: 'Region', get: (a) => a.region, options: (r) => [...new Set(r.map((s) => s.region))].sort().map((x) => [x, title(x)]) },
+    { k: 'grade', label: 'Grade', get: (a) => String(a.grade), options: () => [['1', 'Grade 1'], ['2', 'Grade 2'], ['3', 'Grade 3']] },
+    { k: 'subject', label: 'Subject', get: (a) => a.subject, options: () => [['Reading', 'Reading'], ['Arithmetic', 'Arithmetic']] },
+    { k: 'tz', label: 'Teacher', get: (a) => (a.teachers === 0 ? 'none' : 'some'), options: () => [['none', 'No teacher recorded'], ['some', 'Has teacher(s)']] },
+  ];
+  return `${srcTag('linked')}
+  <div class="card"><h3>1. Coverage: teacher forms and assessments</h3><div class="sub">Joined on the school code. "Assessed without teacher form" means tests exist but the school has no teacher record, which matters when teachers are paid on results.</div><div class="tbl"><table><thead><tr><th>Region</th><th class="r">Teacher forms</th><th class="r">Schools assessed</th><th class="r">Assessed, no teacher form</th><th class="r">Teacher form, not yet assessed</th></tr></thead><tbody>${covRows}</tbody></table></div></div>
+  <div class="card" style="margin-top:14px"><h3>2. Pupils enrolled at baseline against pupils present on test day</h3><div class="sub">Enrolment from the baseline visit, attendance from the sampling form. Above 100% or very low rates are worth a second look.</div>${dataTable(hq ? 'att-hq' : 'att', attCols, L.attendance, { filters: attFilters, sort: 'rate', dir: -1, placeholder: 'Search a school', limit: 300 })}</div>
+  ${hq && L.results ? `<div class="card" style="margin-top:14px;border-left:4px solid var(--terra)"><h3>3. Results by grade and subject, with the teachers recorded <span class="chip c-gold">HQ only</span></h3><div class="sub">Share of skills passed by the pupils tested, next to how many teachers are recorded for that grade and subject. This view is for HQ only. It shows where results and staffing line up or do not. It is not a payment calculation: payments will be added once the payment rules are set up here.</div>${dataTable('res-hq', resCols, L.results, { filters: resFilters, sort: 'pass', dir: 1, placeholder: 'Search a school', limit: 300 })}</div>` : '<div class="note" style="margin-top:14px">Results by grade and subject are shown to HQ only.</div>'}`;
 }
 
 // ---------- Queries (all) ----------
@@ -511,7 +647,7 @@ async function setViewAs(val) {
     if (val === 'public') { S.viewAs = 'public'; S.who = null; }
     else { const p = S.staffList.find((s) => String(s.id) === val); if (!p) return; S.viewAs = val; S.who = { role: p.role, name: p.name, region: p.region, position: p.position, id: p.id, viewAs: true }; }
   }
-  S.ov = null; S.pub = null; S.cmp = null; S.pred = null; S.brief = null; S.plan = null; S.allSchools = null; S.workCache = {}; S.tbl = {}; S.qf = null; S.tab = null; S.cur = null; closeDetail(); S.stale = null;
+  S.ov = null; S.pub = null; S.cmp = null; S.pred = null; S.brief = null; S.plan = null; S.allSchools = null; S.workCache = {}; S.tbl = {}; S.qf = null; S.tch = null; S.linked = null; S.exTab = 'assess'; S.exErr = null; S.tab = null; S.cur = null; closeDetail(); S.stale = null;
   await go();
 }
 const previewBanner = () => (S.viewAs ? `<div class="banner preview"><b>Preview.</b> You are looking at the app as ${S.viewAs === 'public' ? 'a public visitor' : esc(S.who.name) + ' (' + esc(S.who.position || S.who.role) + ', ' + esc(title(S.who.region)) + ')'}. Nothing you do here changes anything. <button class="btn sm sec" data-act="exitPreview">Back to HQ</button></div>` : '');
@@ -573,12 +709,15 @@ async function loadAdmin() {
 }
 
 async function go() {
-  if (!S.tab && location.hash && !location.hash.includes(':')) S.tab = location.hash.slice(1);
+  const exm = /^#explore\/(\w+)$/.exec(location.hash);
+  if (exm) { S.tab = 'explore'; S.exTab = exm[1]; }
+  else if (!S.tab && location.hash && !location.hash.includes(':')) S.tab = location.hash.slice(1);
   if (S.who && !S.ov && !S.viewAs) { const snap = loadSnapshot(); if (snap) { S.ov = snap.ov; S.pub = snap.ov; S.cmp = snap.cmp; S.pred = snap.pred; S.brief = snap.brief; S.stale = snap.t; render(); } }
-  try { await loadData(); S.stale = null; render(); ensureSchools(); if (location.hash.includes(':')) { try { openDetail(decodeURIComponent(location.hash.slice(1))); } catch {} } } catch (e) { if (e.status === 401 && S.code) { S.code = null; S.who = null; store.set('kf_code', null); loginScreen('Your code was not recognised. Try again.'); } else $('#app').innerHTML = `<div class="banner bad">${esc(e.message)}</div>`; }
+  try { await loadData(); S.stale = null; render(); ensureSchools(); if (S.tab === 'explore' && ['teach', 'school', 'linked'].includes(S.exTab)) loadExplore(S.exTab); if (location.hash.includes(':')) { try { openDetail(decodeURIComponent(location.hash.slice(1))); } catch {} } } catch (e) { if (e.status === 401 && S.code) { S.code = null; S.who = null; store.set('kf_code', null); loginScreen('Your code was not recognised. Try again.'); } else $('#app').innerHTML = `<div class="banner bad">${esc(e.message)}</div>`; }
 }
 
 document.addEventListener('click', async (e) => {
+  const ex = e.target.closest('[data-ex]'); if (ex) { await loadExplore(ex.dataset.ex); return; }
   const op = e.target.closest('[data-open]');
   if (op && !e.target.closest('summary,button,select,input,textarea')) { e.preventDefault(); $('#gsr') && ($('#gsr').hidden = true); openDetail(op.dataset.open); return; }
   const th = e.target.closest('[data-ts]');
@@ -630,7 +769,7 @@ document.addEventListener('change', async (e) => {
   const tf = e.target.dataset?.tf; if (tf) { const [id, k] = tf.split(':'); S.tbl[id].f[k] = e.target.value; render(); return; }
   const qf = e.target.dataset?.qf; if (qf) { S.qf[qf] = e.target.value; render(); return; }
   if (e.target.id === 'viewAsSel') { await setViewAs(e.target.value); return; }
-  if (e.target.id === 'yearSel') { S.year = e.target.value; S.allSchools = null; S.workCache = {}; await go(); }
+  if (e.target.id === 'yearSel') { S.year = e.target.value; S.allSchools = null; S.workCache = {}; S.linked = null; await go(); }
   else if (e.target.id === 'planRegion') { S.draft = null; await loadPlan(e.target.value); render(); }
   else if (e.target.id === 'exLga') { S.explore.lga = e.target.value; render(); }
 });

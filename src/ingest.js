@@ -147,15 +147,48 @@ export function addSampling(state, records) {
   return state;
 }
 
+// Teacher form (baseline school visit). One record per teacher; the school block repeats on each record.
+// Only counts and codes are kept. Never stored: names, check numbers, phone numbers, TIN, bank details, WEO contacts.
+const T = 't/teaching_assignments/';
+const hasCode = (v, code) => String(v || '').split(/\s+/).includes(code);
 export function addTeachers(state, records) {
   for (const r of records) {
     const year = yearOf(r) || String(new Date().getUTCFullYear());
     const Y = (state.yrs[year] ||= emptyYear());
     const school = pick(r, 'school');
     if (!school) continue;
-    const t = (Y.tf[school] ||= { n: 0, date: null });
+    const t = (Y.tf[school] ||= { n: 0, date: null, head: 0, subj: 0, male: 0, female: 0, smart: 0, replaced: 0, teach: { 1: { r: 0, a: 0 }, 2: { r: 0, a: 0 }, 3: { r: 0, a: 0 } }, enrol: null, nt: null, nkf: null, weo: null, last: 0 });
     t.n += 1;
     t.date = (pick(r, 'date') || r.today || t.date || '').slice(0, 10);
+    const replaced = Boolean(r['t/gr_teacher_info_new/position_new']);
+    if (replaced) t.replaced += 1;
+    const pos = String(r['t/gr_teacher_info/position'] || r['t/gr_teacher_info_new/position_new'] || '');
+    if (pos === '1') t.head += 1; else if (pos === '2') t.subj += 1;
+    const gen = String(r['t/gr_teacher_info/gender'] || r['t/gr_teacher_info_new/gender_new'] || '');
+    if (gen === '1') t.male += 1; else if (gen === '2') t.female += 1;
+    const sp = String(r['t/gr_teacher_info/smartphone'] || r['t/gr_teacher_info_new/smartphone_new'] || '');
+    if (sp === '01' || sp === '1') t.smart += 1;
+    for (const gr of [1, 2, 3]) {
+      if (String(r[`${T}grade${gr}`]) !== '01') continue; // teaches this grade
+      const subs = r[`${T}gr_grade${gr}/grade${gr}_subs`];
+      if (hasCode(subs, `${gr}1`)) t.teach[gr].r += 1; // reading
+      if (hasCode(subs, `${gr}2`)) t.teach[gr].a += 1; // arithmetic
+    }
+    // school block: take the most recent record's numbers
+    if (typeof r._id === 'number' && r._id >= t.last) {
+      t.last = r._id;
+      const e = {};
+      for (const gr of [1, 2, 3]) {
+        const b = `gr_schooldata/group_grade${gr}/g${gr}`;
+        const girls = num(r[b + 'girls']), boys = num(r[b + 'boys']), total = num(r[b + 'total']);
+        if (girls !== null || boys !== null) e[gr] = [girls ?? 0, boys ?? 0, total ?? (girls ?? 0) + (boys ?? 0)];
+      }
+      if (Object.keys(e).length) t.enrol = e;
+      const nt = num(r['gr_schooldata/teacher_gr/no_teachers']), nkf = num(r['gr_schooldata/teacher_gr/no_kf_teachers']);
+      if (nt !== null) t.nt = nt;
+      if (nkf !== null) t.nkf = nkf;
+      const w = r['gr_schooldata/weo/weo_att']; if (w) t.weo = String(w); // 1 took part, 2 did not, 3 sent a representative
+    }
   }
   return state;
 }

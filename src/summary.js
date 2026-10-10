@@ -73,7 +73,7 @@ export function summarize(Y, { year, bands, today }) {
   const mkSchool = (s) => ({
     id: s.id, name: s.name, region: s.region, lga: s.lga, ward: s.ward, arm: s.arm, mne: s.mne,
     g: { 1: { n: 0, av: 0, att: null }, 2: { n: 0, av: 0, att: null }, 3: { n: 0, av: 0, att: null } },
-    dates: [], admins: [], maxTeam: 0, tf: 0, done: false, started: false, last: null, first: null,
+    dates: [], admins: [], maxTeam: 0, tf: 0, res: { 1: { r: [0, 0], a: [0, 0] }, 2: { r: [0, 0], a: [0, 0] }, 3: { r: [0, 0], a: [0, 0] } }, tch: null, done: false, started: false, last: null, first: null,
   });
   for (const s of Object.values(SCHOOL_BY_ID)) schools[s.id] = mkSchool(s);
 
@@ -110,6 +110,7 @@ export function summarize(Y, { year, bands, today }) {
     a.fast += fast; a.slow += slow; a.late += c.late; a.far += c.far; a.inBand += inBand;
     a.byGrade[grade].tn += c.tn; a.byGrade[grade].ts += c.ts;
     (work[enumerator] ||= []).push([date, schoolId, +grade, c.av, c.tn ? r1(c.ts / c.tn) : null]);
+    for (const [pk, pv] of Object.entries(c.ps)) { const dom = pk[0], gg = pk[1]; const slot = sc.res[gg] && sc.res[gg][dom]; if (slot) { slot[0] += pv[0]; slot[1] += pv[1]; } } // results by grade and subject (HQ only downstream)
     let zero = 0;
     for (const v of Object.values(c.st)) zero += v[2];
     a.zero += zero;
@@ -187,6 +188,7 @@ export function summarize(Y, { year, bands, today }) {
     sc.last = sc.dates[sc.dates.length - 1] || null;
     sc.maxTeam = Math.max(0, ...sc.dates.map((d) => (visitTeam[sc.id + '|' + d] || new Set()).size));
     sc.tf = (Y.tf[sc.id] || {}).n || 0;
+    if (Y.tf[sc.id]) { const { last, ...tch } = Y.tf[sc.id]; sc.tch = tch; }
     if (sc.done) nSchoolsDone += 1;
     // team-size rule depends on school type (No-M&E schools are one-person visits)
     if (sc.started && sc.mne === 'M&E' && (sc.maxTeam < 2 || sc.maxTeam > 6))
