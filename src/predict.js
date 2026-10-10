@@ -110,9 +110,10 @@ export async function forecast(env, sum, today) {
 // Schools that need attention: planned date has passed without a visit, or the visit is today/tomorrow and the region is behind.
 export async function atRiskSchools(env, sum, today, regionFilter) {
   const out = [];
-  for (const r of REGIONS) {
-    if (regionFilter && r !== regionFilter) continue;
-    const plan = await getPlan(env, r);
+  const regs = REGIONS.filter((r) => !regionFilter || r === regionFilter);
+  const plans = await Promise.all(regs.map((r) => getPlan(env, r)));
+  for (const [pi, r] of regs.entries()) {
+    const plan = plans[pi];
     if (plan.status !== 'locked') continue;
     for (const v of plan.visits) {
       const s = sum?.schools?.[v.school]; if (!s) continue;

@@ -83,7 +83,7 @@ function dataBanner() {
   const years = o.years || [];
   const sel = years.length > 1 ? `<select id="yearSel" aria-label="Round">${years.map((y) => `<option value="${y}" ${y === o.year ? 'selected' : ''}>${y}${y === (S.cfg && S.cfg.year) ? '' : ' (archive)'}</option>`).join('')}</select>` : '';
   const warn = o.rehearsal ? `<div class="banner"><b>Rehearsal.</b> No 2026 endline data yet, so you are looking at ${esc(o.year)} data. Use it to practise. Live numbers appear after the first 2026 submission.</div>` : '';
-  return `${warn}<div class="sel" style="margin-top:10px">${sel}<span class="pill mute">Updated ${o.as_of ? new Date(o.as_of).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' }) : '–'}</span></div>`;
+  return `${warn}<div class="sel" style="margin-top:10px">${sel}${S.stale ? '<span class="pill warn">Showing the last update, refreshing…</span>' : ''}<span class="pill mute">Updated ${o.as_of ? new Date(o.as_of).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' }) : '–'}</span></div>`;
 }
 
 // ---------- views ----------
@@ -292,7 +292,7 @@ const lk = (kind, id, text) => (kind === 'person' && isVol() && S.ov?.mine?.me?.
 const schoolsAll = () => (S.who?.role === 'hq' ? S.allSchools || [] : S.ov?.mine?.schools || []);
 const adminsAll = () => (S.who?.role === 'hq' ? S.ov.admins : S.ov?.mine?.admins || (S.ov?.mine?.me ? [S.ov.mine.me] : []));
 const flagsAll = () => (S.who?.role === 'hq' ? S.ov.flags : S.ov?.mine?.flags || []);
-const workOf = (name) => (S.ov?.work || S.ov?.mine?.work_all || {})[name] || (S.ov?.mine?.me?.name === name ? S.ov.mine.work : []) || [];
+const workOf = (name) => S.workCache[name] || (S.ov?.mine?.work_all || {})[name] || (S.ov?.mine?.me?.name === name ? S.ov.mine.work : []) || [];
 S.stack = []; S.cur = null;
 
 function openDetail(spec, push = true) {
@@ -301,7 +301,9 @@ function openDetail(spec, push = true) {
   const [kind, ...rest] = spec.split(':'); const id = rest.join(':');
   const body = kind === 'person' ? personCard(id) : kind === 'school' ? schoolCard(id) : kind === 'region' ? regionCard(id) : '<p>Not found.</p>';
   $('#drawerBody').innerHTML = `<div class="dnav">${S.stack.length ? '<button class="btn sm sec" data-act="dBack">‹ Back</button>' : ''}<button class="btn sm sec" data-act="dClose" style="margin-left:auto">Close ✕</button></div>${body}`;
-  $('#drawer').hidden = false; $('#drawerBody').scrollTop = 0;
+  $('#drawer').hidden = false; if (push !== false || !$('#drawerBody').scrollTop) $('#drawerBody').scrollTop = 0;
+  if (kind === 'person' && S.who?.role !== 'volunteer') loadWork(id);
+  if ((kind === 'region' || kind === 'school') && S.who?.role === 'hq' && !S.allSchools) ensureSchools();
 }
 function closeDetail() { $('#drawer').hidden = true; S.cur = null; S.stack = []; }
 
@@ -501,26 +503,40 @@ function loginScreen(msg) {
 
 async function loadData() {
   const q = S.year ? '?year=' + S.year : '';
-  if (!S.who) { S.pub = await api('/api/public' + q); S.cmp = await api('/api/public' + q).then(() => null).catch(() => null); S.cmp = publicCompare(S.pub); return; }
-  S.ov = await api('/api/overview' + q);
-  S.pub = S.ov;
-  S.cmp = await api('/api/compare' + q);
-  S.pred = S.who.role === 'volunteer' ? null : await api('/api/predict').catch(() => null);
-  S.brief = S.who.role === 'volunteer' ? null : await api('/api/brief').catch(() => null);
-  if (S.who.role === 'hq' && !S.allSchools) S.allSchools = await loadAllSchools();
-  if (S.tab === 'plan' || S.who.role === 'volunteer') await loadPlan();
+  if (!S.who) { S.pub = await api('/api/public' + q); S.cmp = publicCompare(S.pub); return; }
+  const vol = S.who.role === 'volunteer';
+  // everything the first screen needs is fetched at the same time, not one after another
+  const [ov, cmp, pred, brief] = await Promise.all([
+    api('/api/overview' + q),
+    api('/api/compare' + q).catch(() => null),
+    vol ? null : api('/api/predict').catch(() => null),
+    vol ? null : api('/api/brief').catch(() => null),
+  ]);
+  S.ov = ov; S.pub = ov; S.cmp = cmp; S.pred = pred; S.brief = brief;
+  if (S.tab === 'plan' || vol) await loadPlan();
   if (S.tab === 'admin') await loadAdmin();
+  saveSnapshot();
 }
+// The big school list is only needed for search, the explorer and region cards, so it loads after the first screen.
+async function ensureSchools() {
+  if (S.who?.role !== 'hq' || S.allSchools || S.loadingSchools) return;
+  S.loadingSchools = true;
+  try { S.allSchools = (await api('/api/schools' + (S.year ? '?year=' + S.year : ''))).schools; } catch { S.allSchools = null; }
+  S.loadingSchools = false;
+  if (S.allSchools) { render(); if (S.cur) openDetail(S.cur, false); }
+}
+S.workCache = {};
+async function loadWork(name) {
+  if (S.workCache[name]) return;
+  try { S.workCache[name] = (await api('/api/work?name=' + encodeURIComponent(name) + (S.year ? '&year=' + S.year : ''))).work; } catch { S.workCache[name] = []; }
+  if (S.cur === 'person:' + name) openDetail(S.cur, false);
+}
+// Last good screen is kept on the device so the app opens instantly, then refreshes behind it.
+function saveSnapshot() { try { if (S.code && S.ov) localStorage.setItem('kf_snap', JSON.stringify({ code: S.code, t: Date.now(), ov: S.ov, cmp: S.cmp, pred: S.pred, brief: S.brief })); } catch {} }
+function loadSnapshot() { try { const s = JSON.parse(localStorage.getItem('kf_snap') || 'null'); return s && s.code === S.code && Date.now() - s.t < 12 * 3600 * 1000 ? s : null; } catch { return null; } }
 function publicCompare(pub) {
   if (!pub || !pub.regions) return { status: 'waiting' };
   return { regions: pub.regions.map((r) => ({ ...r, tested_pct: pc(r.tested, r.target) })).sort((a, b) => b.tested_pct - a.tested_pct), people: [] };
-}
-async function loadAllSchools() {
-  const yq = S.year ? '&year=' + S.year : '';
-  // HQ: pull each region's school rows once, through the plan endpoint's school list plus overview data
-  const out = [];
-  for (const r of S.cfg.regions) { try { const x = await api('/api/region?region=' + r + yq); out.push(...x.schools); } catch {} }
-  return out;
 }
 async function loadPlan(region) {
   const r = region || S.planRegion || S.who.region || S.cfg.regions[0];
@@ -536,7 +552,8 @@ async function loadAdmin() {
 
 async function go() {
   if (!S.tab && location.hash && !location.hash.includes(':')) S.tab = location.hash.slice(1);
-  try { await loadData(); render(); if (location.hash.includes(':')) { try { openDetail(decodeURIComponent(location.hash.slice(1))); } catch {} } } catch (e) { if (e.status === 401 && S.code) { S.code = null; S.who = null; store.set('kf_code', null); loginScreen('Your code was not recognised. Try again.'); } else $('#app').innerHTML = `<div class="banner bad">${esc(e.message)}</div>`; }
+  if (S.who && !S.ov) { const snap = loadSnapshot(); if (snap) { S.ov = snap.ov; S.pub = snap.ov; S.cmp = snap.cmp; S.pred = snap.pred; S.brief = snap.brief; S.stale = snap.t; render(); } }
+  try { await loadData(); S.stale = null; render(); ensureSchools(); if (location.hash.includes(':')) { try { openDetail(decodeURIComponent(location.hash.slice(1))); } catch {} } } catch (e) { if (e.status === 401 && S.code) { S.code = null; S.who = null; store.set('kf_code', null); loginScreen('Your code was not recognised. Try again.'); } else $('#app').innerHTML = `<div class="banner bad">${esc(e.message)}</div>`; }
 }
 
 document.addEventListener('click', async (e) => {
@@ -549,7 +566,7 @@ document.addEventListener('click', async (e) => {
   const a = t.dataset.act;
   try {
     if (a === 'login') { const c = $('#code').value.trim().toUpperCase(); if (!c) return; S.code = c; try { const r = await api('/api/login'); S.who = r.who; store.set('kf_code', c); S.tab = null; await go(); } catch { S.code = null; loginScreen('That code was not recognised.'); } }
-    else if (a === 'logout') { S.code = null; S.who = null; S.ov = null; S.plan = null; S.draft = null; store.set('kf_code', null); S.tab = null; loginScreen(); }
+    else if (a === 'logout') { S.code = null; S.who = null; S.ov = null; S.plan = null; S.draft = null; store.set('kf_code', null); try { localStorage.removeItem('kf_snap'); } catch {} S.tab = null; loginScreen(); }
     else if (a === 'showLogin') loginScreen();
     else if (a === 'alerts') await toggleAlerts();
     else if (a === 'pushTest') { const r = await api('/api/admin/push-test', { method: 'POST', body: { role: 'hq' } }); alert(r.skipped || `Sent to ${r.sent} device(s)` + (r.errors?.length ? ', errors: ' + r.errors.join(', ') : '')); }
@@ -581,7 +598,7 @@ document.addEventListener('click', async (e) => {
 document.addEventListener('change', async (e) => {
   const tf = e.target.dataset?.tf; if (tf) { const [id, k] = tf.split(':'); S.tbl[id].f[k] = e.target.value; render(); return; }
   const qf = e.target.dataset?.qf; if (qf) { S.qf[qf] = e.target.value; render(); return; }
-  if (e.target.id === 'yearSel') { S.year = e.target.value; S.allSchools = null; await go(); }
+  if (e.target.id === 'yearSel') { S.year = e.target.value; S.allSchools = null; S.workCache = {}; await go(); }
   else if (e.target.id === 'planRegion') { S.draft = null; await loadPlan(e.target.value); render(); }
   else if (e.target.id === 'exLga') { S.explore.lga = e.target.value; render(); }
 });

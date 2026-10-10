@@ -14,8 +14,9 @@ export async function buildBrief(env, sum, today, region = null) {
   const regs = region ? [region] : REGIONS;
   const planned = {};
   const notices = [];
-  for (const r of regs) {
-    const plan = await getPlan(env, r);
+  const plansArr = await Promise.all(regs.map((r) => getPlan(env, r)));
+  for (const [pi, r] of regs.entries()) {
+    const plan = plansArr[pi];
     planned[r] = plan.status === 'locked';
     if (plan.status === 'locked') {
       const dec = withNotices(plan, today, null);

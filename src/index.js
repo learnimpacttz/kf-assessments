@@ -15,16 +15,31 @@ import {
 const json = (data, status = 200) => Response.json(data, { status, headers: { 'cache-control': 'no-store' } });
 const err = (message, status = 400, extra = {}) => json({ error: message, ...extra }, status);
 
+// Summaries are read from Workers KV (fast, edge-cached) with a short in-memory copy, and fall back to the
+// Durable Object if KV has not been filled yet. Never use this for anything that must be exactly current.
+const memo = new Map();
+async function readSummary(env, y) {
+  const hit = memo.get(y);
+  if (hit && Date.now() - hit.t < 20000) return hit.v;
+  let v = env.DASHBOARD_KV ? await env.DASHBOARD_KV.get(`sum:${y}`, { type: 'json', cacheTtl: 30 }) : null;
+  if (!v) v = await kv(env).get(`v2:sum:${y}`);
+  if (v) memo.set(y, { v, t: Date.now() });
+  return v;
+}
+async function readYears(env) {
+  const y = env.DASHBOARD_KV ? await env.DASHBOARD_KV.get('years', { type: 'json', cacheTtl: 30 }) : null;
+  return y && y.length ? y : (await kv(env).get('v2:years')) || [];
+}
 async function loadSummary(env, wanted) {
-  const years = (await kv(env).get('v2:years')) || [];
+  const years = await readYears(env);
   let year = wanted && years.includes(wanted) ? wanted : years.includes(CURRENT_YEAR) ? CURRENT_YEAR : years[years.length - 1];
   if (!year) return { years, sum: null, year: null, rehearsal: false };
-  let sum = await kv(env).get(`v2:sum:${year}`);
+  let sum = await readSummary(env, year);
   // Until the first 2026 test arrives the live year is empty (the teacher baseline alone creates it),
   // so open on the latest earlier year as a clearly marked rehearsal. A person can still pick 2026 directly.
   if (!wanted && year === CURRENT_YEAR && sum && !sum.national.records) {
     const earlier = years.filter((y) => y !== CURRENT_YEAR).pop();
-    if (earlier) { year = earlier; sum = await kv(env).get(`v2:sum:${year}`); }
+    if (earlier) { year = earlier; sum = await readSummary(env, year); }
   }
   return { years, sum, year, rehearsal: year !== CURRENT_YEAR };
 }
@@ -102,8 +117,8 @@ export default {
         const base = { status: 'ok', who, year, years, rehearsal, as_of: sum.as_of, today: eatToday(), bands: sum.bands, ...publicView(sum) };
         if (who.role === 'hq') {
           const plans = {};
-          for (const r of REGIONS) { const p = await getPlan(env, r); plans[r] = { status: p.status, visits: p.visits.length, changes: p.changes.length, late_changes: p.changes.filter((c) => c.late).length, submitted_at: p.submitted_at }; }
-          return json({ ...base, work: sum.work, admins: sum.admins, flags: decorate(sum.flags.map((f) => ({ ...f, school_name: SCHOOL_BY_ID[f.school]?.name, region: SCHOOL_BY_ID[f.school]?.region, lga: SCHOOL_BY_ID[f.school]?.lga, ward: SCHOOL_BY_ID[f.school]?.ward })), queries).slice(0, 600), plans, unlisted: sum.admins.filter((a) => a.role === 'unlisted').map((a) => a.name) });
+          (await Promise.all(REGIONS.map((r) => getPlan(env, r)))).forEach((p, k) => { plans[REGIONS[k]] = { status: p.status, visits: p.visits.length, changes: p.changes.length, late_changes: p.changes.filter((c) => c.late).length, submitted_at: p.submitted_at }; });
+          return json({ ...base, admins: sum.admins, flags: decorate(sum.flags.map((f) => ({ ...f, school_name: SCHOOL_BY_ID[f.school]?.name, region: SCHOOL_BY_ID[f.school]?.region, lga: SCHOOL_BY_ID[f.school]?.lga, ward: SCHOOL_BY_ID[f.school]?.ward })), queries).slice(0, 600), plans, unlisted: sum.admins.filter((a) => a.role === 'unlisted').map((a) => a.name) });
         }
         if (who.role === 'rc' || who.role === 'arc') {
           return json({ ...base, mine: regionBundle(sum, who.region, who, queries) });
@@ -160,6 +175,22 @@ export default {
         const brief = await buildBrief(env, sum, eatToday(), region);
         const ai = who.role === 'volunteer' ? null : await aiBrief(env, brief, region || 'national').catch(() => null);
         return json({ ...brief, ai, ai_enabled: Boolean(env.ANTHROPIC_API_KEY) });
+      }
+
+      if (path === '/api/schools') {
+        const { sum } = await loadSummary(env, url.searchParams.get('year'));
+        if (!sum) return json({ schools: [] });
+        const rows = (who.role === 'hq' ? REGIONS : [who.region]).flatMap((r) => (SCHOOLS_BY_REGION[r] || []).map((s) => ({ ...schoolRow(sum.schools[s.id]), region: r })));
+        return json({ schools: rows });
+      }
+      if (path === '/api/work') {
+        const { sum } = await loadSummary(env, url.searchParams.get('year'));
+        const name = url.searchParams.get('name') || '';
+        const a = sum?.admins?.find((x) => x.name === name);
+        if (!a) return json({ work: [] });
+        if (who.role === 'volunteer' && a.staff_id !== who.id) return err('Not yours', 403);
+        if (who.role !== 'hq' && a.region !== who.region) return err('Not your region', 403);
+        return json({ work: sum.work[name] || [] });
       }
 
       // ---------- compare (regions are public; people are role-limited) ----------
