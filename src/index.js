@@ -1,4 +1,6 @@
 import { koboForm } from './koboforms.js';
+import { buildCalendar, markCalendarDirty, syncCalendar, calendarStatus, setCalSync, loadCalSync } from './calendar.js';
+import { loadFormJob, saveFormJob, runFormJob, maybeRunFormJob } from './formjob.js';
 import { kv } from './store.js';
 import { buildBrief, aiBrief } from './brief.js';
 import { morningDigest, eveningGap, loadRecipients, saveRecipients, runDigests, maybeRunScheduledDigests, sendMail, onboardingEmail, runOnboarding, hqOnboardingEmail, reminderEmail, runReminders } from './digest.js';
@@ -343,6 +345,7 @@ export default {
           else if (body.action === 'notice') r = await markNotice(env, who, region, body);
           else return err('Unknown action');
           if (r.error) return err(r.error, r.status || 400, { errors: r.errors });
+          if (body.action === 'submit' || body.action === 'change') await markCalendarDirty(env); // the phone calendar file is refreshed shortly if HQ has switched that on
           return json({ plan: withNotices(r.plan, today, visitDates) });
         }
       }
@@ -418,16 +421,9 @@ export default {
       }
       if (path === '/api/admin/calendar-csv') {
         // Reference file for the KoBo forms (upload as media named ref_calendar.csv). One row per planned school.
-        const plans = await Promise.all(REGIONS.map((r) => getPlan(env, r)));
-        const q = (v) => { const s = String(v ?? ''); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
-        const stamp = new Date(Date.now() + 3 * 3600 * 1000).toISOString().slice(0, 16).replace('T', ' ');
-        const version = plans.reduce((a, p) => a + (p.version || 0), 0);
-        const rows = [['school', 'planned_date', 'school_name', 'region', 'lga', 'start', 'team']];
-        rows.push(['_CALENDAR', `v${version} ${stamp}`, 'calendar switch and version', '', '', '', '']);
-        let n = 0;
-        plans.forEach((p, k) => { if (p.status !== 'locked') return; for (const v of p.visits) { const s = SCHOOL_BY_ID[v.school]; rows.push([v.school, v.date, s?.name?.trim() || '', REGIONS[k], s?.lga || '', v.start || '', (v.team || []).join('; ')]); n++; } });
-        await kv(env).put('v2:calcsv:last', { at: new Date().toISOString(), rows: n, version: `v${version}` });
-        return new Response(rows.map((r) => r.map(q).join(',')).join('\n') + '\n', { headers: { 'content-type': 'text/csv; charset=utf-8', 'content-disposition': `attachment; filename="ref_calendar.csv"`, 'x-calendar-rows': String(n), 'x-calendar-version': `v${version}`, 'cache-control': 'no-store' } });
+        const built = await buildCalendar(env);
+        await kv(env).put('v2:calcsv:last', { at: new Date().toISOString(), rows: built.rows, version: built.version });
+        return new Response(built.csv, { headers: { 'content-type': 'text/csv; charset=utf-8', 'content-disposition': `attachment; filename="ref_calendar.csv"`, 'x-calendar-rows': String(built.rows), 'x-calendar-version': built.version, 'cache-control': 'no-store' } });
       }
       if (path === '/api/admin/fields') {
         // Field NAMES only (never values) from the first records of a form, so the importer can be written against the real layout.
@@ -582,6 +578,29 @@ export default {
         return json(out);
       }
       if (path === '/api/admin/kobo-form' && method === 'POST') { try { return json(await koboForm(env, await request.json())); } catch (e) { return err(String(e.message || e), 502); } }
+      if (path === '/api/admin/calsync') {
+        if (method === 'POST') {
+          const b = await request.json().catch(() => ({}));
+          if (b.action === 'enable') await setCalSync(env, { enabled: true });
+          else if (b.action === 'disable') await setCalSync(env, { enabled: false });
+          else if (b.action === 'reset_prev') { await kv(env).delete('v2:calsync:csv'); const c = await loadCalSync(env); c.last = null; c.history = []; await kv(env).put('v2:calsync', c); }
+          else if (b.action === 'min') await setCalSync(env, { min_regions: Number(b.min_regions) });
+          else if (b.action === 'run') { try { return json({ ran: await syncCalendar(env, { force: true, assets: b.assets || null }), status: await calendarStatus(env) }); } catch (e) { return err(String(e.message || e), 502); } }
+          else return err('Unknown action');
+        }
+        return json(await calendarStatus(env));
+      }
+      if (path === '/api/admin/formjob') {
+        if (method === 'POST') {
+          const b = await request.json().catch(() => ({}));
+          const st = await loadFormJob(env);
+          if (b.action === 'disarm') { st.armed = false; await saveFormJob(env, st); }
+          else if (b.action === 'arm') { st.armed = true; if (st.done === 'failed' || st.done === 'expired') st.done = null; await saveFormJob(env, st); }
+          else if (b.action === 'run') { const o = b.asset ? { asset: b.asset, expectCurrentRows: b.expect_current_rows, expectNewRows: b.expect_new_rows } : { force: true }; return json({ ran: await runFormJob(env, o) }); }
+          else return err('Unknown action');
+        }
+        const { ...st } = await loadFormJob(env); return json(st);
+      }
       if (path === '/api/admin/practice-clear' && method === 'POST') { const b = await request.json().catch(() => ({})); if (b.confirm !== 'CLEAR') return err('Type CLEAR to confirm', 422); await clearPractice(env); return json({ ok: true }); }
       if (path === '/api/admin/push-status') return json(await pushStatus(env));
       if (path === '/api/admin/push-test' && method === 'POST') {
@@ -621,6 +640,8 @@ export default {
         const ranKey = alertSlot + ':' + hhmm;
         if (last[ranKey] !== day) { last[ranKey] = day; await kv(env).put('v2:push:ran', last); const sum = await kv(env).get('v2:sum:' + CURRENT_YEAR); console.log('alerts ' + JSON.stringify(await runAlerts(env, alertSlot, sum)).slice(0, 400)); }
       }
+      try { const cs = await syncCalendar(env); if (cs) console.log('calendar ' + JSON.stringify(cs).slice(0, 400)); } catch (e) { console.error('calendar sync failed: ' + (e && e.message)); }
+      try { const fj = await maybeRunFormJob(env); if (fj) console.log('formjob ' + JSON.stringify(fj).slice(0, 600)); } catch (e) { console.error('form job failed: ' + (e && e.message)); }
       const bk = await maybeRunScheduledBackup(env); if (bk) console.log('backup ' + JSON.stringify(bk));
       const dg = await maybeRunScheduledDigests(env);
       if (dg) console.log('digest ' + JSON.stringify(dg).slice(0, 500));

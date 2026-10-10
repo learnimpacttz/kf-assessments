@@ -17,6 +17,11 @@ export async function koboForm(env, b) {
 
   if (b.op === 'info') { const a = await get(b.asset); const f = await (await fetch(`${srv}/api/v2/assets/${b.asset}/files/?format=json`, { headers: H })).json().catch(() => ({})); const c = a.content || {}; const calc = (c.survey || []).find((q) => q.name === 'cal_status')?.calculation || null; const train = (c.choices || []).filter((x) => String(x.name).startsWith('TRAIN')).map((x) => x.name);
     return { ...brief(a), cal_status: calc, practice_choices: train, files: (f.results || []).map((x) => ({ uid: x.uid, name: x.metadata?.filename, type: x.file_type, size: x.metadata?.filesize })) }; }
+  if (b.op === 'inspect') { // what a project holds right now: for checks before and after a replacement
+    const a = await get(b.asset); const c = a.content || {}; const survey = c.survey || [];
+    const f = await (await fetch(`${srv}/api/v2/assets/${b.asset}/files/?format=json`, { headers: H })).json().catch(() => ({}));
+    return { ...brief(a), rows: survey.length, names: survey.map((q) => q.name || q.$autoname).filter(Boolean), cal_status: (survey.find((q) => q.name === 'cal_status') || {}).calculation || null, files: (f.results || []).map((x) => x.metadata?.filename) };
+  }
   if (b.op === 'clone') {
     if (!known.includes(b.source)) throw new Error('Unknown source');
     const r = await fetch(`${srv}/api/v2/assets/`, { method: 'POST', headers: { ...H, ...J }, body: JSON.stringify({ clone_from: b.source, name: 'ZZ_TEST ' + String(b.name || 'copy').slice(0, 60), asset_type: 'survey' }) });
