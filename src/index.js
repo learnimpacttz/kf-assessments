@@ -126,6 +126,9 @@ export default {
         const queries = await loadQueries(env);
         const base = { status: 'ok', who, year, years, rehearsal, as_of: sum.as_of, today: eatToday(), bands: sum.bands, plan_due: planDue, ...publicView(sum) };
         if (who.role === 'hq') {
+          const feed = [];
+          (await Promise.all(REGIONS.map((r) => getPlan(env, r)))).forEach((p, k) => { for (const c of p.changes || []) feed.push({ at: c.at, region: REGIONS[k], by: c.by, school: c.school, school_name: SCHOOL_BY_ID[c.school]?.name, from: c.from?.date, to: c.to?.date, reason: c.reason, note: c.note, late: c.late }); });
+          base.calendar_changes = feed.sort((x, y) => (y.at > x.at ? 1 : -1)).slice(0, 40);
           const plans = {};
           (await Promise.all(REGIONS.map((r) => getPlan(env, r)))).forEach((p, k) => { plans[REGIONS[k]] = { status: p.status, visits: p.visits.length, changes: p.changes.length, late_changes: p.changes.filter((c) => c.late).length, submitted_at: p.submitted_at, days_one: dayCounts(p).one, days_three: dayCounts(p).three }; });
           return json({ ...base, staff: STAFF.filter((s) => s.active).map((s) => ({ id: s.id, name: s.name, position: s.position, region: s.region, role: s.role })), admins: sum.admins, flags: decorate(sum.flags.map((f) => ({ ...f, school_name: SCHOOL_BY_ID[f.school]?.name, region: SCHOOL_BY_ID[f.school]?.region, lga: SCHOOL_BY_ID[f.school]?.lga, ward: SCHOOL_BY_ID[f.school]?.ward })), queries).slice(0, 600), plans, unlisted: sum.admins.filter((a) => a.role === 'unlisted').map((a) => a.name) });

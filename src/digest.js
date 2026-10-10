@@ -3,7 +3,7 @@
 // Until then everything runs as a preview HQ can read in the Admin tab.
 import { kv } from './store.js';
 import { staffCodes } from './auth.js';
-import { STAFF, PLAN_DEADLINE } from './config.js';
+import { STAFF, PLAN_DEADLINE, SCHOOL_BY_ID } from './config.js';
 import { buildBrief } from './brief.js';
 import { getPlan, withNotices, planProgress } from './plan.js';
 import { REGIONS, SCHOOLS_BY_REGION, eatToday, isWorkingDay, addDays, FIELD_START, FIELD_END, workingDaysBetween } from './config.js';
@@ -46,6 +46,15 @@ export async function morningDigest(env, sum, region, today, siteUrl) {
     for (const v of vs) lines.push({ r, name: v.school_name, lga: v.lga, start: v.start, team: (v.team || []).join(', ') || 'whole team' });
   }
   if (lines.length) todayRows = `<p style="margin:14px 0 4px"><b>Today's visits / Ziara za leo</b></p><table style="width:100%;border-collapse:collapse;font-size:13.5px">${lines.map((l) => `<tr><td style="padding:5px 0;border-bottom:1px solid #eef1f6">${esc(l.name)}${region ? '' : ' · ' + esc(title(l.r))}</td><td style="border-bottom:1px solid #eef1f6">${esc(title(l.lga))}</td><td style="border-bottom:1px solid #eef1f6">${esc(l.start)}</td><td style="border-bottom:1px solid #eef1f6">${esc(l.team)}</td></tr>`).join('')}</table>`;
+  let chgLine = '', chgText = '';
+  if (!region) {
+    const since = new Date(Date.now() - 24 * 3600e3).toISOString(); const recent = [];
+    for (const r of REGIONS) for (const c of (await getPlan(env, r)).changes || []) if (c.at > since) recent.push({ r, c });
+    if (recent.length) {
+      chgText = `Calendar changes in the last 24 hours: ${recent.length} (${recent.filter((x) => x.c.late).length} late). ` + recent.slice(0, 6).map((x) => `${title(x.r)}: ${SCHOOL_BY_ID[x.c.school]?.name?.trim() || x.c.school} ${x.c.from?.date} to ${x.c.to?.date} (${x.c.reason}${x.c.late ? ', late' : ''}, ${x.c.by})`).join('; ');
+      chgLine = `<p style="margin:6px 0">${dot(recent.some((x) => x.c.late) ? 'warn' : 'info')}${esc(chgText)}</p>`;
+    }
+  }
   let planLine = '', planText = '';
   if (!region) {
     const pp = await planProgress(env, REGIONS);
@@ -59,8 +68,8 @@ export async function morningDigest(env, sum, region, today, siteUrl) {
   if (planText) brief.items = brief.items.filter((i) => !/have not submitted the field plan/.test(i.text)); // the deadline line above replaces it
   const items = brief.items.map((i) => `<p style="margin:6px 0">${dot(i.sev)}${esc(i.text)}</p>`).join('') || '<p>Nothing to report yet.</p>';
   const tm = Object.entries(brief.tomorrow_schools).map(([r, s]) => `<p style="margin:4px 0">${region ? '' : '<b>' + esc(title(r)) + '</b>: '}${s.map(esc).join(', ')}</p>`).join('');
-  const html = layout(`KiuFunza 4 · ${region ? title(region) : 'National'} morning brief`, today, `${planLine}${items}${todayRows}${tm ? `<p style="margin:14px 0 4px"><b>Tomorrow / Kesho</b></p>${tm}` : ''}`, `Sent automatically by the LearnImpact KiuFunza field dashboard. Open it for live numbers: <a href="${esc(siteUrl)}" style="color:#354062">${esc(siteUrl)}</a>`);
-  const text = ['AUTOMATED UPDATE - no reply needed', `KiuFunza 4 · ${region ? title(region) : 'National'} morning brief · ${today}`, ...(planText ? ['- ' + planText] : []), ...brief.items.map((i) => '- ' + i.text), ...lines.map((l) => `Today: ${l.name} (${l.start}) ${l.team}`), siteUrl].join('\n');
+  const html = layout(`KiuFunza 4 · ${region ? title(region) : 'National'} morning brief`, today, `${planLine}${chgLine}${items}${todayRows}${tm ? `<p style="margin:14px 0 4px"><b>Tomorrow / Kesho</b></p>${tm}` : ''}`, `Sent automatically by the LearnImpact KiuFunza field dashboard. Open it for live numbers: <a href="${esc(siteUrl)}" style="color:#354062">${esc(siteUrl)}</a>`);
+  const text = ['AUTOMATED UPDATE - no reply needed', `KiuFunza 4 · ${region ? title(region) : 'National'} morning brief · ${today}`, ...(planText ? ['- ' + planText] : []), ...(chgText ? ['- ' + chgText] : []), ...brief.items.map((i) => '- ' + i.text), ...lines.map((l) => `Today: ${l.name} (${l.start}) ${l.team}`), siteUrl].join('\n');
   return { subject: `KiuFunza 4 · Automated field update · ${region ? title(region) : 'National'} · ${today}`, html, text };
 }
 
