@@ -4,8 +4,8 @@
 import { kv } from './store.js';
 import { fetchKoboPage } from './kobo.js';
 import { addStudents, addSampling, addTeachers, yearOf } from './ingest.js';
-import { buildBands, summarize } from './summary.js';
-import { eatToday } from './config.js';
+import { buildBands, summarize, phoneDay } from './summary.js';
+import { eatToday, devCode } from './config.js';
 
 const KINDS = {
   students: { asset: 'KOBO_ASSET_ID', add: addStudents },
@@ -40,7 +40,7 @@ export async function loadState(env, years) {
   return { yrs };
 }
 
-export async function recomputeSummaries(env, years) {
+export async function recomputeSummaries(env, years, { allDays = false } = {}) {
   const state = await loadState(env);
   const today = eatToday();
   const have = new Set((await kv(env).get('v2:years')) || []);
@@ -51,6 +51,12 @@ export async function recomputeSummaries(env, years) {
     const owners = (await kv(env).get('v2:devowners')) || {};
     const sum = summarize(Y, { year: y, bands, today, owners });
     await kv(env).put(`v2:sum:${y}`, sum);
+    // One small document per field day for the Phones screen (the last 3 days each time, all days on a full rebuild)
+    if (env.DASHBOARD_KV && Y.tl) {
+      const dates = Object.keys(Y.tl).sort();
+      for (const d of allDays ? dates : dates.slice(-3)) await env.DASHBOARD_KV.put(`tl:${y}:${d}`, JSON.stringify({ date: d, year: y, events: Y.tl[d].map((e) => ({ c: devCode(e[0]), s: e[1], e: e[2], sc: e[3], g: e[4], w: e[5], k: e[6] })), phones: phoneDay(Y.tl[d]) }));
+      await env.DASHBOARD_KV.put(`tl:${y}:dates`, JSON.stringify(dates));
+    }
     // Derived read-only copies go to Workers KV: fast at the edge, and a minute of staleness does not matter here.
     // Running totals, plans and locks stay in the Durable Object because those must be strongly consistent.
     if (env.DASHBOARD_KV) await env.DASHBOARD_KV.put(`sum:${y}`, JSON.stringify(sum));

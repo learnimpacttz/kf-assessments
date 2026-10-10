@@ -32,7 +32,7 @@ export async function runBackup(env, { full = false, email = false, testTo = nul
   let stored = false;
   if (env.DASHBOARD_KV && gz.byteLength < 24 * 1024 * 1024) { await env.DASHBOARD_KV.put(key, gz, { expirationTtl: (full ? 120 : 21) * 86400, metadata: { at: data.at, full: Boolean(full), gz_bytes: gz.byteLength, plans: meta.items.plans, queries: meta.items.queries, years: meta.items.years } }); stored = true; }
   let emailed = false, to = null, cc = [];
-  if (email && env.EMAIL_ENABLED === 'true' && env.EMAIL_FROM && env.RESEND_API_KEY && gz.byteLength < 30 * 1024 * 1024) {
+  if (false && email && env.EMAIL_ENABLED === 'true' && env.EMAIL_FROM && env.RESEND_API_KEY && gz.byteLength < 30 * 1024 * 1024) {
     const rec = Object.entries(await loadRecipients(env)).filter(([, r]) => r.active !== false);
     to = testTo || rec.find(([, r]) => r.backup === 'to')?.[0] || env.BACKUP_TO || null;
     cc = testTo ? [] : rec.filter(([, r]) => r.backup === 'cc').map(([e]) => e); // a test goes only to the address given
@@ -69,15 +69,44 @@ export async function rawStoredBackup(env, key) {
   return env.DASHBOARD_KV.get(key, 'arrayBuffer');
 }
 
+// Nightly at 21:00 EAT: a copy into Cloudflare (a full one on Sundays). Monday 07:00 EAT, in office hours: the Sunday full
+// copy is emailed to the backup recipient with the copy list in cc.
 export async function maybeRunScheduledBackup(env) {
   const now = new Date();
-  if (now.toISOString().slice(11, 16) !== '18:00') return null; // 21:00 East Africa Time
+  const hhmm = now.toISOString().slice(11, 16);
   const day = now.toISOString().slice(0, 10);
   const ran = (await kv(env).get('v2:backup:ran')) || {};
-  if (ran.day === day) return null;
-  await kv(env).put('v2:backup:ran', { day });
-  const sunday = now.getUTCDay() === 0;
-  return runBackup(env, { full: sunday, email: sunday }); // nightly into Cloudflare; the Sunday full copy is also emailed
+  if (hhmm === '18:00' && ran.day !== day) {
+    await kv(env).put('v2:backup:ran', { ...ran, day });
+    return runBackup(env, { full: now.getUTCDay() === 0 });
+  }
+  if (hhmm === '04:00' && now.getUTCDay() === 1 && ran.mailed !== day) { // Monday 07:00 EAT
+    await kv(env).put('v2:backup:ran', { ...ran, mailed: day });
+    return emailLatestFull(env);
+  }
+  return null;
+}
+
+export async function emailLatestFull(env, { testTo = null } = {}) {
+  const list = (await listBackups(env)).filter((b) => b.full);
+  let key = list[0]?.key;
+  if (!key) { const r = await runBackup(env, { full: true }); key = r.key; }
+  const gz = await rawStoredBackup(env, key);
+  if (!gz) return { emailed: false, error: 'no stored copy' };
+  const day = key.slice(3, 13);
+  const rec = Object.entries(await loadRecipients(env)).filter(([, r]) => r.active !== false);
+  const to = testTo || rec.find(([, r]) => r.backup === 'to')?.[0] || env.BACKUP_TO || null;
+  const cc = testTo ? [] : rec.filter(([, r]) => r.backup === 'cc').map(([e]) => e);
+  if (!to || !(env.EMAIL_ENABLED === 'true' && env.EMAIL_FROM && env.RESEND_API_KEY)) return { emailed: false, key, error: 'email is not set up' };
+  await sendMail(env, to, {
+    cc,
+    subject: `${testTo ? '[TEST] ' : ''}KiuFunza 4 · Automated weekly backup · copy of ${day}`,
+    html: '<p><b>AUTOMATED BACKUP · NO REPLY NEEDED</b></p><p>Weekly full backup of the field dashboard (taken Sunday night): field plans and their changes, queries and replies, the roster, email recipients and the stored data for earlier years. A copy is also kept inside Cloudflare every night. Please keep this file somewhere safe. HQ can restore from it in the Admin tab.</p>',
+    text: `AUTOMATED BACKUP - no reply needed\nKiuFunza 4 weekly backup, copy of ${day}. Keep the attachment safe.`,
+    attachments: [{ filename: `kf4-backup-${day}-full.json.gz`, content: b64(gz) }],
+  });
+  await kv(env).put('v2:backup:mailed', { at: new Date().toISOString(), key, to, cc });
+  return { emailed: true, key, to, cc };
 }
 
 // Restores plans, queries, roster and recipients. Year aggregates are restored only if asked and present.

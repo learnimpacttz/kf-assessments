@@ -5,7 +5,7 @@ import { loadQueries, decorate, postQuery, flagKey } from './queries.js';
 import { identify, staffCodes, canSeeRegion } from './auth.js';
 import { forecast, atRiskSchools } from './predict.js';
 import { ensureRoster, changeRoster, rosterOptions } from './roster.js';
-import { runBackup, buildBackup, restoreBackup, maybeRunScheduledBackup, listBackups, readStoredBackup, rawStoredBackup } from './backup.js';
+import { runBackup, buildBackup, restoreBackup, maybeRunScheduledBackup, listBackups, readStoredBackup, rawStoredBackup, emailLatestFull } from './backup.js';
 import { setValidation, koboWho, getValidation, clearValidation } from './kobo.js';
 import { fetchKoboPage } from './kobo.js';
 import { subscribe, unsubscribe, takeAlert, hashEndpoint, pushTo, pushStatus, pushReady, runAlerts } from './push.js';
@@ -262,6 +262,28 @@ export default {
         return json(out);
       }
 
+      // ---------- phones: what each phone did, for the whole team to see ----------
+      if (path === '/api/phones') {
+        const years = await readYears(env);
+        const wantY = url.searchParams.get('year');
+        let year = wantY && years.includes(wantY) ? wantY : null; let dates = [];
+        for (const y of year ? [year] : [...years].reverse()) { const d = env.DASHBOARD_KV ? await env.DASHBOARD_KV.get(`tl:${y}:dates`, { type: 'json', cacheTtl: 30 }) : null; if (d && d.length) { year = y; dates = d; break; } }
+        if (!year || !dates.length) return json({ status: 'none', note: 'No phone data yet. It appears once sampling or test records carry the phone ID.' });
+        const date = dates.includes(url.searchParams.get('date')) ? url.searchParams.get('date') : dates[dates.length - 1];
+        const doc = await env.DASHBOARD_KV.get(`tl:${year}:${date}`, { type: 'json' });
+        const sum = await readSummary(env, year);
+        const myRegion = who.role === 'hq' ? (url.searchParams.get('region') || null) : who.region;
+        const inScope = (sc) => !myRegion || SCHOOL_BY_ID[sc]?.region === myRegion;
+        const events = (doc?.events || []).filter((e) => inScope(e.sc));
+        const codes = new Set(events.map((e) => e.c));
+        const phones = (doc?.phones || []).filter((p) => p.schools.some(inScope)).map((p) => ({ ...p, schools: p.schools.filter(inScope).map((sc) => ({ id: sc, name: SCHOOL_BY_ID[sc]?.name?.trim() })) }));
+        const DEVT = new Set(['devoverlap', 'devtravel', 'devswitch', 'devnames', 'namedevs', 'devshare', 'headcount', 'devowner']);
+        const flags = (sum?.flags || []).filter((f) => DEVT.has(f.type) && f.date === date && inScope(f.school)).map((f) => ({ ...f, school_name: SCHOOL_BY_ID[f.school]?.name, region: SCHOOL_BY_ID[f.school]?.region, lga: SCHOOL_BY_ID[f.school]?.lga }));
+        const bySchool = {};
+        for (const e of events) (bySchool[e.sc] ||= new Set()).add(e.c);
+        return json({ status: 'ok', year, date, dates, region: myRegion, events, phones, flags, schools: Object.entries(bySchool).map(([id, set]) => ({ id, name: SCHOOL_BY_ID[id]?.name?.trim(), region: SCHOOL_BY_ID[id]?.region, phones: set.size })) });
+      }
+
       // ---------- compare (regions are public; people are role-limited) ----------
       if (path === '/api/compare') {
         const { sum, year } = await loadSummary(env, url.searchParams.get('year'));
@@ -447,7 +469,13 @@ export default {
         return json({ staff: STAFF.map((s) => ({ id: s.id, name: s.name, region: s.region, position: s.position, role: s.role, active: s.active })), aliases: rosterState.aliases, unlisted: [...names], options: rosterOptions() });
       }
       if (path === '/api/admin/backup') {
-        if (method === 'POST') { const b = await request.json().catch(() => ({})); return json(await runBackup(env, { full: Boolean(b.full), email: Boolean(b.email), testTo: /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(b.test_to || '') ? b.test_to : null })); }
+        if (method === 'POST') {
+          const b = await request.json().catch(() => ({}));
+          const testTo = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(b.test_to || '') ? b.test_to : null;
+          const made = await runBackup(env, { full: Boolean(b.full) });
+          if (b.email) { const m = await emailLatestFull(env, { testTo }); return json({ ...made, emailed: m.emailed, to: m.to || null, cc: m.cc || [], mail_error: m.error || null }); }
+          return json(made);
+        }
         if (url.searchParams.get('list') === '1') return json({ backups: await listBackups(env), last: await kv(env).get('v2:backup:last') });
         if (url.searchParams.get('key')) { const raw = await rawStoredBackup(env, url.searchParams.get('key')); if (!raw) return err('No such backup', 404); return new Response(raw, { headers: { 'content-type': 'application/gzip', 'content-disposition': `attachment; filename="${url.searchParams.get('key').slice(3)}.json.gz"`, 'cache-control': 'no-store' } }); }
         const data = await buildBackup(env, url.searchParams.get('full') === '1');
@@ -526,7 +554,7 @@ export default {
         if (b.kind === 'teachers') for (const y of await stateYears(env)) { const Y = await loadYear(env, y); if (Y && Object.keys(Y.tf || {}).length) { Y.tf = {}; await saveYear(env, y, Y); } } // teacher aggregates are rebuilt from scratch so nothing is counted twice
         await resetKind(env, b.kind); return json({ ok: true, kind: b.kind });
       }
-      if (path === '/api/admin/recompute' && method === 'POST') { await recomputeSummaries(env); return json({ ok: true }); }
+      if (path === '/api/admin/recompute' && method === 'POST') { await recomputeSummaries(env, null, { allDays: true }); return json({ ok: true }); }
       if (path === '/api/admin/full-resync' && method === 'POST') { await resetAll(env); return json({ ok: true, note: 'State cleared. The next ticks re-read every form from the start.' }); }
       if (path === '/api/admin/state-size') { const s = await loadState(env); return json({ years: Object.fromEntries(Object.entries(s.yrs).map(([y, Y]) => [y, { records: Y.n, cells: Object.keys(Y.cells).length, sg: Object.keys(Y.sg).length, teacher_schools: Object.keys(Y.tf).length }])) }); }
 

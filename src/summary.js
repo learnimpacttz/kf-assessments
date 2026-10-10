@@ -1,7 +1,7 @@
 // Turns the raw per-day aggregates into everything the dashboards show:
 // school progress, test-admin stats, checks/flags, pace and projected finish.
 // Computed once per sync (not per request) and stored; the API only slices it.
-import { SCHOOL_BY_ID, SCHOOLS_BY_REGION, REGIONS, FIELD_END, DEFAULT_BANDS, targetPerGrade, staffForKoboName, addWorkingDays, workingDaysBetween, isWorkingDay, STAFF } from './config.js';
+import { devCode as devCodeOf, SCHOOL_BY_ID, SCHOOLS_BY_REGION, REGIONS, FIELD_END, DEFAULT_BANDS, targetPerGrade, staffForKoboName, addWorkingDays, workingDaysBetween, isWorkingDay, STAFF } from './config.js';
 import { HIST_BUCKETS } from './ingest.js';
 
 const pct = (a, b) => (b ? Math.round((a / b) * 100) : null);
@@ -64,6 +64,54 @@ const above = (h, minutes) => {
   for (let i = idx; i < h.length; i++) s += h[i];
   return s;
 };
+
+const hms = (t) => `${String(Math.floor(t / 3600)).padStart(2, '0')}:${String(Math.floor((t % 3600) / 60)).padStart(2, '0')}`;
+const sname = (id) => (SCHOOL_BY_ID[id]?.name || id).trim();
+
+// What one phone did in one day, in time order. Thresholds are deliberately forgiving: a flag means "look", not "wrong".
+export function analyseDay(date, events) {
+  const flags = [];
+  const byDev = {}; const byName = {};
+  for (const e of events) { (byDev[e[0]] ||= []).push(e); if (e[5]) (byName[e[5]] ||= []).push(e); }
+  const row = (e) => [hms(e[1]), hms(e[2]), devCodeOf(e[0]), e[5], sname(e[3]), e[4], e[6]];
+  const add = (type, sev, dev, evs, text, hint, normal) => { const e0 = evs[0]; flags.push({ sev, type, school: e0[3], grade: e0[4], admin: [...new Set(evs.map((x) => x[5]).filter(Boolean))].join(' and '), date, text, hint, normal, evs: evs.slice(0, 10).map(row) }); };
+  for (const [dev, list] of Object.entries(byDev)) {
+    list.sort((a, b) => a[1] - b[1]);
+    const code = devCodeOf(dev);
+    // 1. overlapping tests on one phone: a phone can only run one test at a time
+    const over = [];
+    for (let i = 0; i < list.length; i++) for (let j = i + 1; j < list.length && list[j][1] < list[i][2]; j++) if (list[i][2] - list[j][1] > 60 && !(list[i][6] === 's' && list[j][6] === 's')) over.push([list[i], list[j]]);
+    if (over.length) add('devoverlap', 'warn', dev, over.slice(0, 4).flat(), `Phone ${code} recorded ${over.length} pair(s) of tests that overlap in time, for example ${hms(over[0][0][1])}-${hms(over[0][0][2])} and ${hms(over[0][1][1])}-${hms(over[0][1][2])}`, 'One phone cannot run two tests at once. Check whether records were edited or entered twice.', 'one test at a time');
+    // 2. the phone appears at different schools within a short time
+    const trav = [];
+    for (let i = 1; i < list.length; i++) if (list[i][3] !== list[i - 1][3]) { const gap = list[i][1] - list[i - 1][2]; if (gap < 30 * 60) trav.push({ a: list[i - 1], b: list[i], gap }); }
+    if (trav.length) { const worst = Math.min(...trav.map((t) => t.gap)); add('devtravel', worst < 10 * 60 ? 'bad' : 'warn', dev, trav.slice(0, 3).flatMap((t) => [t.a, t.b]), `Phone ${code} sent tests from ${sname(trav[0].a[3])} at ${hms(trav[0].a[2])} and from ${sname(trav[0].b[3])} at ${hms(trav[0].b[1])}, ${Math.max(0, Math.round(trav[0].gap / 60))} minute(s) apart${trav.length > 1 ? ` (${trav.length} such moves that day)` : ''}`, 'Schools are rarely this close. Check whether the phone was passed between teams or the school was chosen wrongly.', 'at least 30 min between schools'); }
+    // 3. jumping back and forth between grades in the same school
+    const sw = {};
+    for (let i = 2; i < list.length; i++) { const [p2, p1, c] = [list[i - 2], list[i - 1], list[i]]; if (c[3] === p1[3] && p1[3] === p2[3] && c[4] === p2[4] && c[4] !== p1[4] && c[1] - p2[2] < 30 * 60) (sw[c[3]] ||= []).push([p2, p1, c]); }
+    for (const [school, runs] of Object.entries(sw)) if (runs.length >= 2) add('devswitch', 'warn', dev, runs.slice(0, 2).flat(), `Phone ${code} went back and forth between grades ${runs.length} times at ${sname(school)}`, 'Each person usually works one class. Ask who was testing which class.', 'one class at a time');
+    // 4. several different names on the phone in quick succession
+    const nm = [];
+    for (let i = 1; i < list.length; i++) if (list[i][5] && list[i - 1][5] && list[i][5] !== list[i - 1][5] && list[i][1] - list[i - 1][2] < 10 * 60) nm.push([list[i - 1], list[i]]);
+    if (nm.length >= 2) add('devnames', 'warn', dev, nm.slice(0, 3).flat(), `Phone ${code} was used under different names ${nm.length} times within minutes: ${[...new Set(nm.flat().map((x) => x[5]))].join(', ')}`, 'Each person should use their own phone and their own name.', 'one name per phone');
+  }
+  // 5. one person on two phones at the same time
+  for (const [who, list] of Object.entries(byName)) {
+    const devs = [...new Set(list.map((e) => e[0]))];
+    if (devs.length < 2) continue;
+    list.sort((a, b) => a[1] - b[1]);
+    const clash = [];
+    for (let i = 0; i < list.length; i++) for (let j = i + 1; j < list.length && list[j][1] < list[i][2] + 120; j++) if (list[i][0] !== list[j][0] && list[i][3] !== undefined) clash.push([list[i], list[j]]);
+    if (clash.length) add('namedevs', 'warn', who, clash.slice(0, 3).flat(), `${who} sent tests from ${devs.length} different phones (${devs.map(devCodeOf).join(', ')}) with times that run together`, 'A person normally works with one phone. Check whether someone else used this name.', 'one phone per person');
+  }
+  return flags;
+}
+
+export function phoneDay(events) {
+  const phones = {};
+  for (const e of events) { const p = (phones[e[0]] ||= { c: devCodeOf(e[0]), names: {}, schools: new Set(), n: 0, first: 1e9, last: 0 }); if (e[5]) p.names[e[5]] = (p.names[e[5]] || 0) + 1; p.schools.add(e[3]); p.n += 1; p.first = Math.min(p.first, e[1]); p.last = Math.max(p.last, e[2]); }
+  return Object.values(phones).map((p) => ({ c: p.c, names: Object.entries(p.names).sort((a, b) => b[1] - a[1]).map(([n]) => n), schools: [...p.schools], n: p.n, first: p.first, last: p.last }));
+}
 
 export function summarize(Y, { year, bands, today, owners = {} }) {
   const schools = {};
@@ -233,6 +281,8 @@ export function summarize(Y, { year, bands, today, owners = {} }) {
     const ownerId = owners[dev];
     if (ownerId != null) for (const nm of names) { const st = staffForKoboName(nm); if (st && st.id !== ownerId) { const own = STAFF.find((x) => x.id === ownerId); flags.push({ sev: 'bad', type: 'devowner', school: schoolId, admin: nm, date, text: `${nm} submitted from the phone registered to ${own ? own.name : 'another person'} (${devCode(dev)})`, hint: 'Check whether the phone was lent or the wrong name was chosen.', normal: 'own phone' }); } }
   }
+  const tlDates = Object.keys(Y.tl || {}).sort();
+  for (const d of tlDates) for (const f of analyseDay(d, Y.tl[d])) if (schools[f.school]) flags.push(f);
   const devices = Object.entries(devReg).map(([dev, r]) => {
     const top = Object.entries(r.names).sort((a, b) => b[1] - a[1]);
     const share = top.length ? top[0][1] / r.n : 0;
@@ -297,7 +347,7 @@ export function summarize(Y, { year, bands, today, owners = {} }) {
   nat.pace = r1(paceAll);
   nat.projected = remainingAll <= 0 ? 'done' : paceAll > 0 ? addWorkingDays(today, Math.ceil(remainingAll / paceAll)) : null;
 
-  return { year, as_of: new Date().toISOString(), today, bands, devices, national: nat, regions, schools, admins: adminList, flags: flags.slice(0, 1500), days: Object.fromEntries(Object.entries(dayMap).map(([who, m]) => [who, Object.entries(m).sort().map(([d, v]) => [d, v.s.size, v.n, v.h0 === 99 ? null : v.h0, v.h1 < 0 ? null : v.h1])])), work: Object.fromEntries(Object.entries(work).map(([k, v]) => [k, v.sort((x, y) => (x[0] < y[0] ? 1 : -1)).slice(0, 80)])) };
+  return { year, as_of: new Date().toISOString(), today, bands, devices, tl_dates: tlDates, national: nat, regions, schools, admins: adminList, flags: flags.slice(0, 1500), days: Object.fromEntries(Object.entries(dayMap).map(([who, m]) => [who, Object.entries(m).sort().map(([d, v]) => [d, v.s.size, v.n, v.h0 === 99 ? null : v.h0, v.h1 < 0 ? null : v.h1])])), work: Object.fromEntries(Object.entries(work).map(([k, v]) => [k, v.sort((x, y) => (x[0] < y[0] ? 1 : -1)).slice(0, 80)])) };
 }
 
 export const staffRoster = () => STAFF;

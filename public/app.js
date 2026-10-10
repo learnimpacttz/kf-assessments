@@ -1,7 +1,7 @@
 // KiuFunza 4 Field Command Centre: one page, tabs depend on who signed in.
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const S = { daysCache: {}, koboConfirm: null, restoreData: null, rosterMsg: null, daysRows: null, exTab: 'assess', tch: null, linked: null, exErr: null, real: null, viewAs: null, staffList: [], pred: null, brief: null, qOpen: null, cfg: null, code: null, who: null, tab: null, ov: null, pub: null, cmp: null, plan: null, year: null, explore: { q: '', lga: '', sub: 'schools' }, planRegion: null, selVisit: null, adm: null };
+const S = { ph: null, phDate: null, phRegion: null, phErr: null, daysCache: {}, koboConfirm: null, restoreData: null, rosterMsg: null, daysRows: null, exTab: 'assess', tch: null, linked: null, exErr: null, real: null, viewAs: null, staffList: [], pred: null, brief: null, qOpen: null, cfg: null, code: null, who: null, tab: null, ov: null, pub: null, cmp: null, plan: null, year: null, explore: { q: '', lga: '', sub: 'schools' }, planRegion: null, selVisit: null, adm: null };
 const store = { get: (k) => { try { return localStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch {} } };
 
 async function api(path, opts = {}) {
@@ -20,7 +20,7 @@ const pc = (a, b) => (b ? Math.round((a / b) * 100) : 0);
 const dayName = (iso) => new Date(iso + 'T00:00:00Z').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' });
 const shortDate = (iso) => (iso ? new Date(iso + 'T00:00:00Z').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' }) : '–');
 const title = (s) => String(s || '').toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
-const FLAG_LABEL = { fast: 'Test too fast', slow: 'Test too slow', window: 'Outside school hours', gps: 'Far from school', skilltime: 'Skills skipped', dup: 'Pupil tested twice', notlist: 'Not on sampling list', team: 'Team size', over: 'Over the sample', short: 'Short of the sample', nosample: 'No sampling record', offcal: 'Visited off the calendar', headcount: 'Fewer phones than people', devshare: 'One phone, several names', devowner: 'Someone else\'s phone' };
+const FLAG_LABEL = { fast: 'Test too fast', slow: 'Test too slow', window: 'Outside school hours', gps: 'Far from school', skilltime: 'Skills skipped', dup: 'Pupil tested twice', notlist: 'Not on sampling list', team: 'Team size', over: 'Over the sample', short: 'Short of the sample', nosample: 'No sampling record', offcal: 'Visited off the calendar', headcount: 'Fewer phones than people', devshare: 'One phone, several names', devowner: 'Someone else\'s phone', devoverlap: 'Tests overlap on one phone', devtravel: 'Phone at two schools too fast', devswitch: 'Phone jumping between grades', devnames: 'Names changing on one phone', namedevs: 'One person, several phones' };
 
 // ---------- shared pieces ----------
 const kpi = (l, v, s = '') => `<div class="kpi"><div class="l">${l}</div><div class="v num">${v}</div><div class="s">${s}</div></div>`;
@@ -305,7 +305,7 @@ function backupDaysCard(a) {
   const D = S.daysRows;
   return `<div class="card" style="margin-top:14px"><h3>Days worked</h3><div class="sub">For payments. A day counts when at least one test was submitted. Training days, travel days and days without tests are not included.</div><div class="f"><label>From<input type="date" id="dwFrom" value="${S.dwFrom || S.cfg.pilot_day}"></label><label>To<input type="date" id="dwTo" value="${S.dwTo || S.cfg.field.end}"></label></div><div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn sm" data-act="daysShow">Show totals</button><button class="btn sm sec" data-act="daysCsv">Download detail (CSV)</button></div>
   ${D ? `<div class="tbl" style="margin-top:10px"><table><thead><tr><th>Name</th><th>Region</th><th>Position</th><th class="r">Days</th><th class="r">Schools</th><th class="r">Pupils</th><th>First</th><th>Last</th></tr></thead><tbody>${D.people.map((p) => `<tr><td><b>${esc(p.name)}</b></td><td>${esc(title(p.region))}</td><td>${esc(p.position)}</td><td class="r num">${p.days}</td><td class="r num">${p.schools}</td><td class="r num">${p.pupils}</td><td>${shortDate(p.first)}</td><td>${shortDate(p.last)}</td></tr>`).join('') || '<tr><td colspan="8" class="empty">No tests in that period.</td></tr>'}</tbody></table></div>` : ''}</div>
-  <div class="card" style="margin-top:14px"><h3>Backup and restore</h3><div class="sub">Every night at 21:00 a copy is stored inside Cloudflare (separate from the live data): daily copies are kept 3 weeks, Sunday full copies about 4 months. Each Sunday the full copy is also emailed to the backup recipient with the copy list in cc (set in the recipients list below).</div>${a.backups ? `<div class="m">${a.backups.last ? `Last backup: ${new Date(a.backups.last.at).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' })}, ${Math.round(a.backups.last.gz_bytes / 1024)} KB${a.backups.last.emailed ? `, emailed to ${esc(a.backups.last.to)}${a.backups.last.cc?.length ? ' (cc ' + a.backups.last.cc.length + ')' : ''}` : ''}.` : 'No backup yet.'}</div><div class="tbl" style="margin-top:8px"><table><thead><tr><th>Copy</th><th>Kind</th><th class="r">Size</th><th></th></tr></thead><tbody>${a.backups.backups.slice(0, 12).map((b) => `<tr><td>${esc(b.key.slice(3))}</td><td>${b.full ? chip('full', 'teal') : chip('daily', 'mute')}</td><td class="r num">${b.gz_bytes ? Math.round(b.gz_bytes / 1024) + ' KB' : '–'}</td><td><button class="btn sm sec" data-act="backupGet" data-key="${esc(b.key)}">Download</button> <button class="btn sm sec" data-act="backupPick" data-key="${esc(b.key)}">Restore…</button></td></tr>`).join('') || '<tr><td colspan="4" class="empty">No copies yet.</td></tr>'}</tbody></table></div>` : ''}<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px"><button class="btn sm" data-act="backupDownload">Download a full backup now</button><button class="btn sm sec" data-act="backupNow">Make a copy now</button><button class="btn sm sec" data-act="backupMail">Make a copy and email it now</button></div>${S.pickKey ? `<div class="note" style="margin-top:10px">Restore <b>${esc(S.pickKey.slice(3))}</b> (replaces plans, queries, roster and recipients now in use).<div class="f"><label>Type RESTORE to confirm<input id="restoreConfirmKey"></label></div><button class="btn sm" data-act="restoreKey" style="margin-top:8px">Restore this copy</button> <button class="btn sm sec" data-act="backupPick" data-key="">Cancel</button></div>` : ''}${S.backupMsg ? `<p class="m" style="margin-top:8px">${esc(S.backupMsg)}</p>` : ''}
+  <div class="card" style="margin-top:14px"><h3>Backup and restore</h3><div class="sub">Every night at 21:00 a copy is stored inside Cloudflare (separate from the live data): daily copies are kept 3 weeks, Sunday full copies about 4 months. On Monday at 07:00 the Sunday full copy is emailed to the backup recipient with the copy list in cc (set in the recipients list below).</div>${a.backups ? `<div class="m">${a.backups.last ? `Last backup: ${new Date(a.backups.last.at).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' })}, ${Math.round(a.backups.last.gz_bytes / 1024)} KB${a.backups.last.emailed ? `, emailed to ${esc(a.backups.last.to)}${a.backups.last.cc?.length ? ' (cc ' + a.backups.last.cc.length + ')' : ''}` : ''}.` : 'No backup yet.'}</div><div class="tbl" style="margin-top:8px"><table><thead><tr><th>Copy</th><th>Kind</th><th class="r">Size</th><th></th></tr></thead><tbody>${a.backups.backups.slice(0, 12).map((b) => `<tr><td>${esc(b.key.slice(3))}</td><td>${b.full ? chip('full', 'teal') : chip('daily', 'mute')}</td><td class="r num">${b.gz_bytes ? Math.round(b.gz_bytes / 1024) + ' KB' : '–'}</td><td><button class="btn sm sec" data-act="backupGet" data-key="${esc(b.key)}">Download</button> <button class="btn sm sec" data-act="backupPick" data-key="${esc(b.key)}">Restore…</button></td></tr>`).join('') || '<tr><td colspan="4" class="empty">No copies yet.</td></tr>'}</tbody></table></div>` : ''}<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px"><button class="btn sm" data-act="backupDownload">Download a full backup now</button><button class="btn sm sec" data-act="backupNow">Make a copy now</button><button class="btn sm sec" data-act="backupMail">Make a copy and email it now</button></div>${S.pickKey ? `<div class="note" style="margin-top:10px">Restore <b>${esc(S.pickKey.slice(3))}</b> (replaces plans, queries, roster and recipients now in use).<div class="f"><label>Type RESTORE to confirm<input id="restoreConfirmKey"></label></div><button class="btn sm" data-act="restoreKey" style="margin-top:8px">Restore this copy</button> <button class="btn sm sec" data-act="backupPick" data-key="">Cancel</button></div>` : ''}${S.backupMsg ? `<p class="m" style="margin-top:8px">${esc(S.backupMsg)}</p>` : ''}
   <h4 style="margin:14px 0 6px">Restore from a backup file</h4><input type="file" id="restoreFile" accept=".json,.gz">${S.restoreData ? `<p class="m" style="margin-top:8px">File from ${esc(S.restoreData.at)}: ${Object.values(S.restoreData.plans || {}).filter((p) => p.status === 'locked').length} submitted plans, ${Object.keys(S.restoreData.queries || {}).length} queries, ${S.restoreData.roster ? S.restoreData.roster.staff.length : 0} people${S.restoreData.states ? ', stored data for ' + Object.keys(S.restoreData.states).length + ' year(s)' : ''}. This replaces what is there now.</p><div class="f"><label>Type RESTORE to confirm<input id="restoreConfirm"></label></div><button class="btn sm" data-act="restoreRun" style="margin-top:8px">Restore</button>` : ''}</div>
   <div class="card" style="margin-top:14px"><h3>KoBo write access</h3><div class="sub">Needed to mark submissions as approved, not approved or on hold from a query.</div><button class="btn sm sec" data-act="koboCheck">Check access</button>${S.koboWho ? `<p class="m" style="margin-top:8px">${esc(S.koboWho)}</p>` : ''}</div>`;
 }
@@ -418,6 +418,7 @@ function flagDetail(f) {
   <tr><th>Grade</th><td>${f.grade ? 'Grade ' + f.grade : 'All grades'}</td><th>Test admin</th><td>${f.admin ? lk('person', f.admin, f.admin) : '–'}</td></tr>
   <tr><th>Test date</th><td>${f.date ? dayName(f.date) : '–'}</td><th>Normal</th><td>${esc(f.normal || '–')}</td></tr></tbody></table>
   ${recs ? `<div class="tbl"><table class="dt"><thead><tr><th>Pupil ID</th><th class="r">Pupil no.</th><th class="r">Test min</th><th class="r">Started</th><th class="r">Test set</th><th class="r">KoBo ID</th></tr></thead><tbody>${recs}</tbody></table></div>` : '<div class="note">Pupil-level detail is shown for newly submitted data. Older records list only the school, grade, admin and date.</div>'}
+  ${f.evs ? `<div class="tbl"><table class="dt"><thead><tr><th>Start</th><th>End</th><th>Phone</th><th>Name</th><th>School</th><th class="r">Grade</th><th>Form</th></tr></thead><tbody>${f.evs.map((r) => `<tr><td class="num">${esc(r[0])}</td><td class="num">${esc(r[1])}</td><td class="num">${esc(r[2])}</td><td>${esc(r[3])}</td><td>${esc(r[4])}</td><td class="r">${esc(r[5])}</td><td>${r[6] === 's' ? 'Sampling' : 'Test'}</td></tr>`).join('')}</tbody></table></div>` : ''}
   ${koboButtons(f)}
   <div class="note" style="margin-top:8px">To find these in KoBo: open the student form's data table, filter on <b>school</b> ${esc(f.school)}, <b>grade</b> ${esc(f.grade || '')}, <b>date</b> ${esc(f.date || '')}, then look up the Pupil ID (stuid) or the KoBo ID (_id). Pupil names are never shown here.</div></div>`;
 }
@@ -644,6 +645,53 @@ function flagListFull(list, limit) {
   return flagList(open.map((f) => ({ ...f, q: f.q && f.q.status === 'resolved' ? { ...f.q, status: 'open' } : f.q })), { limit });
 }
 
+// ---------- Phones: what each phone did during the day ----------
+const SCHOOL_COLORS = ['#5EA6B8', '#FFC650', '#BE6243', '#354062', '#7E8CD0', '#6FAE7C', '#C97CA6', '#8C8C8C'];
+async function loadPhones() {
+  S.phErr = null;
+  try { S.ph = await api(`/api/phones?x=1${S.phDate ? '&date=' + S.phDate : ''}${S.phRegion ? '&region=' + S.phRegion : ''}${S.year ? '&year=' + S.year : ''}`); if (S.ph.date) S.phDate = S.ph.date; } catch (e) { S.phErr = e.message; }
+}
+function timelineChart(P) {
+  const ev = P.events; if (!ev.length) return '<div class="empty">No phone activity in this view.</div>';
+  const rows = [...new Set(ev.map((e) => e.c))].sort((x, y) => Math.min(...ev.filter((e) => e.c === x).map((e) => e.s)) - Math.min(...ev.filter((e) => e.c === y).map((e) => e.s)));
+  const t0 = Math.floor((Math.min(...ev.map((e) => e.s)) - 900) / 1800) * 1800, t1 = Math.ceil((Math.max(...ev.map((e) => e.e)) + 900) / 1800) * 1800;
+  const W = 1000, LX = 150, RH = 26, H = rows.length * RH + 36, X = (t) => LX + ((t - t0) / (t1 - t0)) * (W - LX - 10);
+  const schools = [...new Set(ev.map((e) => e.sc))]; const col = (sc) => SCHOOL_COLORS[schools.indexOf(sc) % SCHOOL_COLORS.length];
+  const gcol = { 1: 'var(--teal)', 2: 'var(--gold)', 3: 'var(--terra)' };
+  const hm = (t) => `${String(Math.floor(t / 3600)).padStart(2, '0')}:${String(Math.floor((t % 3600) / 60)).padStart(2, '0')}`;
+  let g = '';
+  for (let t = t0; t <= t1; t += 1800) g += `<line class="gl" x1="${X(t)}" x2="${X(t)}" y1="14" y2="${H - 18}"/><text x="${X(t)}" y="${H - 4}" text-anchor="middle">${hm(t)}</text>`;
+  rows.forEach((c, i) => {
+    const list = ev.filter((e) => e.c === c).sort((a, b) => a.s - b.s); const y = 18 + i * RH;
+    const names = [...new Set(list.map((e) => e.w))].map((n) => (n || '').split(' ')[0]).join(', ');
+    g += `<text x="4" y="${y + 13}" style="font-weight:700">${esc(c)}</text><text x="4" y="${y + 24}" style="font-size:9px">${esc(names.slice(0, 22))}</text>`;
+    list.forEach((e, k) => {
+      const sch = (SCHOOL_BY_ID_UI[e.sc] || e.sc);
+      g += `<rect x="${X(e.s)}" y="${y + 3}" width="${Math.max(2, X(e.e) - X(e.s))}" height="${RH - 8}" rx="2" fill="${gcol[e.g] || 'var(--teal)'}" fill-opacity=".78" stroke="${col(e.sc)}" stroke-width="2.5" ${e.k === 's' ? 'stroke-dasharray="3 2"' : ''}><title>${hm(e.s)}-${hm(e.e)} · Grade ${e.g} · ${esc(sch)} · ${esc(e.w)} · ${e.k === 's' ? 'sampling' : 'test'}</title></rect>`;
+      const nx = list[k + 1];
+      if (nx && nx.sc !== e.sc && nx.s - e.e < 1800) g += `<line x1="${X(e.e)}" x2="${X(nx.s)}" y1="${y + RH / 2}" y2="${y + RH / 2}" stroke="var(--bad)" stroke-width="2.5"/><text x="${(X(e.e) + X(nx.s)) / 2}" y="${y + 2}" text-anchor="middle" style="fill:var(--bad);font-size:9px;font-weight:700">${Math.max(0, Math.round((nx.s - e.e) / 60))} min</text>`;
+    });
+  });
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Phone timeline">${g}</svg>
+  <div class="legend"><span><i style="background:var(--teal)"></i>Grade 1</span><span><i style="background:var(--gold)"></i>Grade 2</span><span><i style="background:var(--terra)"></i>Grade 3</span><span>Border colour = school: ${schools.map((sc) => `<i style="background:${col(sc)};display:inline-block;width:10px;height:10px;border-radius:2px;margin:0 4px 0 8px"></i>${esc(SCHOOL_BY_ID_UI[sc] || sc)}`).join('')}</span><span>Dashed = sampling form</span><span style="color:var(--bad)"><b>Red line</b> = same phone at a different school within 30 minutes</span></div>`;
+}
+const SCHOOL_BY_ID_UI = new Proxy({}, { get: (_, id) => (S.ph?.schools || []).find((s) => s.id === id)?.name || schoolNameOf(String(id)) });
+function viewPhones() {
+  if (S.phErr) return `<div class="banner bad">${esc(S.phErr)}</div>`;
+  const P = S.ph; if (!P) return '<div class="empty">Loading phone activity…</div>';
+  if (P.status === 'none') return `<div class="pagehead"><div><h2>Phones</h2><p>${esc(P.note)}</p></div></div>`;
+  const hq = S.who.role === 'hq';
+  const dev = P.flags;
+  const sel = `<div class="sel"><select id="phDate" aria-label="Day">${P.dates.slice().reverse().map((d) => `<option value="${d}" ${d === P.date ? 'selected' : ''}>${dayName(d)}</option>`).join('')}</select>${hq ? `<select id="phRegion" aria-label="Region"><option value="">All regions</option>${S.cfg.regions.map((r) => `<option value="${r}" ${r === (S.phRegion || '') ? 'selected' : ''}>${title(r)}</option>`).join('')}</select>` : `<span class="pill mute">${esc(title(S.who.region))}</span>`}</div>`;
+  const maxPer = Math.max(0, ...P.schools.map((s) => s.phones));
+  const prows = P.phones.slice().sort((a, b) => a.first - b.first).map((p) => { const hm = (t) => `${String(Math.floor(t / 3600)).padStart(2, '0')}:${String(Math.floor((t % 3600) / 60)).padStart(2, '0')}`; const nflags = dev.filter((f) => (f.text || '').includes(p.c)).length; return `<tr><td class="num"><b>${esc(p.c)}</b></td><td>${p.names.map((n) => lk('person', n, n)).join(', ') || '–'}</td><td>${p.schools.map((s) => lk('school', s.id, s.name)).join(', ')}</td><td class="r num">${p.n}</td><td class="num">${hm(p.first)}–${hm(p.last)}</td><td class="r">${nflags ? chip(nflags + ' flag' + (nflags > 1 ? 's' : ''), 'warn') : chip('clear', 'good')}</td></tr>`; }).join('');
+  return `<div class="pagehead"><div><h2>Phones</h2><p>What each phone did on the day. Shown to the whole team so the work is open and fair. A flag means "look at this", not "this is wrong".</p></div>${sel}</div>
+  <div class="grid kpis">${kpi('Phones active', P.phones.length)}${kpi('Schools with tests', P.schools.length, 'on this day')}${kpi('Most phones at one school', maxPer)}${kpi('Phone checks to look at', dev.length, dev.filter((f) => f.sev === 'bad').length + ' serious')}</div>
+  <div class="card" style="margin-top:14px"><h3>Timeline</h3><div class="sub">One row per phone. Each bar is a test or sampling record. A phone should do one thing at a time, in one school, and one person normally uses one phone.</div>${timelineChart(P)}</div>
+  <div class="card" style="margin-top:14px"><h3>Checks on phone behaviour</h3><div class="sub">Tests overlapping on one phone, a phone at two schools within 30 minutes, a phone jumping back and forth between grades, names changing on one phone, one person on several phones, fewer phones than people.</div>${dev.length ? flagList(dev, { limit: 30 }) : '<div class="empty">Nothing to look at for this day.</div>'}</div>
+  <div class="card" style="margin-top:14px"><h3>Phones and people</h3><div class="tbl"><table><thead><tr><th>Phone</th><th>Names used</th><th>Schools</th><th class="r">Records</th><th>Active</th><th class="r">Checks</th></tr></thead><tbody>${prows}</tbody></table></div></div>`;
+}
+
 // ---------- global search ----------
 function searchItems() {
   const items = [];
@@ -664,12 +712,12 @@ function doSearch(q) {
 // ---------- shell ----------
 const TABS = {
   public: [['progress', 'Progress'], ['compare', 'Compare']],
-  volunteer: [['day', 'My day'], ['work', 'My work'], ['queries', 'My queries'], ['stats', 'My stats'], ['compare', 'Compare']],
-  rc: [['region', 'Region'], ['plan', 'Plan & calendar'], ['team', 'My team'], ['allq', 'Queries'], ['compare', 'Compare'], ['explore', 'Data explorer']],
-  hq: [['hq', 'HQ'], ['regions', 'Regions & plans'], ['plan', 'Plan & calendar'], ['people', 'People'], ['allq', 'Queries'], ['compare', 'Compare'], ['explore', 'Data explorer'], ['admin', 'Admin']],
+  volunteer: [['day', 'My day'], ['work', 'My work'], ['queries', 'My queries'], ['stats', 'My stats'], ['phones', 'Phones'], ['compare', 'Compare']],
+  rc: [['region', 'Region'], ['plan', 'Plan & calendar'], ['team', 'My team'], ['allq', 'Queries'], ['phones', 'Phones'], ['compare', 'Compare'], ['explore', 'Data explorer']],
+  hq: [['hq', 'HQ'], ['regions', 'Regions & plans'], ['plan', 'Plan & calendar'], ['people', 'People'], ['allq', 'Queries'], ['phones', 'Phones'], ['compare', 'Compare'], ['explore', 'Data explorer'], ['admin', 'Admin']],
 };
 const roleKey = () => (!S.who ? 'public' : S.who.role === 'arc' ? 'rc' : S.who.role);
-const VIEWS = { progress: viewProgress, compare: viewCompare, day: viewDay, work: viewWork, queries: viewQueries, stats: viewStats, region: viewRegion, plan: viewPlan, team: viewTeam, explore: viewExplore, hq: viewHQ, regions: viewRegionsHQ, people: viewPeopleHQ, admin: viewAdmin, allq: viewAllQueries };
+const VIEWS = { progress: viewProgress, compare: viewCompare, day: viewDay, work: viewWork, queries: viewQueries, stats: viewStats, region: viewRegion, plan: viewPlan, team: viewTeam, explore: viewExplore, hq: viewHQ, regions: viewRegionsHQ, people: viewPeopleHQ, admin: viewAdmin, allq: viewAllQueries, phones: viewPhones };
 
 function render() {
   const tabs = TABS[roleKey()];
@@ -787,7 +835,7 @@ async function go() {
   if (exm) { S.tab = 'explore'; S.exTab = exm[1]; }
   else if (!S.tab && location.hash && !location.hash.includes(':')) S.tab = location.hash.slice(1);
   if (S.who && !S.ov && !S.viewAs) { const snap = loadSnapshot(); if (snap) { S.ov = snap.ov; S.pub = snap.ov; S.cmp = snap.cmp; S.pred = snap.pred; S.brief = snap.brief; S.stale = snap.t; render(); } }
-  try { await loadData(); S.stale = null; render(); ensureSchools(); if (S.tab === 'explore' && ['teach', 'school', 'linked'].includes(S.exTab)) loadExplore(S.exTab); if (location.hash.includes(':')) { try { openDetail(decodeURIComponent(location.hash.slice(1))); } catch {} } } catch (e) { if (e.status === 401 && S.code) { S.code = null; S.who = null; store.set('kf_code', null); loginScreen('Your code was not recognised. Try again.'); } else $('#app').innerHTML = `<div class="banner bad">${esc(e.message)}</div>`; }
+  try { await loadData(); S.stale = null; render(); ensureSchools(); if (S.tab === 'explore' && ['teach', 'school', 'linked'].includes(S.exTab)) loadExplore(S.exTab); if (S.tab === 'phones' && !S.ph) loadPhones().then(render); if (location.hash.includes(':')) { try { openDetail(decodeURIComponent(location.hash.slice(1))); } catch {} } } catch (e) { if (e.status === 401 && S.code) { S.code = null; S.who = null; store.set('kf_code', null); loginScreen('Your code was not recognised. Try again.'); } else $('#app').innerHTML = `<div class="banner bad">${esc(e.message)}</div>`; }
 }
 
 document.addEventListener('click', async (e) => {
@@ -797,7 +845,7 @@ document.addEventListener('click', async (e) => {
   const th = e.target.closest('[data-ts]');
   if (th) { const [id, k] = th.dataset.ts.split(':'); const T = S.tbl[id]; if (T.sort === k) T.dir = -T.dir; else { T.sort = k; T.dir = 1; } render(); return; }
   const t = e.target.closest('[data-tab],[data-act]'); if (!t) return;
-  if (t.dataset.tab) { S.tab = t.dataset.tab; S.selVisit = null; if (S.tab === 'plan') { await loadPlan(); } if (S.tab === 'admin') await loadAdmin(); render(); return; }
+  if (t.dataset.tab) { S.tab = t.dataset.tab; S.selVisit = null; if (S.tab === 'plan') { await loadPlan(); } if (S.tab === 'phones') { S.ph = null; render(); await loadPhones(); } if (S.tab === 'admin') await loadAdmin(); render(); return; }
   const a = t.dataset.act;
   try {
     if (a === 'login') { const c = $('#code').value.trim().toUpperCase(); if (!c) return; S.code = c; try { const r = await api('/api/login'); S.who = r.who; store.set('kf_code', c); S.tab = null; await go(); } catch { S.code = null; loginScreen('That code was not recognised.'); } }
@@ -869,6 +917,8 @@ async function downloadFile(path, name) {
   link.href = url; link.download = name; document.body.appendChild(link); link.click(); link.remove(); URL.revokeObjectURL(url);
 }
 document.addEventListener('change', async (e) => {
+  if (e.target.id === 'phDate') { S.phDate = e.target.value; S.ph = null; render(); await loadPhones(); render(); return; }
+  if (e.target.id === 'phRegion') { S.phRegion = e.target.value; S.ph = null; render(); await loadPhones(); render(); return; }
   if (e.target.dataset?.pl && S.plan && S.plan.plan.status !== 'locked') { readDraftFromDom(); render(); return; }
   if (e.target.dataset?.dn) { S.dayNotes ||= {}; const d = e.target.dataset.d; (S.dayNotes[d] ||= {})[e.target.dataset.dn] = e.target.value; return; }
   if (e.target.id === 'restoreFile' && e.target.files[0]) {

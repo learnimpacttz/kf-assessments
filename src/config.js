@@ -130,3 +130,6 @@ export function workingDaysBetween(fromIso, toIso) {
   }
   return n;
 }
+
+// Phones are shown by a short code, never by the raw KoBo device ID.
+export function devCode(d) { let h = 2166136261; for (let i = 0; i < String(d).length; i++) { h ^= String(d).charCodeAt(i); h = Math.imul(h, 16777619); } return 'D-' + (h >>> 0).toString(16).toUpperCase().padStart(8, '0').slice(0, 6); }

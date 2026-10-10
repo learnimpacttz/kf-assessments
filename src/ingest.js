@@ -16,7 +16,7 @@ const SKILL_TIME_FIELDS = [
 ];
 
 export function emptyYear() {
-  return { cells: {}, sg: {}, tf: {}, n: 0 };
+  return { cells: {}, sg: {}, tf: {}, tl: {}, n: 0 };
 }
 
 const num = (v) => {
@@ -46,6 +46,9 @@ function calFields(r) {
   for (const k in r) { const m = /(?:^|\/)(cal_status|cal_planned|cal_confirm|cal_confirm_other|cal_reason|cal_reason_other|cal_approved)$/.exec(k); if (m && r[k] !== '' && r[k] != null) out[m[1]] = r[k]; }
   return out;
 }
+
+const secsOf = (iso) => { const m = /T(\d\d):(\d\d):(\d\d)/.exec(iso || ''); return m ? +m[1] * 3600 + +m[2] * 60 + +m[3] : null; };
+function pushEvent(Y, date, ev) { const day = ((Y.tl ||= {})[date] ||= []); if (day.length < 9000) day.push(ev); }
 
 export function addStudents(state, records) {
   for (const r of records) {
@@ -105,7 +108,11 @@ export function addStudents(state, records) {
         if (raw === '1') p[0] += 1;
       }
     }
-    if (r.deviceid) { c.dv ||= {}; c.dv[r.deviceid] = (c.dv[r.deviceid] || 0) + 1; }
+    if (r.deviceid) {
+      c.dv ||= {}; c.dv[r.deviceid] = (c.dv[r.deviceid] || 0) + 1;
+      const s0 = secsOf(r.start), e0 = secsOf(r.end);
+      if (s0 !== null && e0 !== null && e0 >= s0) pushEvent(Y, date, [r.deviceid, s0, e0, school, +grade, enumerator, 't']);
+    }
     const cf = calFields(r);
     if (cf.cal_status === 'diff' || cf.cal_status === 'none') {
       const cal = (c.cal ||= { n: 0, a: 0, b: 0, c: 0, planned: cf.cal_planned || '', other: [] });
@@ -143,7 +150,16 @@ export function addSampling(state, records) {
     sg.date = (pick(r, 'date') || r.today || '').slice(0, 10);
     sg.enum = pick(r, 'enumerator') || '';
     const dev = r.deviceid || pick(r, 'deviceid'); // the phone that sent the sampling form
-    if (dev) { sg.dev = dev; sg.devWho = sg.enum; }
+    if (dev) {
+      sg.dev = dev; sg.devWho = sg.enum;
+      // A sampling form is often left open for hours and finalised later, so its window says little. Use the moment it was opened, as one point in time.
+      const s0 = secsOf(r.start);
+      if (s0 !== null && sg.date) {
+        const day = ((Y.tl ||= {})[sg.date] ||= []);
+        const hit = day.find((x) => x[6] === 's' && x[0] === dev && x[1] === s0 && x[3] === school && x[4] === +grade);
+        if (hit) hit[2] = hit[1]; else pushEvent(Y, sg.date, [dev, s0, s0, school, +grade, sg.enum, 's']);
+      }
+    }
     sg.sub = r._submission_time || '';
     Y.nsamp = (Y.nsamp || 0) + 1;
   }

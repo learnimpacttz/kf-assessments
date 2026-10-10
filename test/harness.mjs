@@ -51,6 +51,21 @@ for (const region of REGIONS) {
   const n = { TANGA: 11, SINGIDA: 12, MARA: 3, MTWARA: 2 }[region] ?? 6;
   for (let i = 0; i < Math.min(n, cnt); i++) { const day = 19 + Math.floor(i / 3) + (i >= 12 ? 2 : 0); const { recs, samp } = visit('2026', region, i, `2026-10-${String(day).padStart(2, '0')}`); addStudents(state, recs); addSampling(state, samp); }
 }
+// phone behaviour scenarios on 2026-10-22 (Tanga): each phone is built to trigger exactly one check, plus one normal phone
+{
+  const A = SCHOOLS_BY_REGION.TANGA[0].id, B = SCHOOLS_BY_REGION.TANGA[1].id; let rid = 950000;
+  const t = (hhmm, extra = 0) => { const [hh, mm] = hhmm.split(':').map(Number); const s = hh * 3600 + mm * 60 + extra; return `2026-10-22T${String(Math.floor(s / 3600)).padStart(2, '0')}:${String(Math.floor((s % 3600) / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}+03:00`; };
+  const rec = (dev, who, school, grade, from, to) => ({ _id: rid++, year: '2026', today: '2026-10-22', 'group_intro/date': '2026-10-22', 'id_data/school': school, 'id_data/grade': String(grade), 'id_data/enumerator': who, 'stu_info/rand_nr': String(rid), deviceid: dev, start: t(from), end: t(to), 'end_note_gr/testtime_rounded': '8', stu_avail: '1' });
+  const R = [
+    rec('collect:TRAVEL', 'Ayubu Abasi', A, 1, '09:00', '09:09'), rec('collect:TRAVEL', 'Ayubu Abasi', B, 1, '09:15', '09:24'),
+    rec('collect:OVERLAP', 'Hawa Hussein', A, 2, '09:00', '09:10'), rec('collect:OVERLAP', 'Hawa Hussein', A, 2, '09:05', '09:15'),
+    ...[[1, '09:00', '09:09'], [2, '09:10', '09:19'], [1, '09:20', '09:29'], [2, '09:30', '09:39'], [1, '09:40', '09:49']].map(([g, f, to]) => rec('collect:SWITCH', 'Mainda Lucas', A, g, f, to)),
+    ...[['Ally Mgazza', '09:00', '09:09'], ['Halima Hosea', '09:11', '09:20'], ['Ally Mgazza', '09:22', '09:31'], ['Halima Hosea', '09:33', '09:42']].map(([w, f, to]) => rec('collect:NAMES', w, A, 3, f, to)),
+    rec('collect:H1', 'Hatibu Lugendo', A, 3, '09:00', '09:10'), rec('collect:H2', 'Hatibu Lugendo', A, 3, '09:05', '09:15'),
+    ...['09:00', '09:10', '09:20', '09:30'].map((f, k) => rec('collect:OK', 'Ayubu Abasi'.replace('Ayubu Abasi', 'Hawa Hussein') === 'x' ? '' : 'Halima Hosea', B, 3, f, ['09:09', '09:19', '09:29', '09:39'][k])),
+  ];
+  addStudents(state, R);
+}
 // calendar-check answers coming back from the forms (Tanga school 3: one sampling record off-calendar, tests answered 'c' and 'b')
 {
   const sc = SCHOOLS_BY_REGION.TANGA[2]; const nm = 'Hatibu Lugendo';
