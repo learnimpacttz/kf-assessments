@@ -124,3 +124,6 @@ details.fd{margin-top:6px}details.fd summary{cursor:pointer;font-size:12.5px;fon
 .tabs2 button[aria-selected="true"] .dot{box-shadow:0 0 0 2px #fff}
 
 .orow{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line)}.orow:last-child{border:0}.orow .v{font-family:var(--f-mono);font-size:13px;text-align:right;white-space:nowrap}.orow small{display:block;color:var(--ink3);font-size:11px}
+
+.nbadge{display:inline-block;min-width:18px;padding:0 5px;border-radius:9px;background:var(--terra);color:#fff;font-size:11px;font-weight:700;text-align:center}.newscard{margin-top:12px}.newscard.pinned{border-color:var(--gold)}.nbody{line-height:1.5;font-size:14.5px}.rxbar{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}.rx{border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:18px;padding:5px 12px;font-size:16px;cursor:pointer}.rx.on{background:color-mix(in srgb,var(--gold) 40%,var(--surface));border-color:var(--gold)}.rx b{font-size:12px;margin-left:2px}.nacts{display:flex;gap:8px;margin-top:10px}
+.f label.cb{display:flex;flex-direction:row;align-items:center;gap:6px;text-transform:none;letter-spacing:0;font-size:14px;color:var(--ink)}.f label.cb input{width:auto}

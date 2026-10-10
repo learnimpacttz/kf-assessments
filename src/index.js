@@ -1,4 +1,5 @@
 import { koboForm } from './koboforms.js';
+import { listNews, manageNews, react as reactNews, saveNews, deleteNews, pinNews, publish as publishNews, runDueNews, checkMilestones, polish as polishNews } from './news.js';
 import { ownWork, teamBlock, coordinatorOverview } from './own.js';
 import { buildCalendar, markCalendarDirty, syncCalendar, calendarStatus, setCalSync, loadCalSync } from './calendar.js';
 import { loadFormJob, saveFormJob, runFormJob, maybeRunFormJob } from './formjob.js';
@@ -187,6 +188,8 @@ export default {
         await kv(env).put('v2:kobolog', log.slice(-200));
         return json({ ok: true, updated: ids.length, status: b.status });
       }
+      if (path === '/api/news' && method === 'GET') return json(await listNews(env, who));
+      if (path === '/api/news/react' && method === 'POST') { const b = await request.json().catch(() => ({})); const r = await reactNews(env, who, b.id, b.emoji); return r.error ? err(r.error, r.status || 400) : json(r); }
       if (path === '/api/push/subscribe' && method === 'POST') {
         const b = await request.json();
         const r = await subscribe(env, who, b.subscription);
@@ -612,6 +615,22 @@ export default {
         }
         const { ...st } = await loadFormJob(env); return json(st);
       }
+      if (path === '/api/admin/news') {
+        if (method === 'POST') {
+          const b = await request.json().catch(() => ({}));
+          let r;
+          if (b.action === 'save') r = await saveNews(env, who, b);
+          else if (b.action === 'send') { const sv = await saveNews(env, who, b); if (sv.error) return err(sv.error, 422); r = await publishNews(env, sv.id, who.name || 'HQ'); }
+          else if (b.action === 'publish') r = await publishNews(env, b.id, who.name || 'HQ');
+          else if (b.action === 'delete') r = await deleteNews(env, b.id);
+          else if (b.action === 'pin') r = await pinNews(env, b.id, b.pinned);
+          else if (b.action === 'polish') r = await polishNews(env, b);
+          else return err('Unknown action');
+          if (r.error) return err(r.error, r.status || 422);
+          return json(r);
+        }
+        return json(await manageNews(env, who));
+      }
       if (path === '/api/admin/team-note' && method === 'POST') {
         // One automated note to the HQ team only (never to coordinators): first HQ person is the recipient, the other HQ people are copied
         const b = await request.json().catch(() => ({}));
@@ -666,6 +685,7 @@ export default {
       }
       try { const cs = await syncCalendar(env); if (cs) console.log('calendar ' + JSON.stringify(cs).slice(0, 400)); } catch (e) { console.error('calendar sync failed: ' + (e && e.message)); }
       try { const fj = await maybeRunFormJob(env); if (fj) console.log('formjob ' + JSON.stringify(fj).slice(0, 600)); } catch (e) { console.error('form job failed: ' + (e && e.message)); }
+      try { const nw = await runDueNews(env); if (nw.length) console.log('news ' + JSON.stringify(nw)); if (new Date().getUTCMinutes() % 15 === 0) { const ms = await checkMilestones(env); if (ms && ms.length) console.log('milestones ' + JSON.stringify(ms)); } } catch (e) { console.error('news failed: ' + (e && e.message)); }
       const bk = await maybeRunScheduledBackup(env); if (bk) console.log('backup ' + JSON.stringify(bk));
       const dg = await maybeRunScheduledDigests(env);
       if (dg) console.log('digest ' + JSON.stringify(dg).slice(0, 500));

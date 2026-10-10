@@ -7,7 +7,8 @@ import { STAFF, PLAN_DEADLINE, SCHOOL_BY_ID } from './config.js';
 import { buildBrief } from './brief.js';
 import { getPlan, withNotices, planProgress } from './plan.js';
 import { REGIONS, SCHOOLS_BY_REGION, eatToday, isWorkingDay, addDays, FIELD_START, FIELD_END, workingDaysBetween } from './config.js';
-import { loadQueries, flagKey } from './queries.js';
+import { loadQueries, flagKey, decorate } from './queries.js';
+import { ownWork } from './own.js';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const title = (s) => String(s || '').toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
@@ -68,7 +69,7 @@ export async function morningDigest(env, sum, region, today, siteUrl) {
   if (planText) brief.items = brief.items.filter((i) => !/have not submitted the field plan/.test(i.text)); // the deadline line above replaces it
   const items = brief.items.map((i) => `<p style="margin:6px 0">${dot(i.sev)}${esc(i.text)}</p>`).join('') || '<p>Nothing to report yet.</p>';
   const tm = Object.entries(brief.tomorrow_schools).map(([r, s]) => `<p style="margin:4px 0">${region ? '' : '<b>' + esc(title(r)) + '</b>: '}${s.map(esc).join(', ')}</p>`).join('');
-  const html = layout(`KiuFunza 4 · ${region ? title(region) : 'National'} morning brief`, today, `${planLine}${chgLine}${items}${todayRows}${tm ? `<p style="margin:14px 0 4px"><b>Tomorrow / Kesho</b></p>${tm}` : ''}`, `Sent automatically by the LearnImpact KiuFunza field dashboard. Open it for live numbers: <a href="${esc(siteUrl)}" style="color:#354062">${esc(siteUrl)}</a>`);
+  const html = layout(`KiuFunza 4 · ${region ? title(region) : 'National'} morning brief`, today, `<!--PERSONAL-->${planLine}${chgLine}${items}${todayRows}${tm ? `<p style="margin:14px 0 4px"><b>Tomorrow / Kesho</b></p>${tm}` : ''}`, `Sent automatically by the LearnImpact KiuFunza field dashboard. Open it for live numbers: <a href="${esc(siteUrl)}" style="color:#354062">${esc(siteUrl)}</a>`);
   const text = ['AUTOMATED UPDATE - no reply needed', `KiuFunza 4 · ${region ? title(region) : 'National'} morning brief · ${today}`, ...(planText ? ['- ' + planText] : []), ...(chgText ? ['- ' + chgText] : []), ...brief.items.map((i) => '- ' + i.text), ...lines.map((l) => `Today: ${l.name} (${l.start}) ${l.team}`), siteUrl].join('\n');
   return { subject: `KiuFunza 4 · Automated field update · ${region ? title(region) : 'National'} · ${today}`, html, text };
 }
@@ -83,7 +84,7 @@ export async function eveningGap(env, sum, region, today, siteUrl) {
   }
   if (!open.length) return null;
   const rows = open.map((o) => `<p style="margin:6px 0">${dot('warn')}${esc(o.name)}${region ? '' : ' · ' + esc(title(o.r))}: Gr 1/2/3 ${esc(o.g)}</p>`).join('');
-  const html = layout(`KiuFunza 4 · ${region ? title(region) : 'National'} end-of-day check`, today, `<p>Schools started today and not yet complete / Shule zilizoanza leo na bado hazijakamilika:</p>${rows}<p>Please confirm with the teams before the end of the day.</p>`, `<a href="${esc(siteUrl)}" style="color:#354062">${esc(siteUrl)}</a>`);
+  const html = layout(`KiuFunza 4 · ${region ? title(region) : 'National'} end-of-day check`, today, `<p>Schools started today and not yet complete / Shule zilizoanza leo na bado hazijakamilika:</p>${rows}<p>Please confirm with the teams before the end of the day.</p><!--PERSONAL-->`, `<a href="${esc(siteUrl)}" style="color:#354062">${esc(siteUrl)}</a>`);
   return { subject: `KiuFunza 4 · Automated end-of-day check · ${open.length} school(s) not complete · ${today}`, html, text: open.map((o) => `${o.name}: ${o.g}`).join('\n') };
 }
 
@@ -102,6 +103,35 @@ export async function sendMail(env, to, msg) {
   await env.EMAIL.send({ to, from: { email: env.EMAIL_FROM, name: FROM_NAME }, ...(env.EMAIL_REPLY_TO ? { replyTo: env.EMAIL_REPLY_TO } : {}), subject: msg.subject, html: msg.html, text: msg.text });
 }
 
+// The part of a coordinator's email that is about their own work
+export async function personalPart(env, sum, rec, today, kind, pc) {
+  const person = STAFF.find((s) => s.active && s.region === rec.region && s.role === rec.role);
+  if (!person || !sum) return null;
+  const plan = (pc.plan[rec.region] ||= await getPlan(env, rec.region));
+  const queries = (pc.q ||= await loadQueries(env));
+  const flags = decorate(sum.flags.filter((f) => SCHOOL_BY_ID[f.school]?.region === rec.region), queries);
+  const own = ownWork({ sum, plan, queries, flags, today }, person);
+  const led = plan.status === 'locked' ? withNotices(plan, today, null).visits.filter((v) => v.lead_name === person.name) : [];
+  const lines = [];
+  const mine = (sum.work?.[person.name] || []);
+  if (kind === 'morning') {
+    const tl = led.filter((v) => v.date === today);
+    lines.push(tl.length ? 'You lead today: ' + tl.map((v) => `${v.school_name} at ${v.start} (team: ${(v.team || []).map((n) => n.split(' ')[0]).join(', ') || 'not set'})`).join('; ') : 'You do not lead a school today.');
+    const dueN = [];
+    for (const v of led) if (v.date >= today) for (const [k, st, due, who] of [['aek', v.aek_state, v.aek_due, 'ward officer'], ['ht', v.ht_state, v.ht_due, 'head teacher']]) if ((st === 'due' || st === 'late') && !v.notices?.[k]) dueN.push(`${who} for ${v.school_name} (${st === 'late' ? 'late, was due ' : 'due '}${due})`);
+    if (dueN.length) lines.push('Notices to send: ' + dueN.slice(0, 5).join('; ') + (dueN.length > 5 ? `; and ${dueN.length - 5} more` : '') + '.');
+    const prev = [...mine].map((r) => r[0]).filter((d) => d < today).sort().pop();
+    if (prev) { const rows = mine.filter((r) => r[0] === prev); lines.push(`Your last field day, ${prev}: ${rows.reduce((n, r) => n + r[3], 0)} pupils tested in ${new Set(rows.map((r) => r[1])).size} school(s).`); }
+    if (own.queries.open_over_2_days) lines.push(`Queries open for more than 2 days in your region: ${own.queries.open_over_2_days}.`);
+  } else {
+    const rows = mine.filter((r) => r[0] === today);
+    lines.push(rows.length ? `Your tests today: ${rows.reduce((n, r) => n + r[3], 0)} pupils in ${new Set(rows.map((r) => r[1])).size} school(s).` : 'No tests from you today yet.');
+    if (own.queries.open_over_2_days) lines.push(`Queries open for more than 2 days in your region: ${own.queries.open_over_2_days}.`);
+  }
+  const bad = own.rows.filter((r) => r.status === 'bad').map((r) => r.label.toLowerCase());
+  if (bad.length) lines.push('Behind target: ' + bad.join(', ') + '.');
+  return { html: `<p style="margin:0 0 4px"><b>Your day / Siku yako</b></p>${lines.map((l) => `<p style="margin:3px 0">${esc(l)}</p>`).join('')}<hr style="border:0;border-top:1px solid #eef1f6;margin:12px 0">`, text: 'YOUR DAY\n' + lines.join('\n') };
+}
 export async function runDigests(env, kind, { dry = false } = {}) {
   const today = eatToday();
   const sum = await kv(env).get(`v2:sum:${(await kv(env).get('v2:years'))?.includes('2026') ? '2026' : ((await kv(env).get('v2:years')) || []).slice(-1)[0]}`);
@@ -109,14 +139,18 @@ export async function runDigests(env, kind, { dry = false } = {}) {
   const siteUrl = env.SITE_URL || 'https://kf-assessments.learnimpacttz.workers.dev';
   const sendOk = !dry && env.EMAIL_ENABLED === 'true' && env.EMAIL_FROM && (env.RESEND_API_KEY || env.EMAIL);
   const results = [];
-  const cache = {};
+  const cache = {}; const pcache = { plan: {} };
   for (const [email, r] of Object.entries(recipients)) {
     if (r.active === false) { results.push({ email, skipped: 'paused' }); continue; }
     if (r.from && eatToday() < r.from) { results.push({ email, skipped: `starts ${r.from}` }); continue; }
     const scope = r.role === 'hq' ? null : r.region;
     const key = scope || 'ALL';
     cache[key] ||= kind === 'morning' ? await morningDigest(env, sum, scope, today, siteUrl) : await eveningGap(env, sum, scope, today, siteUrl);
-    const msg0 = cache[key];
+    let msg0 = cache[key];
+    if (msg0) {
+      const pp = (r.role === 'rc' || r.role === 'arc') && r.region ? await personalPart(env, sum, r, today, kind, pcache).catch(() => null) : null;
+      msg0 = { ...msg0, html: msg0.html.replace('<!--PERSONAL-->', pp ? pp.html : ''), text: pp ? pp.text + '\n\n' + msg0.text : msg0.text };
+    }
     const msg = msg0 && r.copy ? { ...msg0, html: msg0.html.replace('AUTOMATED UPDATE · NO REPLY NEEDED', 'AUTOMATED UPDATE · NO REPLY NEEDED · COPY FOR INFORMATION'), text: 'You are receiving a copy for information.\n' + msg0.text } : msg0;
     if (!msg) { results.push({ email, skipped: 'nothing to send' }); continue; }
     if (!sendOk) { results.push({ email, preview: true, subject: msg.subject }); continue; }

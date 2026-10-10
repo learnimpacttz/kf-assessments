@@ -102,10 +102,9 @@ export function ownWork({ sum, plan, queries, flags, today }, person) {
     assessment: { tested: a?.tested ?? 0, sampling: a?.samp ?? 0, schools: a?.schools ?? 0, days: a?.days ?? 0, avg_min: a?.avg_min ?? null, quality: a?.quality ?? null },
     led: vs, notices: ns, briefing: bf, attendance: at, queries: qs, today: todays,
     plan: { status: plan?.status || 'draft', submitted_at: plan?.submitted_at || null, changes: mine.length, late_changes: mine.filter((c) => c.late).length },
-    baseline: { forms: a?.tf ?? 0, surprise_visits: null },
+    baseline: { forms: a?.tf ?? 0 },
     sub: sub ? { same_pct: sub.same_pct, n: sub.n, avg_h: sub.avg_h, max_h: sub.max_h } : null,
     rows,
-    not_tracked: person.role === 'rc' ? 'Communication with HQ, HR and finance matters are not tracked here.' : null,
   };
 }
 

@@ -475,7 +475,7 @@ function ownCard(o, title, sub) {
   <div class="grid kpis" style="margin:8px 0">${kpi('Pupils tested', fmt(a.tested), a.sampling + ' sampling forms')}${kpi('Schools led', l.planned, l.done + ' on the planned day')}${kpi('Teacher forms', fmt(o.baseline.forms), 'baseline and M&E')}${kpi('Plan changes', o.plan.changes, o.plan.late_changes + ' late')}</div>
   ${today ? `<h4 style="margin:10px 0 4px">Today</h4>${today}` : ''}
   <h4 style="margin:12px 0 4px">What is expected</h4>${ownRows(o.rows)}
-  <div class="m" style="margin-top:8px">Queries: ${o.queries.replies} replies, ${o.queries.closed} closed by you, ${o.queries.open} open in the region${o.queries.unanswered ? ` (${o.queries.unanswered} with no reply yet)` : ''}. Surprise visits: shown here when they run.${o.not_tracked ? ' ' + esc(o.not_tracked) : ''}</div></div>`;
+  <div class="m" style="margin-top:8px">Queries: ${o.queries.replies} replies, ${o.queries.closed} closed by you, ${o.queries.open} open in the region${o.queries.unanswered ? ` (${o.queries.unanswered} with no reply yet)` : ''}.</div></div>`;
 }
 function teamBlockCard(tb, title) {
   if (!tb) return '';
@@ -559,7 +559,7 @@ function schoolTable(rows, hq) {
     { k: 'status', label: 'Status', val: (s) => (s.done ? 2 : s.started ? 1 : 0), html: (s) => statusPill(s) },
   ];
   const filters = [
-    ...(hq ? [{ k: 'region', label: 'Region', get: (s) => s.region, options: (r) => [...new Set(r.map((s) => s.region))].sort().map((x) => [x, title(x)]) }] : []),
+    ...(hq ? [{ k: 'region', label: 'Region', get: (s) => s.region, options: (r) => [...new Set(r.map((s) => s.region))].sort().map((x) => [x, title(x)]) }] : [{ k: 'mine', label: 'Mine', get: (s) => ((s.admins || []).includes(S.who.name) ? 'mine' : 'other'), options: () => [['mine', 'Schools I worked in']] }]),
     { k: 'lga', label: 'LGA', get: (s) => s.lga, options: (r) => [...new Set(r.map((s) => s.lga))].sort().map((x) => [x, title(x)]) },
     { k: 'arm', label: 'Group', get: (s) => s.arm, options: () => [['Treatment', 'Treatment'], ['Control', 'Control'], ['Pilot', 'Pilot']] },
     { k: 'type', label: 'M&E', get: (s) => s.mne, options: () => [['M&E', 'M&E schools'], ['No-M&E', 'Without M&E']] },
@@ -618,7 +618,7 @@ function samplingTable(rows, hq) {
     { k: 'sampled', label: 'Sampled', val: (s) => (s.g[1].att != null) + (s.g[2].att != null) + (s.g[3].att != null), html: (s) => { const n = (s.g[1].att != null) + (s.g[2].att != null) + (s.g[3].att != null); return chip(n + ' of 3', n === 3 ? 'good' : n ? 'warn' : 'mute'); } },
   ];
   const filters = [
-    ...(hq ? [{ k: 'region', label: 'Region', get: (s) => s.region, options: (r) => [...new Set(r.map((s) => s.region))].sort().map((x) => [x, title(x)]) }] : []),
+    ...(hq ? [{ k: 'region', label: 'Region', get: (s) => s.region, options: (r) => [...new Set(r.map((s) => s.region))].sort().map((x) => [x, title(x)]) }] : [{ k: 'mine', label: 'Mine', get: (s) => ((s.admins || []).includes(S.who.name) ? 'mine' : 'other'), options: () => [['mine', 'Schools I worked in']] }]),
     { k: 'smp', label: 'Sampling', get: (s) => ((s.g[1].att != null) + (s.g[2].att != null) + (s.g[3].att != null)) === 3 ? 'all' : ((s.g[1].att != null) + (s.g[2].att != null) + (s.g[3].att != null)) ? 'part' : 'none', options: () => [['all', 'All 3 grades'], ['part', 'Some grades'], ['none', 'Not sampled']] },
   ];
   return dataTable(hq ? 'samp-hq' : 'samp', cols, rows, { filters, sort: 'name', dir: 1, open: (s) => 'school:' + s.id, placeholder: 'Search a school', limit: 400 });
@@ -765,7 +765,7 @@ function viewPhones() {
   const dev = P.flags;
   const sel = `<div class="sel"><select id="phDate" aria-label="Day">${P.dates.slice().reverse().map((d) => `<option value="${d}" ${d === P.date ? 'selected' : ''}>${dayName(d)}</option>`).join('')}</select>${hq ? `<select id="phRegion" aria-label="Region"><option value="">All regions</option>${S.cfg.regions.map((r) => `<option value="${r}" ${r === (S.phRegion || '') ? 'selected' : ''}>${title(r)}</option>`).join('')}</select>` : `<span class="pill mute">${esc(title(S.who.region))}</span>`}</div>`;
   const maxPer = Math.max(0, ...P.schools.map((s) => s.phones));
-  const prows = P.phones.slice().sort((a, b) => a.first - b.first).map((p) => { const hm = (t) => `${String(Math.floor(t / 3600)).padStart(2, '0')}:${String(Math.floor((t % 3600) / 60)).padStart(2, '0')}`; const nflags = dev.filter((f) => (f.text || '').includes(p.c)).length; return `<tr><td class="num"><b>${esc(p.c)}</b></td><td>${p.names.map((n) => lk('person', n, n)).join(', ') || '–'}</td><td>${p.schools.map((s) => lk('school', s.id, s.name)).join(', ')}</td><td class="r num">${p.n}</td><td class="num">${hm(p.first)}–${hm(p.last)}</td><td class="r">${nflags ? chip(nflags + ' flag' + (nflags > 1 ? 's' : ''), 'warn') : chip('clear', 'good')}</td></tr>`; }).join('');
+  const prows = P.phones.slice().sort((a, b) => a.first - b.first).map((p) => { const hm = (t) => `${String(Math.floor(t / 3600)).padStart(2, '0')}:${String(Math.floor((t % 3600) / 60)).padStart(2, '0')}`; const nflags = dev.filter((f) => (f.text || '').includes(p.c)).length; return `<tr><td class="num"><b>${esc(p.c)}</b>${p.names.includes(S.who.name) ? ' ' + chip('You', 'gold') : ''}</td><td>${p.names.map((n) => lk('person', n, n)).join(', ') || '–'}</td><td>${p.schools.map((s) => lk('school', s.id, s.name)).join(', ')}</td><td class="r num">${p.n}</td><td class="num">${hm(p.first)}–${hm(p.last)}</td><td class="r">${nflags ? chip(nflags + ' flag' + (nflags > 1 ? 's' : ''), 'warn') : chip('clear', 'good')}</td></tr>`; }).join('');
   return `<div class="pagehead"><div><h2>Phones</h2><p>What each phone did on the day. Shown to the whole team so the work is open and fair. A flag means "look at this", not "this is wrong".</p></div>${sel}</div>
   <div class="grid kpis">${kpi('Phones active', P.phones.length)}${kpi('Schools with tests', P.schools.length, 'on this day')}${kpi('Most phones at one school', maxPer)}${kpi('Phone checks to look at', dev.length, dev.filter((f) => f.sev === 'bad').length + ' serious')}</div>
   <div class="card" style="margin-top:14px"><h3>Timeline</h3><div class="sub">One row per phone. Each bar is a test or sampling record. A phone should do one thing at a time, in one school, and one person normally uses one phone.</div>${timelineChart(P)}</div>
@@ -796,6 +796,88 @@ function viewPractice() {
   <div class="card" style="margin-top:14px"><h3>Checks raised on practice records</h3><div class="sub">Open one to see what a real query looks like, and reply to it to practise the process.</div>${flagList(P.flags || [], { limit: 30 })}</div>${ph}`;
 }
 
+
+// ---------- News and announcements ----------
+const newsSeen = () => store.get('kf_news_seen') || '';
+const unreadNews = () => (S.news?.items || []).filter((i) => i.sent_at > newsSeen());
+async function loadNews() { try { S.news = await api('/api/news'); } catch { /* the tab shows what it has */ } updateNewsBadge(); }
+function updateNewsBadge() {
+  const b = document.querySelector('[data-tab="news"]'); if (!b) return;
+  const n = S.tab === 'news' ? 0 : unreadNews().length;
+  b.innerHTML = 'News' + (n ? ` <span class="nbadge">${n}</span>` : '');
+}
+async function openNews() {
+  S.newsPrev = newsSeen();
+  await loadNews();
+  if (S.who.role === 'hq') { try { S.newsAdmin = await api('/api/admin/news'); } catch (e) { S.nwMsg = e.message; } }
+  const latest = S.news?.latest || ''; if (latest) store.set('kf_news_seen', latest);
+}
+const nl2br = (t) => esc(t).replace(/\n/g, '<br>');
+const KIND_CLS = { announcement: 'navy', goodwill: 'gold', reminder: 'warn', congrats: 'good', update: 'teal' };
+function reactBar(i, hq) {
+  const em = S.news?.emoji || ['👍', '👏', '🎉', '❤️'];
+  return `<div class="rxbar">${em.map((e) => { const n = (i.counts || {})[e] || 0; const who = hq && i.names && i.names[e] ? ` title="${esc(i.names[e].join(', '))}"` : ''; return `<button class="rx ${i.mine === e ? 'on' : ''}" data-act="react" data-id="${esc(i.id)}" data-e="${e}"${who}>${e}${n ? ' <b>' + n + '</b>' : ''}</button>`; }).join('')}</div>`;
+}
+function newsCard(i, hq) {
+  const isNew = i.sent_at && i.sent_at > (S.newsPrev || '') && !hq;
+  const status = hq && i.status !== 'sent' ? `<span class="pill ${i.status === 'scheduled' ? 'warn' : 'mute'}">${i.status === 'scheduled' ? 'scheduled ' + eatTime(i.publish_at) : 'draft'}</span>` : '';
+  const aud = hq ? `<span class="m" style="font-size:12px">To: ${esc({ all: 'everyone', hq: 'HQ only', coordinators: 'RCs and ARCs', volunteers: 'volunteers' }[i.to] || i.to)}${i.regions?.length ? ' · ' + i.regions.map(title).join(', ') : ''}${i.push ? ' · phone alert' : ''}${i.auto ? ' · automatic' : ''}</span>` : '';
+  const acts = hq ? `<div class="nacts">${i.status !== 'sent' ? `<button class="btn sm ghost" data-act="nwEdit" data-id="${esc(i.id)}">Edit</button><button class="btn sm" data-act="nwPublish" data-id="${esc(i.id)}">Send now</button>` : `<button class="btn sm ghost" data-act="nwPin" data-id="${esc(i.id)}" data-p="${i.pinned ? '' : '1'}">${i.pinned ? 'Unpin' : 'Pin'}</button>`}<button class="btn sm ghost" data-act="nwDelete" data-id="${esc(i.id)}">Delete</button></div>` : '';
+  return `<div class="card newscard ${i.pinned ? 'pinned' : ''}"><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">${chip(esc(i.kind_label || ''), KIND_CLS[i.kind] || 'mute')}${isNew ? '<span class="pill warn">new</span>' : ''}${i.pinned ? '<span class="pill mute">pinned</span>' : ''}${status}<span class="m" style="margin-left:auto;font-size:12px">${i.sent_at ? eatTime(i.sent_at) : ''}</span></div><h3 style="margin:8px 0 4px">${esc(i.title)}</h3><div class="nbody">${nl2br(i.body)}</div>${aud}${i.status === 'sent' || !hq ? reactBar(i, hq) : ''}${acts}</div>`;
+}
+function composer() {
+  const d = S.nwDraft || {}; const regs = S.cfg?.regions || [];
+  return `<div class="card"><h3>${d.id ? 'Edit message' : 'New message'}</h3><div class="sub">Write it, let the AI polish it, read it, then send now or schedule it. Everyone in the audience gets it in the News tab and as a phone alert.</div>
+  <div class="f"><label>Title<input id="nwTitle" maxlength="120" value="${esc(d.title || '')}" placeholder="For example: Pilot day is tomorrow"></label></div>
+  <div class="f"><label>Message<textarea id="nwBody" rows="6" maxlength="2000" placeholder="Write in English, Kiswahili or both. Keep it short.">${esc(d.body || '')}</textarea></label></div>
+  <div class="f" style="display:flex;gap:10px;flex-wrap:wrap"><label>Type<select id="nwKind">${Object.entries({ announcement: 'Announcement', goodwill: 'Good wishes', reminder: 'Reminder', congrats: 'Congratulations', update: 'Update' }).map(([k, t]) => `<option value="${k}" ${d.kind === k ? 'selected' : ''}>${t}</option>`).join('')}</select></label>
+  <label>To<select id="nwTo">${[['all', 'Everyone'], ['coordinators', 'RCs and ARCs'], ['volunteers', 'Volunteers'], ['hq', 'HQ only']].map(([k, t]) => `<option value="${k}" ${(d.to || 'all') === k ? 'selected' : ''}>${t}</option>`).join('')}</select></label>
+  <label>Region<select id="nwRegion"><option value="">All regions</option>${regs.map((r) => `<option value="${r}" ${d.regions && d.regions[0] === r ? 'selected' : ''}>${esc(title(r))}</option>`).join('')}</select></label>
+  <label>Send later (East Africa time)<input type="datetime-local" id="nwWhen" value="${esc(d.when || '')}"></label></div>
+  <div class="f" style="display:flex;gap:16px;flex-wrap:wrap"><label class="cb"><input type="checkbox" id="nwPush" ${d.push === false ? '' : 'checked'}> Phone alert</label><label class="cb"><input type="checkbox" id="nwPin" ${d.pinned ? 'checked' : ''}> Pin to the top</label><label class="cb"><input type="checkbox" id="nwSw" ${d.sw ? 'checked' : ''}> Polish with a Kiswahili version</label></div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px"><button class="btn sec" data-act="nwPolish">Polish with AI</button><button class="btn sec" data-act="nwSave">Save draft</button><button class="btn" data-act="nwSend">Send now</button><button class="btn sec" data-act="nwSchedule">Schedule</button>${d.id ? '<button class="btn ghost" data-act="nwClear">Start a new one</button>' : ''}</div>${S.nwMsg ? `<p class="m" style="margin-top:8px">${esc(S.nwMsg)}</p>` : ''}</div>`;
+}
+function readComposer() {
+  const g = (id) => document.getElementById(id); if (!g('nwTitle')) return S.nwDraft || {};
+  const reg = g('nwRegion').value;
+  return { id: S.nwDraft?.id, title: g('nwTitle').value, body: g('nwBody').value, kind: g('nwKind').value, to: g('nwTo').value, regions: reg ? [reg] : [], push: g('nwPush').checked, pinned: g('nwPin').checked, sw: g('nwSw').checked, when: g('nwWhen').value };
+}
+const eatIso = (v) => (v ? new Date(v.length === 16 ? v + ':00+03:00' : v).toISOString() : null);
+function viewNews() {
+  const hq = S.who.role === 'hq'; const N = S.news;
+  if (hq) {
+    const A = S.newsAdmin; const items = A ? A.items : [];
+    return `<div class="pagehead"><div><h2>News</h2><p>Messages from HQ to the team, good wishes, reminders and congratulations. People can react with a thumbs up, a clap, a party or a heart.</p></div></div>${composer()}<h3 style="margin:18px 0 8px">All messages</h3>${items.length ? items.map((i) => newsCard(i, true)).join('') : '<div class="empty">Nothing yet.</div>'}`;
+  }
+  const items = N ? N.items : null;
+  return `<div class="pagehead"><div><h2>News</h2><p>Messages from HQ, good wishes and updates for the whole field team. Tap a reaction to say thank you.</p></div></div>${!items ? '<div class="empty">Loading…</div>' : items.length ? items.map((i) => newsCard(i, false)).join('') : '<div class="empty">No news yet. Messages from HQ will appear here.</div>'}`;
+}
+async function newsAction(a, t) {
+  S.nwDraft = { ...(S.nwDraft || {}), ...readComposer() };
+  const D = S.nwDraft; const body = { id: D.id, title: D.title, body: D.body, kind: D.kind, to: D.to, regions: D.regions, push: D.push, pinned: D.pinned };
+  const refresh = async () => { S.newsAdmin = await api('/api/admin/news'); await loadNews(); };
+  try {
+    if (a === 'nwPolish') { S.nwMsg = 'Polishing…'; render(); const r = await api('/api/admin/news', { method: 'POST', body: { action: 'polish', title: D.title, body: D.body, kind: D.kind, add_swahili: D.sw } }); S.nwDraft = { ...D, title: r.title, body: r.body }; S.nwMsg = 'Polished. Read it carefully and change anything before you send.'; }
+    else if (a === 'nwSave') { const r = await api('/api/admin/news', { method: 'POST', body: { action: 'save', ...body } }); S.nwDraft = { ...D, id: r.id }; S.nwMsg = 'Saved as a draft.'; await refresh(); }
+    else if (a === 'nwSend') { if (!D.title || !D.body) { S.nwMsg = 'Write a title and a message first.'; } else if (confirm(`Send "${D.title}" now to ${{ all: 'everyone', coordinators: 'RCs and ARCs', volunteers: 'volunteers', hq: 'HQ only' }[D.to || 'all']}${D.regions?.length ? ' in ' + title(D.regions[0]) : ''}? It cannot be unsent.`)) { await api('/api/admin/news', { method: 'POST', body: { action: 'send', ...body } }); S.nwDraft = null; S.nwMsg = 'Sent.'; await refresh(); } }
+    else if (a === 'nwSchedule') { if (!D.when) { S.nwMsg = 'Choose the date and time to send.'; } else { const r = await api('/api/admin/news', { method: 'POST', body: { action: 'save', ...body, publish_at: eatIso(D.when) } }); S.nwDraft = null; S.nwMsg = 'Scheduled for ' + eatTime(eatIso(D.when)) + '.'; await refresh(); } }
+    else if (a === 'nwClear') { S.nwDraft = null; S.nwMsg = ''; }
+    else if (a === 'nwEdit') { const i = (S.newsAdmin?.items || []).find((x) => x.id === t.dataset.id); if (i) { const w = i.publish_at ? new Date(Date.parse(i.publish_at) + 3 * 3600e3).toISOString().slice(0, 16) : ''; S.nwDraft = { id: i.id, title: i.title, body: i.body, kind: i.kind, to: i.to, regions: i.regions, push: i.push, pinned: i.pinned, when: w }; S.nwMsg = ''; window.scrollTo(0, 0); } }
+    else if (a === 'nwPublish') { if (confirm('Send this message now?')) { await api('/api/admin/news', { method: 'POST', body: { action: 'publish', id: t.dataset.id } }); S.nwMsg = 'Sent.'; await refresh(); } }
+    else if (a === 'nwDelete') { if (confirm('Delete this message?')) { await api('/api/admin/news', { method: 'POST', body: { action: 'delete', id: t.dataset.id } }); await refresh(); } }
+    else if (a === 'nwPin') { await api('/api/admin/news', { method: 'POST', body: { action: 'pin', id: t.dataset.id, pinned: Boolean(t.dataset.p) } }); await refresh(); }
+  } catch (e) { S.nwMsg = e.message; }
+  render();
+}
+async function reactTo(t) {
+  const r = await api('/api/news/react', { method: 'POST', body: { id: t.dataset.id, emoji: t.dataset.e } }).catch(() => null);
+  if (!r) return;
+  const apply = (list) => { const k = (list || []).findIndex((x) => x.id === r.item.id); if (k >= 0) list[k] = { ...list[k], counts: r.item.counts, mine: r.item.mine }; };
+  apply(S.news?.items);
+  if (S.who.role === 'hq') { try { S.newsAdmin = await api('/api/admin/news'); } catch {} }
+  render();
+}
+
 // ---------- global search ----------
 function searchItems() {
   const items = [];
@@ -816,17 +898,17 @@ function doSearch(q) {
 // ---------- shell ----------
 const TABS = {
   public: [['progress', 'Progress'], ['compare', 'Compare']],
-  volunteer: [['day', 'My day'], ['work', 'My work'], ['queries', 'My queries'], ['stats', 'My stats'], ['phones', 'Phones'], ['compare', 'Compare'], ['practice', 'Practice']],
-  rc: [['region', 'Region'], ['plan', 'Plan & calendar'], ['team', 'My team'], ['allq', 'Queries'], ['phones', 'Phones'], ['compare', 'Compare'], ['explore', 'Data explorer'], ['practice', 'Practice']],
-  hq: [['hq', 'HQ'], ['regions', 'Regions & plans'], ['plan', 'Plan & calendar'], ['people', 'People'], ['allq', 'Queries'], ['phones', 'Phones'], ['compare', 'Compare'], ['explore', 'Data explorer'], ['admin', 'Admin'], ['practice', 'Practice']],
+  volunteer: [['day', 'My day'], ['news', 'News'], ['work', 'My work'], ['queries', 'My queries'], ['stats', 'My stats'], ['phones', 'Phones'], ['compare', 'Compare'], ['practice', 'Practice']],
+  rc: [['region', 'Region'], ['news', 'News'], ['plan', 'Plan & calendar'], ['team', 'My team'], ['allq', 'Queries'], ['phones', 'Phones'], ['compare', 'Compare'], ['explore', 'Data explorer'], ['practice', 'Practice']],
+  hq: [['hq', 'HQ'], ['news', 'News'], ['regions', 'Regions & plans'], ['plan', 'Plan & calendar'], ['people', 'People'], ['allq', 'Queries'], ['phones', 'Phones'], ['compare', 'Compare'], ['explore', 'Data explorer'], ['admin', 'Admin'], ['practice', 'Practice']],
 };
 const roleKey = () => (!S.who ? 'public' : S.who.role === 'arc' ? 'rc' : S.who.role);
-const VIEWS = { progress: viewProgress, compare: viewCompare, day: viewDay, work: viewWork, queries: viewQueries, stats: viewStats, region: viewRegion, plan: viewPlan, team: viewTeam, explore: viewExplore, hq: viewHQ, regions: viewRegionsHQ, people: viewPeopleHQ, admin: viewAdmin, allq: viewAllQueries, phones: viewPhones, practice: viewPractice };
+const VIEWS = { progress: viewProgress, compare: viewCompare, day: viewDay, work: viewWork, queries: viewQueries, stats: viewStats, region: viewRegion, plan: viewPlan, team: viewTeam, explore: viewExplore, hq: viewHQ, regions: viewRegionsHQ, people: viewPeopleHQ, admin: viewAdmin, allq: viewAllQueries, phones: viewPhones, practice: viewPractice, news: viewNews };
 
 function render() {
   const tabs = TABS[roleKey()];
   if (!tabs.find((t) => t[0] === S.tab)) S.tab = tabs[0][0];
-  $('#nav').innerHTML = tabs.map(([k, t]) => `<button role="tab" aria-selected="${k === S.tab}" data-tab="${k}">${t}</button>`).join('');
+  $('#nav').innerHTML = tabs.map(([k, t]) => `<button role="tab" aria-selected="${k === S.tab}" data-tab="${k}">${t}${k === 'news' && S.tab !== 'news' && unreadNews().length ? ` <span class="nbadge">${unreadNews().length}</span>` : ''}</button>`).join('');
   $('#who').innerHTML = S.viewAs ? `${viewAsControl()}<button class="ghost" data-act="exitPreview">Back to HQ</button>` : S.who ? `${viewAsControl()}<span>${esc(S.who.name)}${S.who.position ? ' · ' + esc(S.who.position) : ''}</span><button class="ghost" data-act="alerts" id="alertsBtn">${alertsLabel()}</button><button class="ghost" data-act="logout">Sign out</button>` : '<button class="ghost" data-act="showLogin">Sign in</button>';
   const pd = S.ov && S.ov.plan_due;
   let planBanner = '';
@@ -835,7 +917,9 @@ function render() {
     const msg = left > 0 ? `Submit your whole-field plan by ${dayName(pd.deadline)} (${left} day${left > 1 ? 's' : ''} left).` : left === 0 ? 'Your whole-field plan is due TODAY.' : `Your whole-field plan is overdue (it was due ${dayName(pd.deadline)}).`;
     planBanner = `<div class="banner ${left <= 0 ? 'bad' : ''}"><b>Plan not submitted.</b> ${msg} The notices to ward officers and head teachers depend on it. <a href="#plan" data-tab="plan"><b>Open Plan &amp; calendar</b></a></div>`;
   }
-  $('#app').innerHTML = previewBanner() + planBanner + VIEWS[S.tab]();
+  const un = S.tab !== 'news' && S.who && !S.viewAs ? unreadNews()[0] : null;
+  const newsBanner = un ? `<div class="banner" style="background:var(--surface2)"><b>News:</b> ${esc(un.title)} <a href="#news" data-tab="news"><b>Read</b></a></div>` : '';
+  $('#app').innerHTML = previewBanner() + planBanner + newsBanner + VIEWS[S.tab]();
   $('#gswrap').hidden = !S.who;
 }
 
@@ -942,12 +1026,13 @@ async function loadAdmin() {
   S.adm = { status, codes, rec, push, ready, roster, devices, backups, calsync, formjob, preview: S.adm?.preview || null };
 }
 
+if (!window.__newsTimer) window.__newsTimer = setInterval(() => { if (S.who && !document.hidden) loadNews(); }, 90000);
 async function go() {
   const exm = /^#explore\/(\w+)$/.exec(location.hash);
   if (exm) { S.tab = 'explore'; S.exTab = exm[1]; }
   else if (!S.tab && location.hash && !location.hash.includes(':')) S.tab = location.hash.slice(1);
   if (S.who && !S.ov && !S.viewAs) { const snap = loadSnapshot(); if (snap) { S.ov = snap.ov; S.pub = snap.ov; S.cmp = snap.cmp; S.pred = snap.pred; S.brief = snap.brief; S.stale = snap.t; render(); } }
-  try { await loadData(); S.stale = null; render(); ensureSchools(); if (S.tab === 'explore' && ['teach', 'school', 'linked'].includes(S.exTab)) loadExplore(S.exTab); if (S.tab === 'phones' && !S.ph) loadPhones().then(render); if (S.tab === 'practice' && !S.pr) loadPractice().then(render); if (location.hash.includes(':')) { try { openDetail(decodeURIComponent(location.hash.slice(1))); } catch {} } } catch (e) { if (e.status === 401 && S.code) { S.code = null; S.who = null; store.set('kf_code', null); loginScreen('Your code was not recognised. Try again.'); } else $('#app').innerHTML = `<div class="banner bad">${esc(e.message)}</div>`; }
+  try { await loadData(); S.stale = null; render(); ensureSchools(); if (S.tab === 'explore' && ['teach', 'school', 'linked'].includes(S.exTab)) loadExplore(S.exTab); if (S.tab === 'phones' && !S.ph) loadPhones().then(render); if (S.tab === 'practice' && !S.pr) loadPractice().then(render); loadNews().then(() => { if (S.tab === 'news') openNews().then(render); }); if (location.hash.includes(':')) { try { openDetail(decodeURIComponent(location.hash.slice(1))); } catch {} } } catch (e) { if (e.status === 401 && S.code) { S.code = null; S.who = null; store.set('kf_code', null); loginScreen('Your code was not recognised. Try again.'); } else $('#app').innerHTML = `<div class="banner bad">${esc(e.message)}</div>`; }
 }
 
 document.addEventListener('click', async (e) => {
@@ -957,7 +1042,7 @@ document.addEventListener('click', async (e) => {
   const th = e.target.closest('[data-ts]');
   if (th) { const [id, k] = th.dataset.ts.split(':'); const T = S.tbl[id]; if (T.sort === k) T.dir = -T.dir; else { T.sort = k; T.dir = 1; } render(); return; }
   const t = e.target.closest('[data-tab],[data-act]'); if (!t) return;
-  if (t.dataset.tab) { S.tab = t.dataset.tab; S.selVisit = null; if (S.tab === 'plan') { await loadPlan(); } if (S.tab === 'phones') { S.ph = null; render(); await loadPhones(); } if (S.tab === 'practice') { S.pr = null; render(); await loadPractice(); } if (S.tab === 'admin') await loadAdmin(); render(); return; }
+  if (t.dataset.tab) { S.tab = t.dataset.tab; S.selVisit = null; if (S.tab === 'plan') { await loadPlan(); } if (S.tab === 'phones') { S.ph = null; render(); await loadPhones(); } if (S.tab === 'practice') { S.pr = null; render(); await loadPractice(); } if (S.tab === 'news') { await openNews(); } if (S.tab === 'admin') await loadAdmin(); render(); return; }
   const a = t.dataset.act;
   try {
     if (a === 'login') { const c = $('#code').value.trim().toUpperCase(); if (!c) return; S.code = c; try { const r = await api('/api/login'); S.who = r.who; store.set('kf_code', c); S.tab = null; await go(); } catch { S.code = null; loginScreen('That code was not recognised.'); } }
@@ -965,6 +1050,8 @@ document.addEventListener('click', async (e) => {
     else if (a === 'showLogin') loginScreen();
     else if (a === 'alerts') await toggleAlerts();
     else if (a === 'exitPreview') await setViewAs('');
+    else if (a === 'react') await reactTo(t);
+    else if (/^nw[A-Z]/.test(a)) await newsAction(a, t);
     else if (a === 'calsyncOn' || a === 'calsyncOff') { if (a === 'calsyncOn' && !confirm('Switch on? When enough regions have submitted, the calendar check turns on in the forms for every planned school.')) return; await api('/api/admin/calsync', { method: 'POST', body: { action: a === 'calsyncOn' ? 'enable' : 'disable' } }); await loadAdmin(); render(); }
     else if (a === 'calsyncRun') { S.calSyncMsg = 'Uploading…'; render(); try { const r = await api('/api/admin/calsync', { method: 'POST', body: { action: 'run' } }); S.calSyncMsg = r.ran?.skipped || (r.ran?.ok ? 'Uploaded ' + r.ran.version : 'Failed: ' + JSON.stringify(r.ran?.results)); } catch (e) { S.calSyncMsg = e.message; } await loadAdmin(); render(); }
     else if (a === 'formJobCancel' || a === 'formJobArm') { await api('/api/admin/formjob', { method: 'POST', body: { action: a === 'formJobArm' ? 'arm' : 'disarm' } }); await loadAdmin(); render(); }
