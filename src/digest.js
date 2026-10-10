@@ -7,7 +7,7 @@ import { STAFF, PLAN_DEADLINE, SCHOOL_BY_ID } from './config.js';
 import { buildBrief } from './brief.js';
 import { getPlan, withNotices, planProgress } from './plan.js';
 import { REGIONS, SCHOOLS_BY_REGION, eatToday, isWorkingDay, addDays, FIELD_START, FIELD_END, workingDaysBetween } from './config.js';
-import { loadQueries, flagKey, decorate } from './queries.js';
+import { loadQueries, flagKey, decorate, overdueQueries } from './queries.js';
 import { ownWork } from './own.js';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -122,11 +122,11 @@ export async function personalPart(env, sum, rec, today, kind, pc) {
     if (dueN.length) lines.push('Notices to send: ' + dueN.slice(0, 5).join('; ') + (dueN.length > 5 ? `; and ${dueN.length - 5} more` : '') + '.');
     const prev = [...mine].map((r) => r[0]).filter((d) => d < today).sort().pop();
     if (prev) { const rows = mine.filter((r) => r[0] === prev); lines.push(`Your last field day, ${prev}: ${rows.reduce((n, r) => n + r[3], 0)} pupils tested in ${new Set(rows.map((r) => r[1])).size} school(s).`); }
-    if (own.queries.open_over_2_days) lines.push(`Queries open for more than 2 days in your region: ${own.queries.open_over_2_days}.`);
+    if (own.queries.overdue) lines.push(`Queries still waiting for a reply after 2 working days in your region: ${own.queries.overdue}.`);
   } else {
     const rows = mine.filter((r) => r[0] === today);
     lines.push(rows.length ? `Your tests today: ${rows.reduce((n, r) => n + r[3], 0)} pupils in ${new Set(rows.map((r) => r[1])).size} school(s).` : 'No tests from you today yet.');
-    if (own.queries.open_over_2_days) lines.push(`Queries open for more than 2 days in your region: ${own.queries.open_over_2_days}.`);
+    if (own.queries.overdue) lines.push(`Queries still waiting for a reply after 2 working days in your region: ${own.queries.overdue}.`);
   }
   const bad = own.rows.filter((r) => r.status === 'bad').map((r) => r.label.toLowerCase());
   if (bad.length) lines.push('Behind target: ' + bad.join(', ') + '.');
@@ -247,19 +247,6 @@ export async function runOnboarding(env, { dry = true, only = null } = {}) {
     if (!sendOk) { results.push({ email, preview: true }); continue; }
     try { await sendMail(env, email, msg); results.push({ email, sent: true }); } catch (e) { results.push({ email, error: String(e && e.message) }); }
   }
-  // after the deadline, HQ is told by name which regions are still missing
-  if (today > PLAN_DEADLINE) {
-    const pp = await planProgress(env, REGIONS);
-    if (pp.missing.length) {
-      const text = `Field plans overdue (deadline ${PLAN_DEADLINE}): ${pp.missing.map(title).join(', ')}. Submitted: ${pp.submitted} of ${pp.total}.`;
-      const msg = { subject: `KiuFunza 4 · Automated reminder · ${pp.missing.length} field plan(s) overdue`, html: layout('KiuFunza 4 · Field plans overdue', today, `<p>${esc(text)}</p><p><a href="${esc(siteUrl)}/#regions" style="color:#354062">Open Regions &amp; plans</a></p>`, 'Sent automatically by the LearnImpact KiuFunza field dashboard.'), text: 'AUTOMATED REMINDER\n' + text };
-      for (const [email, r] of Object.entries(recipients)) {
-        if (r.role !== 'hq' || r.active === false || (r.from && today < r.from)) continue;
-        if (!sendOk) { results.push({ email, preview: true, subject: msg.subject }); continue; }
-        try { await sendMail(env, email, msg); results.push({ email, sent: true }); } catch (e) { results.push({ email, error: String(e && e.message) }); }
-      }
-    }
-  }
   return results;
 }
 
@@ -306,20 +293,48 @@ export async function reminderEmail(env, region, today, siteUrl) {
   return { subject: `KiuFunza 4 · Automated reminder · ${items.length} notice(s) to send · ${title(region)}`, html, text: `AUTOMATED REMINDER\n${items.map((i) => `${i.v.school_name}: ${i.who} ${i.state} (visit ${i.v.date})`).join('\n')}\n${siteUrl}/#plan` };
 }
 
+// Queries that have waited more than 2 working days for a reply, for the coordinators of a region
+export async function queryReminderEmail(env, sum, region, today, siteUrl) {
+  if (!sum || today < FIELD_START) return null;
+  const queries = await loadQueries(env);
+  const od = overdueQueries(decorate(sum.flags.filter((f) => SCHOOL_BY_ID[f.school]?.region === region), queries), today);
+  if (!od.length) return null;
+  const rows = od.slice(0, 15).map((f) => `<tr><td style="padding:6px 0;border-bottom:1px solid #eef1f6">${esc(SCHOOL_BY_ID[f.school]?.name || f.school)}</td><td style="border-bottom:1px solid #eef1f6">${esc(f.admin || '')}</td><td style="border-bottom:1px solid #eef1f6">${esc(f.text || '')}</td><td style="border-bottom:1px solid #eef1f6">${esc(f.date || '')}</td></tr>`).join('');
+  const html = layout(`KiuFunza 4 · ${title(region)} queries waiting`, today, `<p>${od.length} ${od.length > 1 ? 'queries have' : 'query has'} waited more than 2 working days for a reply. Each person concerned replies in the dashboard (Queries); the Regional Coordinator follows up. This reminder comes every working day until they are answered.</p><table style="width:100%;border-collapse:collapse;font-size:13px"><tr style="text-align:left"><th>School</th><th>Person</th><th>Query</th><th>Visit</th></tr>${rows}</table>${od.length > 15 ? `<p>and ${od.length - 15} more.</p>` : ''}<p><a href="${esc(siteUrl)}/#allq" style="color:#354062">Open Queries</a></p>`, 'Sent automatically by the LearnImpact KiuFunza field dashboard.');
+  return { subject: `KiuFunza 4 · Automated reminder · ${od.length} overdue ${od.length > 1 ? 'queries' : 'query'} · ${title(region)}`, html, text: `AUTOMATED REMINDER\n${od.map((f) => `${SCHOOL_BY_ID[f.school]?.name || f.school}: ${f.admin || ''} - ${f.text}`).join('\n')}\n${siteUrl}/#allq` };
+}
+
 export async function runReminders(env, { dry = true } = {}) {
   const today = eatToday();
   const siteUrl = env.SITE_URL || 'https://kf-assessments.learnimpacttz.workers.dev';
   const recipients = await loadRecipients(env);
   const sendOk = !dry && env.EMAIL_ENABLED === 'true' && env.EMAIL_FROM && (env.RESEND_API_KEY || env.EMAIL);
-  const cache = {}, results = [];
+  const cache = {}, qcache = {}, results = [];
+  const sum2026 = await kv(env).get('v2:sum:2026');
   for (const [email, r] of Object.entries(recipients)) {
     if (!['rc', 'arc'].includes(r.role) || !r.region || r.active === false) continue;
     if (r.from && today < r.from) { results.push({ email, skipped: `starts ${r.from}` }); continue; }
     cache[r.region] = cache[r.region] === undefined ? await reminderEmail(env, r.region, today, siteUrl) : cache[r.region];
-    const msg = cache[r.region];
-    if (!msg) { results.push({ email, skipped: 'nothing to remind' }); continue; }
-    if (!sendOk) { results.push({ email, preview: true, subject: msg.subject }); continue; }
-    try { await sendMail(env, email, msg); results.push({ email, sent: true }); } catch (e) { results.push({ email, error: String(e && e.message) }); }
+    qcache[r.region] = qcache[r.region] === undefined ? await queryReminderEmail(env, sum2026, r.region, today, siteUrl).catch(() => null) : qcache[r.region];
+    const msgs = [cache[r.region], qcache[r.region]].filter(Boolean);
+    if (!msgs.length) { results.push({ email, skipped: 'nothing to remind' }); continue; }
+    for (const msg of msgs) {
+      if (!sendOk) { results.push({ email, preview: true, subject: msg.subject }); continue; }
+      try { await sendMail(env, email, msg); results.push({ email, sent: true }); } catch (e) { results.push({ email, error: String(e && e.message) }); }
+    }
+  }
+  // after the deadline, HQ is told by name which regions are still missing
+  if (today > PLAN_DEADLINE) {
+    const pp = await planProgress(env, REGIONS);
+    if (pp.missing.length) {
+      const text = `Field plans overdue (deadline ${PLAN_DEADLINE}): ${pp.missing.map(title).join(', ')}. Submitted: ${pp.submitted} of ${pp.total}.`;
+      const msg = { subject: `KiuFunza 4 · Automated reminder · ${pp.missing.length} field plan(s) overdue`, html: layout('KiuFunza 4 · Field plans overdue', today, `<p>${esc(text)}</p><p><a href="${esc(siteUrl)}/#regions" style="color:#354062">Open Regions &amp; plans</a></p>`, 'Sent automatically by the LearnImpact KiuFunza field dashboard.'), text: 'AUTOMATED REMINDER\n' + text };
+      for (const [email, r] of Object.entries(recipients)) {
+        if (r.role !== 'hq' || r.active === false || (r.from && today < r.from)) continue;
+        if (!sendOk) { results.push({ email, preview: true, subject: msg.subject }); continue; }
+        try { await sendMail(env, email, msg); results.push({ email, sent: true }); } catch (e) { results.push({ email, error: String(e && e.message) }); }
+      }
+    }
   }
   return results;
 }

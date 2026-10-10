@@ -14,3 +14,9 @@ for (const kind of ['morning', 'evening']) {
   const r = await personalPart(env, sum, { region, role: 'rc' }, '2026-10-20', kind, { plan: {} });
   console.log(kind.toUpperCase() + '\n' + r.text + '\n');
 }
+// overdue queries: the 19th is more than 2 working days before the 23rd, the 22nd is not
+import { queryReminderEmail } from '../src/digest.js';
+const sum2 = { ...sum, flags: [{ type: 'slow', school: sch[0].id, date: '2026-10-19', admin: 'Vol One', text: 'Test too slow', q: null }, { type: 'dup', school: sch[1].id, date: '2026-10-22', admin: 'Vol Two', text: 'Pupil tested twice', q: null }] };
+const m = await queryReminderEmail(env, sum2, region, '2026-10-23', 'https://x');
+console.log('QUERY REMINDER\n' + (m ? m.text : 'none'));
+console.log('before field start:', await queryReminderEmail(env, sum2, region, '2026-10-12', 'https://x'));

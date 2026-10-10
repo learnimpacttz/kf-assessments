@@ -16,7 +16,7 @@ const admins = [
   { name: rc.name, staff_id: rc.id, tested: 90, samp: 3, schools: 2, days: 2, avg_min: 8.1, quality: 94, tf: 12, sub_all: { n: 90, same: 80, same_pct: 89, avg_h: 1.2, max_h: 20 } },
   { name: arc.name, staff_id: arc.id, tested: 60, samp: 1, schools: 1, days: 1, avg_min: 7.7, quality: 80, tf: 0, sub_all: { n: 60, same: 60, same_pct: 100, avg_h: 0.5, max_h: 1 } },
 ];
-const flags = [{ type: 'slow', school: sch[0].id, date: '2026-10-19', q: null }, { type: 'dup', school: sch[1].id, date: '2026-10-25', q: null }];
+const flags = [{ type: 'slow', school: sch[0].id, date: '2026-10-19', q: null }, { type: 'dup', school: sch[1].id, date: '2026-10-25', q: null }, { type: 'gps', school: sch[1].id, date: '2026-10-19', q: { status: 'open', thread: [{ by: 'x' }] } }];
 const queries = { [`slow|${sch[0].id}|1||x`]: { status: 'open', thread: [{ by: rc.name, text: 'ok', at: 'z' }, { by: rc.name, text: 'closed', at: 'z', resolved: true }] } };
 const ctx = { sum: { schools, admins }, plan, queries, flags, today: '2026-10-26' };
 const own = ownWork(ctx, rc), arcOwn = ownWork(ctx, arc), team = teamBlock(ctx, region);

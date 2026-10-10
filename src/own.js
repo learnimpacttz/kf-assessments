@@ -2,15 +2,14 @@
 // Targets are suggestions in one place (TARGETS) so they can be changed without touching the screens.
 import { SCHOOL_BY_ID, STAFF, REGIONS, addDays } from './config.js';
 import { withNotices, leadOfVisit } from './plan.js';
+import { overdueQueries } from './queries.js';
 
 // [green at or above, amber at or above]; below the second number is red
 export const TARGETS = {
-  notices: { good: 90, warn: 70, text: '90% or more (ward officer 5 working days before, head teacher 3)' },
-  visits: { good: 90, warn: 75, text: '90% or more' },
-  attend: { good: 90, warn: 70, text: '90% or more' },
-  sameday: { good: 90, warn: 70, text: '90% or more' },
+  visits: { good: 100, warn: 90, text: 'every planned visit happens on its day, or is changed early with a reason' },
+  notices: { good: 100, warn: 90, text: 'every notice sent on time (ward officer 5 working days before, head teacher 3)' },
+  sameday: { good: 95, warn: 80, text: '95% or more of records sent the same day' },
   quality: { good: 90, warn: 75, text: '90 or more' },
-  briefing: { good: 90, warn: 70, text: '90% or more' },
 };
 const st = (v, t) => (v == null ? null : v >= t.good ? 'good' : v >= t.warn ? 'warn' : 'bad');
 const pct = (a, b) => (b ? Math.round((100 * a) / b) : null);
@@ -66,9 +65,8 @@ function queryStats(queries, flags, names, region, today) {
     for (const t of q.thread || []) if (names.includes(t.by)) { if (t.resolved) closed += 1; else replies += 1; }
   }
   const open = (flags || []).filter((f) => !(f.q && f.q.status === 'resolved'));
-  const old = open.filter((f) => f.date && f.date <= addDays(today, -2));
   const unanswered = open.filter((f) => !(f.q && f.q.thread && f.q.thread.length));
-  return { replies, closed, open: open.length, open_over_2_days: old.length, unanswered: unanswered.length };
+  return { replies, closed, open: open.length, unanswered: unanswered.length, overdue: overdueQueries(flags, today).length };
 }
 const adminOfStaff = (sum, p) => (sum?.admins || []).find((a) => a.staff_id === p.id) || (sum?.admins || []).find((a) => a.name === p.name) || null;
 const mergeSub = (list) => { const t = { n: 0, same: 0 }; for (const a of list) if (a?.sub_all) { t.n += a.sub_all.n; t.same += a.sub_all.same; } return t.n ? { n: t.n, same_pct: pct(t.same, t.n) } : null; };
@@ -85,14 +83,14 @@ export function ownWork({ sum, plan, queries, flags, today }, person) {
   const mine = (plan?.changes || []).filter((c) => c.by === person.name);
   const sub = a?.sub_all || null;
   const rc = coordsOf(region).find((s) => s.role === 'rc');
+  const lateMine = mine.filter((c) => c.late).length;
   const rows = [
     row('visits', 'Schools you led, done on the planned day', vs.pct, vs.due ? `${vs.done} of ${vs.due}` : 'none due yet', TARGETS.visits),
     row('notices', 'Notices sent on time', ns.pct, ns.due ? `${ns.on_time} of ${ns.due}` : 'none due yet', TARGETS.notices),
-    row('briefing', 'Team told before the visit', bf.pct, bf.due ? `${bf.done} of ${bf.due}` : 'none due yet', TARGETS.briefing),
-    row('attend', 'Planned team present at your schools', at.pct, at.planned ? `${at.present} of ${at.planned}` : 'none yet', TARGETS.attend),
+    row('changes', 'Plan changes made early enough', null, `${mine.length} changes, ${lateMine} late`, null, { status: lateMine === 0 ? 'good' : 'bad', target: 'none made inside the notice period' }),
     row('sameday', 'Your records sent the same day', sub?.same_pct ?? null, sub ? `${sub.same} of ${sub.n}` : 'no records yet', TARGETS.sameday),
     row('quality', 'Your test quality score', a?.quality ?? null, a?.quality != null ? String(a.quality) : 'not enough tests yet', TARGETS.quality),
-    row('queries', 'Queries open for more than 2 days in the region', qs.open_over_2_days, String(qs.open_over_2_days), null, { status: qs.open_over_2_days === 0 ? 'good' : qs.open_over_2_days <= 2 ? 'warn' : 'bad', target: 'none open for more than 2 days' }),
+    row('queries', 'Queries answered within 2 working days', null, qs.overdue ? `${qs.overdue} overdue` : 'none overdue', null, { status: qs.overdue === 0 ? 'good' : 'bad', target: 'a reply within 2 working days of the visit' }),
   ];
   const todays = led.filter((v) => v.date === today).map((v) => ({ school: v.school, name: v.school_name, start: v.start, team: v.team || [], present: sum?.schools?.[v.school]?.dayAdmins?.[today] || [] }));
   return {
@@ -118,15 +116,14 @@ export function teamBlock({ sum, plan, queries, flags, today }, region) {
   const sub = mergeSub(admins);
   const tested = admins.reduce((n, a) => n + (a?.tested || 0), 0), samp = admins.reduce((n, a) => n + (a?.samp || 0), 0);
   const changes = plan?.changes || [];
+  const lateAll = changes.filter((c) => c.late).length;
   const rows = [
     row('plan', 'Whole-field plan', plan?.status === 'locked' ? 100 : 0, plan?.status === 'locked' ? 'submitted' : 'not submitted', { good: 100, warn: 100, text: 'submitted by the deadline' }),
     row('visits', 'Visits done on the planned day', vs.pct, vs.due ? `${vs.done} of ${vs.due}` : 'none due yet', TARGETS.visits),
     row('notices', 'Notices sent on time', ns.pct, ns.due ? `${ns.on_time} of ${ns.due}` : 'none due yet', TARGETS.notices),
-    row('briefing', 'Team told before the visit', bf.pct, bf.due ? `${bf.done} of ${bf.due}` : 'none due yet', TARGETS.briefing),
-    row('attend', 'Planned team present', at.pct, at.planned ? `${at.present} of ${at.planned}` : 'none yet', TARGETS.attend),
+    row('changes', 'Plan changes made early enough', null, `${changes.length} changes, ${lateAll} late`, null, { status: lateAll === 0 ? 'good' : 'bad', target: 'none made inside the notice period' }),
     row('sameday', 'Coordinators\' records sent the same day', sub?.same_pct ?? null, sub ? `${sub.same_pct}% of ${sub.n}` : 'no records yet', TARGETS.sameday),
-    row('queries', 'Queries open for more than 2 days', qs.open_over_2_days, String(qs.open_over_2_days), null, { status: qs.open_over_2_days === 0 ? 'good' : qs.open_over_2_days <= 2 ? 'warn' : 'bad', target: 'none open for more than 2 days' }),
-    row('late_changes', 'Plan changes made inside the notice period', changes.filter((c) => c.late).length, String(changes.filter((c) => c.late).length), null, { status: changes.filter((c) => c.late).length === 0 ? 'good' : changes.filter((c) => c.late).length <= 2 ? 'warn' : 'bad', target: 'none' }),
+    row('queries', 'Queries answered within 2 working days', null, qs.overdue ? `${qs.overdue} overdue` : 'none overdue', null, { status: qs.overdue === 0 ? 'good' : 'bad', target: 'a reply within 2 working days of the visit' }),
   ];
   return {
     region, people: coords.map((p) => ({ name: p.name, position: p.position, role: p.role })),

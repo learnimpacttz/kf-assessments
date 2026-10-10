@@ -677,7 +677,7 @@ export default {
       if (out.length) console.log(JSON.stringify(out));
       const hhmm = new Date().toISOString().slice(11, 16);
       const hourNow = Number(hhmm.slice(0, 2));
-      const alertSlot = { '04:05': 'morning', '08:00': 'silent', '13:30': 'evening' }[hhmm] || (hhmm.endsWith(':00') && hourNow >= 4 && hourNow <= 15 ? 'health' : null); // health: every hour of the field day
+      const alertSlot = { '04:05': 'morning', '05:30': 'queries', '08:00': 'silent', '13:30': 'evening' }[hhmm] || (hhmm.endsWith(':00') && hourNow >= 4 && hourNow <= 15 ? 'health' : null); // health: every hour of the field day
       if (alertSlot) {
         const day = eatToday(); const last = (await kv(env).get('v2:push:ran')) || {};
         const ranKey = alertSlot + ':' + hhmm;

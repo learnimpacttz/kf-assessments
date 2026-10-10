@@ -1,10 +1,16 @@
 // Replies to automatic flags ("queries"). A flag is identified by its content, so the
 // same check on the same school/grade/day keeps its thread across re-computation.
 import { kv } from './store.js';
+import { workingDaysBetween } from './config.js';
 
 export const flagKey = (f) => [f.type, f.school, f.grade || 0, f.date || '', f.admin || ''].join('|');
 const KEY = 'v2:queries';
 
+// A query must get a reply within 2 working days of the visit. Overdue = still open, nobody has replied, and the 2 days have passed.
+export const QUERY_REPLY_DAYS = 2;
+export function overdueQueries(flags, today) {
+  return (flags || []).filter((f) => f.date && !(f.q && f.q.status === 'resolved') && !(f.q && f.q.thread && f.q.thread.length) && workingDaysBetween(f.date, today) > QUERY_REPLY_DAYS);
+}
 export const loadQueries = async (env) => (await kv(env).get(KEY)) || {};
 
 export function decorate(flags, queries) {

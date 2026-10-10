@@ -475,7 +475,7 @@ function ownCard(o, title, sub) {
   <div class="grid kpis" style="margin:8px 0">${kpi('Pupils tested', fmt(a.tested), a.sampling + ' sampling forms')}${kpi('Schools led', l.planned, l.done + ' on the planned day')}${kpi('Teacher forms', fmt(o.baseline.forms), 'baseline and M&E')}${kpi('Plan changes', o.plan.changes, o.plan.late_changes + ' late')}</div>
   ${today ? `<h4 style="margin:10px 0 4px">Today</h4>${today}` : ''}
   <h4 style="margin:12px 0 4px">What is expected</h4>${ownRows(o.rows)}
-  <div class="m" style="margin-top:8px">Queries: ${o.queries.replies} replies, ${o.queries.closed} closed by you, ${o.queries.open} open in the region${o.queries.unanswered ? ` (${o.queries.unanswered} with no reply yet)` : ''}.</div></div>`;
+  <div class="m" style="margin-top:8px">Queries: ${o.queries.replies} replies and ${o.queries.closed} closed by you; ${o.queries.open} open in the region, ${o.queries.overdue} overdue.</div></div>`;
 }
 function teamBlockCard(tb, title) {
   if (!tb) return '';
@@ -525,14 +525,14 @@ function peopleTable(rows, hq) {
   ];
   return dataTable(hq ? 'people' : 'team', cols, rows, { filters, sort: 'quality', dir: 1, open: (a) => 'person:' + a.name, placeholder: 'Search a name or region' });
 }
-const SHORT_ROW = { plan: 'Plan', visits: 'Visits', notices: 'Notices', briefing: 'Team told', attend: 'Team present', sameday: 'Same-day sends', queries: 'Old queries', late_changes: 'Late changes' };
+const SHORT_ROW = { plan: 'Plan', visits: 'Visits', notices: 'Notices', changes: 'Changes in time', sameday: 'Same-day sends', queries: 'Overdue queries' };
 function coordinatorsBlock() {
   const o = S.ov; if (!o.coordinators) return '';
   const val = (x, k) => (x.rows.find((r) => r.key === k) || {});
   const cell = (r) => (r.status ? chip(esc(r.display), r.status) : esc(r.display || '–'));
-  const rowsC = o.coordinators.map((c) => `<tr class="click" data-open="person:${esc(c.person.name)}"><td><b>${esc(c.person.name)}</b></td><td>${esc(title(c.person.region))}</td><td>${chip(esc(c.person.position), c.person.role === 'rc' ? 'navy' : 'teal')}</td><td class="r num">${fmt(c.assessment.tested)}</td><td class="r num">${c.assessment.sampling}</td><td class="r num">${c.led.done}/${c.led.due || 0}</td><td>${cell(val(c, 'notices'))}</td><td>${cell(val(c, 'briefing'))}</td><td>${cell(val(c, 'sameday'))}</td><td>${qChip(c.assessment.quality)}</td><td class="r num">${c.queries.replies}/${c.queries.closed}</td><td class="r num">${c.baseline.forms}</td></tr>`).join('');
+  const rowsC = o.coordinators.map((c) => `<tr class="click" data-open="person:${esc(c.person.name)}"><td><b>${esc(c.person.name)}</b></td><td>${esc(title(c.person.region))}</td><td>${chip(esc(c.person.position), c.person.role === 'rc' ? 'navy' : 'teal')}</td><td class="r num">${fmt(c.assessment.tested)}</td><td class="r num">${c.assessment.sampling}</td><td class="r num">${c.led.done}/${c.led.due || 0}</td><td>${cell(val(c, 'notices'))}</td><td>${cell(val(c, 'changes'))}</td><td>${cell(val(c, 'sameday'))}</td><td>${qChip(c.assessment.quality)}</td><td>${cell(val(c, 'queries'))}</td><td class="r num">${c.baseline.forms}</td></tr>`).join('');
   const rowsT = Object.values(o.team_blocks).map((t) => `<tr><td><b>${esc(title(t.region))}</b></td><td>${esc(t.people.map((p) => p.name.split(' ')[0] + ' (' + p.position + ')').join(', '))}</td><td style="white-space:normal;line-height:2.1">${t.rows.map((r) => chip(esc(SHORT_ROW[r.key] || r.label) + ': ' + esc(r.display), r.status || 'mute')).join(' ')}</td></tr>`).join('');
-  return `<div class="card" style="margin-top:14px"><h3>Coordinators' own work</h3><div class="sub">What each RC and ARC did themselves, apart from supervising the team. Chips use the targets in each person's card. Replies / closed are queries.</div><div class="tbl"><table><thead><tr><th>Name</th><th>Region</th><th>Role</th><th class="r">Tested</th><th class="r">Sampling</th><th class="r">Led, done</th><th>Notices on time</th><th>Team told</th><th>Same-day sends</th><th>Quality</th><th class="r">Replies / closed</th><th class="r">Teacher forms</th></tr></thead><tbody>${rowsC}</tbody></table></div></div>
+  return `<div class="card" style="margin-top:14px"><h3>Coordinators' own work</h3><div class="sub">What each RC and ARC did themselves, apart from supervising the team. Chips use the targets in each person's card.</div><div class="tbl"><table><thead><tr><th>Name</th><th>Region</th><th>Role</th><th class="r">Tested</th><th class="r">Sampling</th><th class="r">Led, done</th><th>Notices on time</th><th>Late changes</th><th>Same-day sends</th><th>Quality</th><th>Queries answered in 2 days</th><th class="r">Teacher forms</th></tr></thead><tbody>${rowsC}</tbody></table></div></div>
   <div class="card" style="margin-top:14px"><h3>Regional coordination teams</h3><div class="sub">What each RC and ARC did together for their region</div><div class="tbl"><table><thead><tr><th>Region</th><th>Team</th><th>Status</th></tr></thead><tbody>${rowsT}</tbody></table></div></div>`;
 }
 function viewPeopleHQ() {

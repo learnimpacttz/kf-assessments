@@ -3,7 +3,8 @@
 // subscription's own endpoint, which only that phone knows). That keeps this
 // to a signed VAPID request, with no payload encryption to get wrong.
 import { kv } from './store.js';
-import { STAFF, SCHOOL_BY_ID, REGIONS, eatToday, addWorkingDays, FIELD_START, FIELD_END, isWorkingDay } from './config.js';
+import { STAFF, SCHOOL_BY_ID, REGIONS, eatToday, addWorkingDays, FIELD_START, FIELD_END, isWorkingDay, staffForKoboName } from './config.js';
+import { loadQueries, decorate, overdueQueries } from './queries.js';
 import { getPlan, withNotices } from './plan.js';
 import { silentVisits } from './brief.js';
 
@@ -117,6 +118,23 @@ export async function runAlerts(env, slot, sum) {
         if (!(await once(env, id))) continue;
         results.push({ flag: id, ...(await pushTo(env, (w) => w.region === r && (w.role === 'rc' || w.role === 'arc'), { title: `Query: ${f.school_name || SCHOOL_BY_ID[f.school]?.name}`, body: f.text + (f.admin ? ` (${f.admin})` : ''), url: '/#allq' })) });
       }
+    }
+  }
+  if (slot === 'queries' && sum) {
+    // every working day: whoever has a query waiting more than 2 working days is reminded, and so are the coordinators of the region
+    const queries = await loadQueries(env);
+    const od = overdueQueries(decorate(sum.flags, queries), today);
+    const byPerson = {}, byRegion = {};
+    for (const f of od) { const rg = SCHOOL_BY_ID[f.school]?.region; if (!rg) continue; (byRegion[rg] ||= []).push(f); if (f.admin) (byPerson[f.admin] ||= []).push(f); }
+    for (const [name, list] of Object.entries(byPerson)) {
+      const st = staffForKoboName(name); if (!st) continue;
+      if (!(await once(env, `qodue:${st.id}:${today}`))) continue;
+      results.push({ q: name, ...(await pushTo(env, (w) => w.id === st.id, { title: 'Queries waiting for your reply', body: `${list.length} ${list.length > 1 ? 'queries are' : 'query is'} older than 2 working days. Please reply today.`, url: st.role === 'volunteer' ? '/#queries' : '/#allq' })) });
+    }
+    for (const [rg, list] of Object.entries(byRegion)) {
+      if (!(await once(env, `qodue-r:${rg}:${today}`))) continue;
+      const names = [...new Set(list.map((f) => f.admin).filter(Boolean))].slice(0, 3).join(', ');
+      results.push({ r: rg, ...(await pushTo(env, (w) => w.region === rg && (w.role === 'rc' || w.role === 'arc'), { title: `${list.length} overdue ${list.length > 1 ? 'queries' : 'query'} in ${rg[0] + rg.slice(1).toLowerCase()}`, body: names ? 'Waiting for: ' + names : 'Open the Queries tab.', url: '/#allq' })) });
     }
   }
   if (slot === 'silent') {
