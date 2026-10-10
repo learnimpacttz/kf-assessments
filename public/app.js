@@ -648,7 +648,7 @@ document.addEventListener('keydown', (e) => {
   const saved = store.get('kf_code');
   if (saved) { S.code = saved; try { S.who = (await api('/api/login')).who; } catch { S.code = null; S.who = null; store.set('kf_code', null); } }
   if (!S.who) { loginScreen(); return; }
-  const asHash = /^#as=(\w+)$/.exec(location.hash);
-  if (asHash && S.who.role === 'hq') { S.tab = 'hq'; await go(); history.replaceState(null, '', location.pathname); await setViewAs(asHash[1]); return; }
+  const asHash = /^#as=(\w+)(?:\/(\w+))?$/.exec(location.hash);
+  if (asHash && S.who.role === 'hq') { S.tab = 'hq'; await go(); history.replaceState(null, '', location.pathname); await setViewAs(asHash[1]); if (asHash[2]) { S.tab = asHash[2]; if (S.tab === 'plan') await loadPlan(); render(); } return; }
   await go();
 })();
