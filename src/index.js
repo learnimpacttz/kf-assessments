@@ -108,6 +108,7 @@ export default {
         return json({ who });
       }
       if (!who) return err('Sign in with your access code', 401);
+      if (who.viewAs && method !== 'GET') return err('You are previewing as ' + who.name + '. Previews are read-only, so nothing was changed.', 403);
 
       // ---------- role-aware overview ----------
       if (path === '/api/overview') {
@@ -118,7 +119,7 @@ export default {
         if (who.role === 'hq') {
           const plans = {};
           (await Promise.all(REGIONS.map((r) => getPlan(env, r)))).forEach((p, k) => { plans[REGIONS[k]] = { status: p.status, visits: p.visits.length, changes: p.changes.length, late_changes: p.changes.filter((c) => c.late).length, submitted_at: p.submitted_at }; });
-          return json({ ...base, admins: sum.admins, flags: decorate(sum.flags.map((f) => ({ ...f, school_name: SCHOOL_BY_ID[f.school]?.name, region: SCHOOL_BY_ID[f.school]?.region, lga: SCHOOL_BY_ID[f.school]?.lga, ward: SCHOOL_BY_ID[f.school]?.ward })), queries).slice(0, 600), plans, unlisted: sum.admins.filter((a) => a.role === 'unlisted').map((a) => a.name) });
+          return json({ ...base, staff: STAFF.map((s) => ({ id: s.id, name: s.name, position: s.position, region: s.region, role: s.role })), admins: sum.admins, flags: decorate(sum.flags.map((f) => ({ ...f, school_name: SCHOOL_BY_ID[f.school]?.name, region: SCHOOL_BY_ID[f.school]?.region, lga: SCHOOL_BY_ID[f.school]?.lga, ward: SCHOOL_BY_ID[f.school]?.ward })), queries).slice(0, 600), plans, unlisted: sum.admins.filter((a) => a.role === 'unlisted').map((a) => a.name) });
         }
         if (who.role === 'rc' || who.role === 'arc') {
           return json({ ...base, mine: regionBundle(sum, who.region, who, queries) });

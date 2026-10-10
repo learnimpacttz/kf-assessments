@@ -42,7 +42,12 @@ function safeEqual(a, b) {
 export async function identify(request, env) {
   const code = (request.headers.get('x-access-code') || '').trim();
   if (!code) return null;
-  if (env.HQ_SECRET && safeEqual(code, env.HQ_SECRET)) return { role: 'hq', name: 'HQ', region: null, id: 0 };
+  if (env.HQ_SECRET && safeEqual(code, env.HQ_SECRET)) {
+    // HQ can preview the app as any person (training and support). The preview is read-only: see index.js.
+    const as = /^staff:(\d+)$/.exec(request.headers.get('x-view-as') || '');
+    if (as) { const s = STAFF.find((x) => x.id === Number(as[1])); if (s) return { role: s.role, name: s.name, region: s.region, id: s.id, position: s.position, viewAs: true }; }
+    return { role: 'hq', name: 'HQ', region: null, id: 0 };
+  }
   const map = await staffCodes(env);
   const s = map && map[code.toUpperCase()];
   return s ? { role: s.role, name: s.name, region: s.region, id: s.id, position: s.position } : null;

@@ -1,12 +1,13 @@
 // KiuFunza 4 Field Command Centre: one page, tabs depend on who signed in.
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const S = { pred: null, brief: null, qOpen: null, cfg: null, code: null, who: null, tab: null, ov: null, pub: null, cmp: null, plan: null, year: null, explore: { q: '', lga: '', sub: 'schools' }, planRegion: null, selVisit: null, adm: null };
+const S = { real: null, viewAs: null, staffList: [], pred: null, brief: null, qOpen: null, cfg: null, code: null, who: null, tab: null, ov: null, pub: null, cmp: null, plan: null, year: null, explore: { q: '', lga: '', sub: 'schools' }, planRegion: null, selVisit: null, adm: null };
 const store = { get: (k) => { try { return localStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch {} } };
 
 async function api(path, opts = {}) {
   const headers = { ...(opts.headers || {}) };
-  if (S.code) headers['x-access-code'] = S.code;
+  if (S.code && S.viewAs !== 'public') headers['x-access-code'] = S.code;
+  if (S.viewAs && S.viewAs !== 'public') headers['x-view-as'] = 'staff:' + S.viewAs;
   if (opts.body) headers['content-type'] = 'application/json';
   const res = await fetch(path, { ...opts, headers, body: opts.body ? JSON.stringify(opts.body) : undefined });
   const data = await res.json().catch(() => ({}));
@@ -465,8 +466,8 @@ function render() {
   const tabs = TABS[roleKey()];
   if (!tabs.find((t) => t[0] === S.tab)) S.tab = tabs[0][0];
   $('#nav').innerHTML = tabs.map(([k, t]) => `<button role="tab" aria-selected="${k === S.tab}" data-tab="${k}">${t}</button>`).join('');
-  $('#who').innerHTML = S.who ? `<span>${esc(S.who.name)}${S.who.position ? ' · ' + esc(S.who.position) : ''}</span><button class="ghost" data-act="alerts" id="alertsBtn">${alertsLabel()}</button><button class="ghost" data-act="logout">Sign out</button>` : '<button class="ghost" data-act="showLogin">Sign in</button>';
-  $('#app').innerHTML = VIEWS[S.tab]();
+  $('#who').innerHTML = S.viewAs ? `${viewAsControl()}<button class="ghost" data-act="exitPreview">Back to HQ</button>` : S.who ? `${viewAsControl()}<span>${esc(S.who.name)}${S.who.position ? ' · ' + esc(S.who.position) : ''}</span><button class="ghost" data-act="alerts" id="alertsBtn">${alertsLabel()}</button><button class="ghost" data-act="logout">Sign out</button>` : '<button class="ghost" data-act="showLogin">Sign in</button>';
+  $('#app').innerHTML = previewBanner() + VIEWS[S.tab]();
   $('#gswrap').hidden = !S.who;
 }
 
@@ -495,6 +496,26 @@ async function toggleAlerts() {
   S.alertsOn = true; render();
 }
 
+// ---------- HQ: preview the app as another person (training and support) ----------
+const isRealHQ = () => (S.real || S.who)?.role === 'hq';
+function viewAsControl() {
+  if (!isRealHQ() || !S.staffList.length) return '';
+  const groups = [['rc', 'Regional coordinators'], ['arc', 'Assistant coordinators'], ['volunteer', 'Test admins (volunteers)']];
+  const opts = groups.map(([r, l]) => `<optgroup label="${l}">${S.staffList.filter((s) => s.role === r).map((s) => `<option value="${s.id}" ${String(S.viewAs) === String(s.id) ? 'selected' : ''}>${esc(title(s.region))} · ${esc(s.name)}</option>`).join('')}</optgroup>`).join('');
+  return `<select id="viewAsSel" class="vsel" aria-label="View as"><option value="">View as: HQ (me)</option><option value="public" ${S.viewAs === 'public' ? 'selected' : ''}>View as: Public visitor</option>${opts}</select>`;
+}
+async function setViewAs(val) {
+  if (!val) { S.viewAs = null; if (S.real) S.who = S.real; S.real = null; }
+  else {
+    if (!S.real) S.real = S.who;
+    if (val === 'public') { S.viewAs = 'public'; S.who = null; }
+    else { const p = S.staffList.find((s) => String(s.id) === val); if (!p) return; S.viewAs = val; S.who = { role: p.role, name: p.name, region: p.region, position: p.position, id: p.id, viewAs: true }; }
+  }
+  S.ov = null; S.pub = null; S.cmp = null; S.pred = null; S.brief = null; S.plan = null; S.allSchools = null; S.workCache = {}; S.tbl = {}; S.qf = null; S.tab = null; S.cur = null; closeDetail(); S.stale = null;
+  await go();
+}
+const previewBanner = () => (S.viewAs ? `<div class="banner preview"><b>Preview.</b> You are looking at the app as ${S.viewAs === 'public' ? 'a public visitor' : esc(S.who.name) + ' (' + esc(S.who.position || S.who.role) + ', ' + esc(title(S.who.region)) + ')'}. Nothing you do here changes anything. <button class="btn sm sec" data-act="exitPreview">Back to HQ</button></div>` : '');
+
 function loginScreen(msg) {
   $('#nav').innerHTML = ''; $('#who').innerHTML = '';
   $('#app').innerHTML = `<div class="login"><img src="/learnimpact-logo.png" alt="LearnImpact" style="filter:none"><h2 style="margin-top:14px">Karibu · Welcome</h2><p style="color:var(--ink2)">Enter your access code. Your coordinator or HQ gives you one.</p><input id="code" maxlength="12" autocomplete="off" autocapitalize="characters" aria-label="Access code"><button class="btn" data-act="login" style="width:100%">Sign in</button>${msg ? `<div class="banner bad">${esc(msg)}</div>` : ''}<p style="margin-top:20px"><button class="btn sec sm" data-act="goPublic">See public progress</button></p></div>`;
@@ -513,6 +534,7 @@ async function loadData() {
     vol ? null : api('/api/brief').catch(() => null),
   ]);
   S.ov = ov; S.pub = ov; S.cmp = cmp; S.pred = pred; S.brief = brief;
+  if (ov.staff) S.staffList = ov.staff;
   if (S.tab === 'plan' || vol) await loadPlan();
   if (S.tab === 'admin') await loadAdmin();
   saveSnapshot();
@@ -532,7 +554,7 @@ async function loadWork(name) {
   if (S.cur === 'person:' + name) openDetail(S.cur, false);
 }
 // Last good screen is kept on the device so the app opens instantly, then refreshes behind it.
-function saveSnapshot() { try { if (S.code && S.ov) localStorage.setItem('kf_snap', JSON.stringify({ code: S.code, t: Date.now(), ov: S.ov, cmp: S.cmp, pred: S.pred, brief: S.brief })); } catch {} }
+function saveSnapshot() { try { if (S.code && S.ov && !S.viewAs) localStorage.setItem('kf_snap', JSON.stringify({ code: S.code, t: Date.now(), ov: S.ov, cmp: S.cmp, pred: S.pred, brief: S.brief })); } catch {} }
 function loadSnapshot() { try { const s = JSON.parse(localStorage.getItem('kf_snap') || 'null'); return s && s.code === S.code && Date.now() - s.t < 12 * 3600 * 1000 ? s : null; } catch { return null; } }
 function publicCompare(pub) {
   if (!pub || !pub.regions) return { status: 'waiting' };
@@ -552,7 +574,7 @@ async function loadAdmin() {
 
 async function go() {
   if (!S.tab && location.hash && !location.hash.includes(':')) S.tab = location.hash.slice(1);
-  if (S.who && !S.ov) { const snap = loadSnapshot(); if (snap) { S.ov = snap.ov; S.pub = snap.ov; S.cmp = snap.cmp; S.pred = snap.pred; S.brief = snap.brief; S.stale = snap.t; render(); } }
+  if (S.who && !S.ov && !S.viewAs) { const snap = loadSnapshot(); if (snap) { S.ov = snap.ov; S.pub = snap.ov; S.cmp = snap.cmp; S.pred = snap.pred; S.brief = snap.brief; S.stale = snap.t; render(); } }
   try { await loadData(); S.stale = null; render(); ensureSchools(); if (location.hash.includes(':')) { try { openDetail(decodeURIComponent(location.hash.slice(1))); } catch {} } } catch (e) { if (e.status === 401 && S.code) { S.code = null; S.who = null; store.set('kf_code', null); loginScreen('Your code was not recognised. Try again.'); } else $('#app').innerHTML = `<div class="banner bad">${esc(e.message)}</div>`; }
 }
 
@@ -569,6 +591,7 @@ document.addEventListener('click', async (e) => {
     else if (a === 'logout') { S.code = null; S.who = null; S.ov = null; S.plan = null; S.draft = null; store.set('kf_code', null); try { localStorage.removeItem('kf_snap'); } catch {} S.tab = null; loginScreen(); }
     else if (a === 'showLogin') loginScreen();
     else if (a === 'alerts') await toggleAlerts();
+    else if (a === 'exitPreview') await setViewAs('');
     else if (a === 'pushTest') { const r = await api('/api/admin/push-test', { method: 'POST', body: { role: 'hq' } }); alert(r.skipped || `Sent to ${r.sent} device(s)` + (r.errors?.length ? ', errors: ' + r.errors.join(', ') : '')); }
     else if (a === 'prevRem') { S.adm.preview = await api('/api/admin/reminder-preview?region=' + t.dataset.region); render(); }
     else if (a === 'retryPlan') { await loadPlan(); render(); }
@@ -598,6 +621,7 @@ document.addEventListener('click', async (e) => {
 document.addEventListener('change', async (e) => {
   const tf = e.target.dataset?.tf; if (tf) { const [id, k] = tf.split(':'); S.tbl[id].f[k] = e.target.value; render(); return; }
   const qf = e.target.dataset?.qf; if (qf) { S.qf[qf] = e.target.value; render(); return; }
+  if (e.target.id === 'viewAsSel') { await setViewAs(e.target.value); return; }
   if (e.target.id === 'yearSel') { S.year = e.target.value; S.allSchools = null; S.workCache = {}; await go(); }
   else if (e.target.id === 'planRegion') { S.draft = null; await loadPlan(e.target.value); render(); }
   else if (e.target.id === 'exLga') { S.explore.lga = e.target.value; render(); }
@@ -616,5 +640,7 @@ document.addEventListener('keydown', (e) => {
   const saved = store.get('kf_code');
   if (saved) { S.code = saved; try { S.who = (await api('/api/login')).who; } catch { S.code = null; S.who = null; store.set('kf_code', null); } }
   if (!S.who) { loginScreen(); return; }
+  const asHash = /^#as=(\w+)$/.exec(location.hash);
+  if (asHash && S.who.role === 'hq') { S.tab = 'hq'; await go(); history.replaceState(null, '', location.pathname); await setViewAs(asHash[1]); return; }
   await go();
 })();
