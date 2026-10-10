@@ -4,12 +4,15 @@ import { morningDigest, eveningGap, loadRecipients, saveRecipients, runDigests, 
 import { loadQueries, decorate, postQuery, flagKey } from './queries.js';
 import { identify, staffCodes, canSeeRegion } from './auth.js';
 import { forecast, atRiskSchools } from './predict.js';
+import { ensureRoster, changeRoster, rosterOptions } from './roster.js';
+import { runBackup, buildBackup, restoreBackup, maybeRunScheduledBackup } from './backup.js';
+import { setValidation, koboWho } from './kobo.js';
 import { fetchKoboPage } from './kobo.js';
 import { subscribe, unsubscribe, takeAlert, hashEndpoint, pushTo, pushStatus, pushReady, runAlerts } from './push.js';
 import { tick, syncStatus, recomputeSummaries, resetAll, resetKind, loadState, loadYear, saveYear, stateYears } from './sync.js';
 import { getPlan, submitPlan, saveDraft, changeVisit, markNotice, withNotices } from './plan.js';
 import {
-  REGIONS, PARTNERS, REASONS, FIELD_START, FIELD_END, PILOT_DAY, TRAINING_START, CURRENT_YEAR, STAFF, SCHOOLS_BY_REGION, SCHOOL_BY_ID, eatToday,
+  REGIONS, PARTNERS, REASONS, FIELD_START, FIELD_END, PILOT_DAY, TRAINING_START, CURRENT_YEAR, STAFF, rosterState, staffForKoboName, SCHOOLS_BY_REGION, SCHOOL_BY_ID, eatToday,
   TARGET_PER_GRADE, DODOMA_TARGET_PER_GRADE, NOTICE_AEK_WORKING_DAYS, NOTICE_HT_WORKING_DAYS,
 } from './config.js';
 
@@ -69,7 +72,7 @@ function regionBundle(sum, region, who, queries = {}) {
   const schools = (SCHOOLS_BY_REGION[region] || []).map((s) => schoolRow(sum.schools[s.id]));
   const admins = sum.admins.filter((a) => a.region === region);
   const flags = decorate(sum.flags.filter((f) => SCHOOL_BY_ID[f.school]?.region === region).map((f) => ({ ...f, school_name: SCHOOL_BY_ID[f.school]?.name, region, lga: SCHOOL_BY_ID[f.school]?.lga, ward: SCHOOL_BY_ID[f.school]?.ward })), queries);
-  const staff = STAFF.filter((s) => s.region === region).map((s) => ({ id: s.id, name: s.name, position: s.position, role: s.role }));
+  const staff = STAFF.filter((s) => s.active && s.region === region).map((s) => ({ id: s.id, name: s.name, position: s.position, role: s.role }));
   const work = Object.fromEntries(admins.map((a) => [a.name, sum.work[a.name] || []]));
   return { region: sum.regions[region], schools, admins, flags, staff, work_all: work };
 }
@@ -82,6 +85,7 @@ export default {
     const path = url.pathname;
     const method = request.method;
     if (!path.startsWith('/api/')) return env.ASSETS.fetch(request);
+    await ensureRoster(env);
 
     try {
       if (path === '/api/config') {
@@ -120,7 +124,7 @@ export default {
         if (who.role === 'hq') {
           const plans = {};
           (await Promise.all(REGIONS.map((r) => getPlan(env, r)))).forEach((p, k) => { plans[REGIONS[k]] = { status: p.status, visits: p.visits.length, changes: p.changes.length, late_changes: p.changes.filter((c) => c.late).length, submitted_at: p.submitted_at }; });
-          return json({ ...base, staff: STAFF.map((s) => ({ id: s.id, name: s.name, position: s.position, region: s.region, role: s.role })), admins: sum.admins, flags: decorate(sum.flags.map((f) => ({ ...f, school_name: SCHOOL_BY_ID[f.school]?.name, region: SCHOOL_BY_ID[f.school]?.region, lga: SCHOOL_BY_ID[f.school]?.lga, ward: SCHOOL_BY_ID[f.school]?.ward })), queries).slice(0, 600), plans, unlisted: sum.admins.filter((a) => a.role === 'unlisted').map((a) => a.name) });
+          return json({ ...base, staff: STAFF.filter((s) => s.active).map((s) => ({ id: s.id, name: s.name, position: s.position, region: s.region, role: s.role })), admins: sum.admins, flags: decorate(sum.flags.map((f) => ({ ...f, school_name: SCHOOL_BY_ID[f.school]?.name, region: SCHOOL_BY_ID[f.school]?.region, lga: SCHOOL_BY_ID[f.school]?.lga, ward: SCHOOL_BY_ID[f.school]?.ward })), queries).slice(0, 600), plans, unlisted: sum.admins.filter((a) => a.role === 'unlisted').map((a) => a.name) });
         }
         if (who.role === 'rc' || who.role === 'arc') {
           return json({ ...base, mine: regionBundle(sum, who.region, who, queries) });
@@ -146,6 +150,22 @@ export default {
         return json({ schools: (SCHOOLS_BY_REGION[region] || []).map((s) => ({ ...schoolRow(sum.schools[s.id]), region })) });
       }
 
+      if (path === '/api/kobo/status' && method === 'POST') {
+        if (who.role === 'volunteer') return err('Only coordinators and HQ can do this', 403);
+        const b = await request.json();
+        const ids = [...new Set((b.ids || []).map(Number).filter((n) => Number.isFinite(n)))].slice(0, 40);
+        if (!ids.length || !['approved', 'not_approved', 'on_hold'].includes(b.status)) return err('Choose submissions and a status', 422);
+        const { sum, year } = await loadSummary(env, b.year || null);
+        // only submissions named in a query inside this person's own region may be changed
+        const allowed = new Set((sum?.flags || []).filter((f) => who.role === 'hq' || SCHOOL_BY_ID[f.school]?.region === who.region).flatMap((f) => (f.recs || []).map((r) => Number(r[5]))));
+        const bad = ids.filter((n) => !allowed.has(n));
+        if (bad.length) return err('Some submissions are not part of a query you can act on', 403);
+        const result = await setValidation(env.KOBO_SERVER || 'kf.kobotoolbox.org', env.KOBO_ASSET_ID, env.KOBO_TOKEN, ids, b.status);
+        const log = (await kv(env).get('v2:kobolog')) || [];
+        log.push({ at: new Date().toISOString(), by: who.name, status: b.status, ids, year });
+        await kv(env).put('v2:kobolog', log.slice(-200));
+        return json({ ok: true, updated: ids.length, status: b.status });
+      }
       if (path === '/api/push/subscribe' && method === 'POST') {
         const b = await request.json();
         const r = await subscribe(env, who, b.subscription);
@@ -192,7 +212,7 @@ export default {
         if (!a) return json({ work: [] });
         if (who.role === 'volunteer' && a.staff_id !== who.id) return err('Not yours', 403);
         if (who.role !== 'hq' && a.region !== who.region) return err('Not your region', 403);
-        return json({ work: sum.work[name] || [] });
+        return json({ work: sum.work[name] || [], days: sum.days?.[name] || [] });
       }
 
       // ---------- teacher data (baseline school visits) and the links between sources ----------
@@ -271,7 +291,7 @@ export default {
 
         if (method === 'GET') {
           const plan = await getPlan(env, region);
-          return json({ plan: withNotices(plan, today, visitDates), schools: (SCHOOLS_BY_REGION[region] || []).map((s) => ({ id: s.id, name: s.name, lga: s.lga, mne: s.mne, arm: s.arm })), staff: STAFF.filter((s) => s.region === region).map((s) => ({ name: s.name, position: s.position })), today });
+          return json({ plan: withNotices(plan, today, visitDates), schools: (SCHOOLS_BY_REGION[region] || []).map((s) => ({ id: s.id, name: s.name, lga: s.lga, mne: s.mne, arm: s.arm })), staff: STAFF.filter((s) => s.active && s.region === region).map((s) => ({ name: s.name, position: s.position })), today });
         }
         if (method === 'POST') {
           if (who.role !== 'rc' && who.role !== 'arc' && who.role !== 'hq') return err('Only coordinators can change the plan', 403);
@@ -366,6 +386,7 @@ export default {
         rows.push(['_CALENDAR', `v${version} ${stamp}`, 'calendar switch and version', '', '', '', '']);
         let n = 0;
         plans.forEach((p, k) => { if (p.status !== 'locked') return; for (const v of p.visits) { const s = SCHOOL_BY_ID[v.school]; rows.push([v.school, v.date, s?.name?.trim() || '', REGIONS[k], s?.lga || '', v.start || '', (v.team || []).join('; ')]); n++; } });
+        await kv(env).put('v2:calcsv:last', { at: new Date().toISOString(), rows: n, version: `v${version}` });
         return new Response(rows.map((r) => r.map(q).join(',')).join('\n') + '\n', { headers: { 'content-type': 'text/csv; charset=utf-8', 'content-disposition': `attachment; filename="ref_calendar.csv"`, 'x-calendar-rows': String(n), 'x-calendar-version': `v${version}`, 'cache-control': 'no-store' } });
       }
       if (path === '/api/admin/fields') {
@@ -379,6 +400,84 @@ export default {
         for (const k of (url.searchParams.get('counts') || '').split(',').filter((x) => SAFE.test(x))) { const c = {}; for (const r of page.results) { const v = String(r[k] ?? '(blank)').slice(0, 60); c[v] = (c[v] || 0) + 1; } counts[k] = Object.fromEntries(Object.entries(c).sort((a, b) => b[1] - a[1]).slice(0, 12)); }
         return json({ kind, counts, records_seen: page.results.length, total: page.count, keys: [...keys].filter((k) => !/bank|acc_|account|mobile|tin|checkno|name$|_name|branch|geolocation|gps/i.test(k)).sort() });
       }
+      if (path === '/api/admin/readiness') {
+        const today = eatToday();
+        const sync = await syncStatus(env);
+        const years = (await kv(env).get('v2:years')) || [];
+        const sum26 = years.includes(CURRENT_YEAR) ? await kv(env).get('v2:sum:' + CURRENT_YEAR) : null;
+        const plans = await Promise.all(REGIONS.map((r) => getPlan(env, r)));
+        const submitted = plans.filter((p) => p.status === 'locked').length;
+        const rec = await loadRecipients(env);
+        const push = await pushStatus(env);
+        const cal = await kv(env).get('v2:calcsv:last');
+        const bak = await kv(env).get('v2:backup:last');
+        const age = (iso) => (iso ? Math.round((Date.now() - Date.parse(iso)) / 60000) : null);
+        const checks = [];
+        const add = (ok, label, detail, fix) => checks.push({ ok, label, detail, fix: ok ? '' : fix });
+        const stale = Object.entries(sync).filter(([, v]) => v.configured && (age(v.last_check) ?? 9999) > 40);
+        add(!stale.length && Object.values(sync).every((v) => v.configured), 'KoBo connections are fresh', Object.entries(sync).map(([k, v]) => `${k}: ${age(v.last_check) ?? '–'} min ago`).join(' · '), 'Press Sync now. If it stays stale, check the KoBo token.');
+        add(submitted === 10, 'Field plans submitted', `${submitted} of 10 regions (Dodoma pilot plan is separate)`, 'Remind the coordinators who have not submitted.');
+        const d = plans[REGIONS.indexOf('DODOMA')];
+        add(d.status === 'locked' && d.visits.every((v) => v.date === PILOT_DAY), 'Dodoma pilot plan on 15 Oct', `${d.visits.length} schools`, 'Submit the Dodoma plan for 15 October.');
+        add(Boolean(cal), 'Calendar file downloaded for the KoBo forms', cal ? `last download ${age(cal.at)} min ago, ${cal.rows} schools, ${cal.version}` : 'never downloaded', 'Admin: download ref_calendar.csv after plans are in, and upload it to both forms.');
+        add(Boolean(sum26) && (sum26.admins || []).filter((a) => a.role === 'unlisted').length === 0, 'Every test admin name matches the roster', sum26 ? `${(sum26.admins || []).filter((a) => a.role === 'unlisted').length} unlisted name(s) in 2026 data` : 'no 2026 tests yet', 'Assign unlisted names to people in the roster section.');
+        add(rec && Object.values(rec).filter((r) => r.active !== false).length > 0 && env.EMAIL_ENABLED === 'true' && Boolean(env.EMAIL_FROM && env.RESEND_API_KEY), 'Email is on and has recipients', `${Object.values(rec).filter((r) => r.active !== false).length} active recipients`, 'Check recipients and the Resend key.');
+        add(push.devices > 0, 'Phone alerts have devices', `${push.devices} device(s)`, 'Ask people to tap "Turn on alerts".');
+        add(Boolean(bak) && age(bak.at) < 36 * 60, 'A recent backup exists', bak ? `last backup ${Math.round(age(bak.at) / 60)} h ago` : 'no backup yet', 'Press "Back up now".');
+        const pilot = sum26 ? Object.values(sum26.schools).filter((s) => s.region === 'DODOMA') : [];
+        const pilotData = pilot.filter((s) => s.dates.includes(PILOT_DAY));
+        const parsed = sum26 ? Object.values(sum26.schools).flatMap((s) => [1, 2, 3].map((g) => s.g[g])).filter((g) => g.n > 0) : [];
+        add(parsed.length === 0 || parsed.every((g) => g.att !== null), 'Sampling attendance is being read', parsed.length ? `${parsed.filter((g) => g.att !== null).length} of ${parsed.length} school-grades with tests have an attendance record` : 'no 2026 tests yet', 'Check that the sampling form was submitted before testing, and that field names match.');
+        return json({ today, pilot_day: PILOT_DAY, checks, pilot: { schools: pilot.length, with_tests: pilotData.length, tested: pilotData.reduce((a, s) => a + s.g[1].av + s.g[2].av + s.g[3].av, 0), target: 600 } });
+      }
+      if (path === '/api/admin/roster') {
+        if (method === 'POST') {
+          const b = await request.json();
+          const r = await changeRoster(env, b);
+          if (r.error) return err(r.error, 422);
+          await recomputeSummaries(env);
+          let code = null;
+          if (b.action === 'reissue') { const map = await staffCodes(env); code = Object.entries(map || {}).find(([, s]) => s.id === Number(b.id))?.[0] || null; }
+          return json({ ok: true, code });
+        }
+        const { sum } = await loadSummary(env, CURRENT_YEAR);
+        const names = new Set((await Promise.all(['2026', '2025'].map(async (y) => ((await readSummary(env, y))?.admins || [])))).flat().filter((a) => a.role === 'unlisted').map((a) => a.name));
+        return json({ staff: STAFF.map((s) => ({ id: s.id, name: s.name, region: s.region, position: s.position, role: s.role, active: s.active })), aliases: rosterState.aliases, unlisted: [...names], options: rosterOptions() });
+      }
+      if (path === '/api/admin/backup') {
+        if (method === 'POST') { const b = await request.json().catch(() => ({})); return json(await runBackup(env, { full: Boolean(b.full) })); }
+        const data = await buildBackup(env, url.searchParams.get('full') === '1');
+        return new Response(JSON.stringify(data), { headers: { 'content-type': 'application/json', 'content-disposition': `attachment; filename="kf4-backup-${data.at.slice(0, 10)}${data.full ? '-full' : ''}.json"`, 'cache-control': 'no-store' } });
+      }
+      if (path === '/api/admin/restore' && method === 'POST') {
+        const b = await request.json();
+        if (b.confirm !== 'RESTORE') return err('Type RESTORE to confirm', 422);
+        const r = await restoreBackup(env, b.backup, { states: Boolean(b.states) });
+        if (r.error) return err(r.error, 422);
+        await ensureRoster(env, true); await recomputeSummaries(env);
+        return json(r);
+      }
+      if (path === '/api/admin/days-worked') {
+        const { sum } = await loadSummary(env, url.searchParams.get('year') || CURRENT_YEAR);
+        if (!sum) return err('No data yet', 404);
+        const from = url.searchParams.get('from') || '0000', to = url.searchParams.get('to') || '9999';
+        const rows = [];
+        for (const a of sum.admins) {
+          const days = (sum.days?.[a.name] || []).filter((d) => d[0] >= from && d[0] <= to);
+          const st = staffForKoboName(a.name);
+          for (const d of days) rows.push({ region: a.region || '', name: st ? st.name : a.name, position: a.position || 'not in roster', date: d[0], schools: d[1], pupils: d[2], first_hour: d[3], last_hour: d[4] });
+        }
+        rows.sort((x, y) => x.region.localeCompare(y.region) || x.name.localeCompare(y.name) || x.date.localeCompare(y.date));
+        if (url.searchParams.get('format') === 'csv') {
+          const q = (v) => { const s = String(v ?? ''); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+          const head = ['Region', 'Name', 'Position', 'Date', 'Schools with tests', 'Pupils tested', 'First test hour', 'Last test hour'];
+          return new Response('\ufeff' + [head, ...rows.map((r) => [r.region, r.name, r.position, r.date, r.schools, r.pupils, r.first_hour, r.last_hour])].map((r) => r.map(q).join(',')).join('\n') + '\n', { headers: { 'content-type': 'text/csv; charset=utf-8', 'content-disposition': 'attachment; filename="days-worked.csv"', 'cache-control': 'no-store' } });
+        }
+        const per = {};
+        for (const r of rows) { const p = (per[r.name] ||= { name: r.name, region: r.region, position: r.position, days: 0, schools: 0, pupils: 0, first: r.date, last: r.date }); p.days += 1; p.schools += r.schools; p.pupils += r.pupils; if (r.date < p.first) p.first = r.date; if (r.date > p.last) p.last = r.date; }
+        return json({ note: 'A day counts when at least one test was submitted. Training days, travel days and days without tests are not included.', year: sum.year, people: Object.values(per) });
+      }
+      if (path === '/api/admin/kobo-check') return json(await koboWho(env.KOBO_SERVER || 'kf.kobotoolbox.org', env.KOBO_ASSET_ID, env.KOBO_TOKEN));
       if (path === '/api/admin/push-status') return json(await pushStatus(env));
       if (path === '/api/admin/push-test' && method === 'POST') {
         const b = await request.json();
@@ -406,14 +505,18 @@ export default {
 
   async scheduled(event, env, ctx) {
     try {
+      await ensureRoster(env, true);
       const out = await tick(env);
       if (out.length) console.log(JSON.stringify(out));
       const hhmm = new Date().toISOString().slice(11, 16);
-      const alertSlot = { '04:05': 'morning', '13:30': 'evening' }[hhmm];
+      const hourNow = Number(hhmm.slice(0, 2));
+      const alertSlot = { '04:05': 'morning', '07:30': 'silent', '13:30': 'evening' }[hhmm] || (hhmm.endsWith(':00') && hourNow >= 4 && hourNow <= 15 ? 'health' : null); // health: every hour of the field day
       if (alertSlot) {
         const day = eatToday(); const last = (await kv(env).get('v2:push:ran')) || {};
-        if (last[alertSlot] !== day) { last[alertSlot] = day; await kv(env).put('v2:push:ran', last); const sum = await kv(env).get('v2:sum:' + CURRENT_YEAR); console.log('alerts ' + JSON.stringify(await runAlerts(env, alertSlot, sum)).slice(0, 400)); }
+        const ranKey = alertSlot + ':' + hhmm;
+        if (last[ranKey] !== day) { last[ranKey] = day; await kv(env).put('v2:push:ran', last); const sum = await kv(env).get('v2:sum:' + CURRENT_YEAR); console.log('alerts ' + JSON.stringify(await runAlerts(env, alertSlot, sum)).slice(0, 400)); }
       }
+      const bk = await maybeRunScheduledBackup(env); if (bk) console.log('backup ' + JSON.stringify(bk));
       const dg = await maybeRunScheduledDigests(env);
       if (dg) console.log('digest ' + JSON.stringify(dg).slice(0, 500));
     } catch (e) {

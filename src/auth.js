@@ -1,11 +1,12 @@
 // Per-person access codes, derived from a server-side salt so nothing about a
 // person's code is stored. HQ uses HQ_SECRET directly. Nothing is checked in the
 // browser; every API call sends the code and the Worker decides what it may see.
-import { STAFF } from './config.js';
+import { STAFF, rosterState } from './config.js';
 
 const enc = new TextEncoder();
 let codeCache = null;
 let cacheSalt = null;
+let cacheVersion = -1;
 
 async function hmacHex(salt, msg) {
   const key = await crypto.subtle.importKey('raw', enc.encode(salt), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
@@ -23,11 +24,13 @@ function toCode(hex) {
 
 export async function staffCodes(env) {
   if (!env.AUTH_SALT) return null;
-  if (codeCache && cacheSalt === env.AUTH_SALT) return codeCache;
+  if (codeCache && cacheSalt === env.AUTH_SALT && cacheVersion === rosterState.version) return codeCache;
   const map = {};
-  for (const s of STAFF) map[toCode(await hmacHex(env.AUTH_SALT, 'staff:' + s.id))] = s;
+  // a person's code changes only when HQ re-issues it (rot goes up); everyone else keeps theirs
+  for (const s of STAFF) if (s.active) map[toCode(await hmacHex(env.AUTH_SALT, s.rot ? `staff:${s.id}:${s.rot}` : 'staff:' + s.id))] = s;
   codeCache = map;
   cacheSalt = env.AUTH_SALT;
+  cacheVersion = rosterState.version;
   return map;
 }
 

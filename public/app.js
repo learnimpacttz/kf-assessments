@@ -1,7 +1,7 @@
 // KiuFunza 4 Field Command Centre: one page, tabs depend on who signed in.
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const S = { exTab: 'assess', tch: null, linked: null, exErr: null, real: null, viewAs: null, staffList: [], pred: null, brief: null, qOpen: null, cfg: null, code: null, who: null, tab: null, ov: null, pub: null, cmp: null, plan: null, year: null, explore: { q: '', lga: '', sub: 'schools' }, planRegion: null, selVisit: null, adm: null };
+const S = { daysCache: {}, koboConfirm: null, restoreData: null, rosterMsg: null, daysRows: null, exTab: 'assess', tch: null, linked: null, exErr: null, real: null, viewAs: null, staffList: [], pred: null, brief: null, qOpen: null, cfg: null, code: null, who: null, tab: null, ov: null, pub: null, cmp: null, plan: null, year: null, explore: { q: '', lga: '', sub: 'schools' }, planRegion: null, selVisit: null, adm: null };
 const store = { get: (k) => { try { return localStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch {} } };
 
 async function api(path, opts = {}) {
@@ -248,18 +248,47 @@ function viewRegionsHQ() {
 }
 // ----- data explorer -----
 // ----- HQ admin -----
+function readinessCard(a) {
+  const R = a.ready; if (!R) return '';
+  const bad = R.checks.filter((c) => !c.ok).length;
+  const pil = R.pilot;
+  return `<div class="card" style="margin-bottom:14px;border-left:4px solid var(${bad ? '--gold' : '--good'})"><h3>Go-live readiness ${bad ? `<span class="chip c-warn">${bad} to fix</span>` : '<span class="chip c-good">all clear</span>'}</h3><div class="sub">Checked live. Pilot day is ${esc(R.pilot_day)}: ${pil.with_tests} of ${pil.schools} pilot schools have tests, ${pil.tested} of ${pil.target} pupils.</div>${R.checks.map((c) => `<div class="flag"><i class="st ${c.ok ? 'good' : 'warn'}"></i><div><b>${esc(c.label)}</b><span>${esc(c.detail)}${c.fix ? ' · <b>' + esc(c.fix) + '</b>' : ''}</span></div></div>`).join('')}</div>`;
+}
+function rosterCard(a) {
+  const R = a.roster; if (!R) return '';
+  const opt = (list, cur, region) => list.map((x) => `<option value="${esc(x)}" ${x === cur ? 'selected' : ''}>${esc(region ? title(x) : x)}</option>`).join('');
+  const sorted = R.staff.slice().sort((x, y) => x.region.localeCompare(y.region) || x.position.localeCompare(y.position));
+  const rows = sorted.map((s) => `<tr class="${s.active ? '' : 'sk'}"><td><input data-rs="name" data-id="${s.id}" value="${esc(s.name)}" style="width:100%;min-width:150px"></td><td><select data-rs="region" data-id="${s.id}">${opt(R.options.regions, s.region, true)}</select></td><td><select data-rs="position" data-id="${s.id}">${opt(R.options.positions, s.position)}</select></td><td style="white-space:nowrap"><button class="btn sm" data-act="rosterSave" data-id="${s.id}">Save</button> ${s.active ? `<button class="btn sm sec" data-act="rosterReissue" data-id="${s.id}">New code</button> <button class="btn sm sec" data-act="rosterRemove" data-id="${s.id}">Remove</button>` : `<span class="pill mute">removed</span> <button class="btn sm sec" data-act="rosterRestore" data-id="${s.id}">Restore</button>`}</td></tr>`).join('');
+  const act = R.staff.filter((s) => s.active);
+  const un = R.unlisted.map((n) => `<tr><td><b>${esc(n)}</b></td><td><select data-ra="${esc(n)}"><option value="">Choose person</option>${act.map((s) => `<option value="${s.id}">${esc(title(s.region))} · ${esc(s.position)} · ${esc(s.name)}</option>`).join('')}</select></td><td><button class="btn sm" data-act="rosterAlias" data-n="${esc(n)}">Assign</button></td></tr>`).join('');
+  const alias = Object.entries(R.aliases || {}).map(([k, id]) => { const s = R.staff.find((x) => x.id === id); return `<tr><td>${esc(k)}</td><td>${s ? esc(s.name) : '?'}</td><td><button class="btn sm sec" data-act="rosterUnalias" data-n="${esc(k)}">Undo</button></td></tr>`; }).join('');
+  return `<div class="card" style="margin-top:14px"><h3>People and roster</h3><div class="sub">Add or replace people, fix a name or region, and give someone a new code if they lose theirs. A new code stops the old one working. Removed people keep their earlier tests under their name.</div>${S.rosterMsg ? `<div class="banner">${esc(S.rosterMsg)}</div>` : ''}
+  <div class="tbl dt-wrap"><table class="dt"><thead><tr><th>Name</th><th>Region</th><th>Position</th><th>Actions</th></tr></thead><tbody>${rows}
+  <tr><td><input id="newName" placeholder="New person's name" style="width:100%;min-width:150px"></td><td><select id="newRegion">${opt(R.options.regions, 'TANGA', true)}</select></td><td><select id="newPos">${opt(R.options.positions, 'Volunteer 1')}</select></td><td><button class="btn sm" data-act="rosterAdd">Add person</button></td></tr></tbody></table></div>
+  ${un ? `<h4 style="margin:14px 0 6px">Names in KoBo that are not in the roster</h4><div class="sub">Choose who each one is. Their tests are then counted under that person.</div><div class="tbl"><table><tbody>${un}</tbody></table></div>` : ''}
+  ${alias ? `<h4 style="margin:14px 0 6px">Names already matched</h4><div class="tbl"><table><tbody>${alias}</tbody></table></div>` : ''}</div>`;
+}
+function backupDaysCard(a) {
+  const D = S.daysRows;
+  return `<div class="card" style="margin-top:14px"><h3>Days worked</h3><div class="sub">For payments. A day counts when at least one test was submitted. Training days, travel days and days without tests are not included.</div><div class="f"><label>From<input type="date" id="dwFrom" value="${S.dwFrom || S.cfg.pilot_day}"></label><label>To<input type="date" id="dwTo" value="${S.dwTo || S.cfg.field.end}"></label></div><div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn sm" data-act="daysShow">Show totals</button><button class="btn sm sec" data-act="daysCsv">Download detail (CSV)</button></div>
+  ${D ? `<div class="tbl" style="margin-top:10px"><table><thead><tr><th>Name</th><th>Region</th><th>Position</th><th class="r">Days</th><th class="r">Schools</th><th class="r">Pupils</th><th>First</th><th>Last</th></tr></thead><tbody>${D.people.map((p) => `<tr><td><b>${esc(p.name)}</b></td><td>${esc(title(p.region))}</td><td>${esc(p.position)}</td><td class="r num">${p.days}</td><td class="r num">${p.schools}</td><td class="r num">${p.pupils}</td><td>${shortDate(p.first)}</td><td>${shortDate(p.last)}</td></tr>`).join('') || '<tr><td colspan="8" class="empty">No tests in that period.</td></tr>'}</tbody></table></div>` : ''}</div>
+  <div class="card" style="margin-top:14px"><h3>Backup and restore</h3><div class="sub">A backup is emailed to HQ every night at 21:00 (plans, changes, queries, roster, recipients), and a full copy on Sundays. You can also download one now. Restore only if something was lost.</div><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn sm" data-act="backupDownload">Download a full backup</button><button class="btn sm sec" data-act="backupNow">Email a backup now</button></div>${S.backupMsg ? `<p class="m" style="margin-top:8px">${esc(S.backupMsg)}</p>` : ''}
+  <h4 style="margin:14px 0 6px">Restore from a backup file</h4><input type="file" id="restoreFile" accept=".json,.gz">${S.restoreData ? `<p class="m" style="margin-top:8px">File from ${esc(S.restoreData.at)}: ${Object.values(S.restoreData.plans || {}).filter((p) => p.status === 'locked').length} submitted plans, ${Object.keys(S.restoreData.queries || {}).length} queries, ${S.restoreData.roster ? S.restoreData.roster.staff.length : 0} people${S.restoreData.states ? ', stored data for ' + Object.keys(S.restoreData.states).length + ' year(s)' : ''}. This replaces what is there now.</p><div class="f"><label>Type RESTORE to confirm<input id="restoreConfirm"></label></div><button class="btn sm" data-act="restoreRun" style="margin-top:8px">Restore</button>` : ''}</div>
+  <div class="card" style="margin-top:14px"><h3>KoBo write access</h3><div class="sub">Needed to mark submissions as approved, not approved or on hold from a query.</div><button class="btn sm sec" data-act="koboCheck">Check access</button>${S.koboWho ? `<p class="m" style="margin-top:8px">${esc(S.koboWho)}</p>` : ''}</div>`;
+}
 function viewAdmin() {
   const a = S.adm; if (!a) return '<div class="empty">Loading…</div>';
   const sync = Object.entries(a.status.sync).map(([k, v]) => `<tr><td><b>${esc(k)}</b></td><td>${v.configured ? '<span class="pill good">connected</span>' : '<span class="pill bad">not set</span>'}</td><td class="num r">${fmt(v.records_last_pass)}</td><td>${v.in_progress ? `<span class="pill warn">syncing · page ${v.pages}</span>` : '<span class="pill good">idle</span>'}</td><td>${v.last_done ? new Date(v.last_done).toLocaleString('en-GB') : '–'}</td></tr>`).join('');
   const codes = a.codes ? a.codes.codes.map((c) => `<tr><td>${esc(title(c.region))}</td><td>${esc(c.position)}</td><td>${esc(c.name)}</td><td class="num"><b>${esc(c.code)}</b></td></tr>`).join('') : '';
-  return `<div class="pagehead"><div><h2>Admin</h2><p>Data connections, access codes and form checks</p></div><button class="btn" data-act="refreshNow">Sync now</button></div>
-  <div class="card"><h3>Data connections</h3><div class="sub">Student tests, sampling and teacher forms are read from KoBo every 5 minutes in field hours</div><div class="tbl"><table><thead><tr><th>Form</th><th>Status</th><th class="r">Records read</th><th>State</th><th>Last complete</th></tr></thead><tbody>${sync}</tbody></table></div></div>
+  return `<div class="pagehead"><div><h2>Admin</h2><p>Readiness, data connections, people, access codes and backups</p></div><button class="btn" data-act="refreshNow">Sync now</button></div>
+  ${readinessCard(a)}<div class="card"><h3>Data connections</h3><div class="sub">Student tests, sampling and teacher forms are read from KoBo every 5 minutes in field hours</div><div class="tbl"><table><thead><tr><th>Form</th><th>Status</th><th class="r">Records read</th><th>State</th><th>Last complete</th></tr></thead><tbody>${sync}</tbody></table></div></div>
   ${S.ov.unlisted?.length ? `<div class="banner" style="margin-top:14px"><b>Names in KoBo that are not in the staff roster:</b> ${S.ov.unlisted.map(esc).join(', ')}. Their tests still count, but they have no region or access code.</div>` : ''}
   <div class="card" style="margin-top:14px"><h3>Email digests</h3><div class="sub">Morning brief 07:00 and evening check 17:30 (East Africa Time). ${a.rec?.sending?.domain_ready && a.rec?.sending?.enabled ? '<span class="pill good">sending is on</span>' : '<span class="pill warn">preview only: no sending domain connected yet</span>'}</div>
   <div class="f"><label style="grid-column:1/-1">Recipients, one per line: email, name, role (hq, rc or arc), region, copy (write copy for copy-only), last column: paused, or a start date like 2026-10-16<textarea id="recText" placeholder="name@example.org, Hatibu Lugendo, rc, TANGA">${esc(Object.entries(a.rec?.recipients || {}).map(([e, r]) => [e, r.name, r.role, r.region || '', r.copy ? 'copy' : '', r.active === false ? 'paused' : (r.from || '')].join(', ')).join('\n'))}</textarea></label></div>
   <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn sm" data-act="saveRec">Save recipients</button><button class="btn sm sec" data-act="prevMail" data-kind="morning" data-region="">Preview national morning</button><button class="btn sm sec" data-act="prevMail" data-kind="morning" data-region="TANGA">Preview Tanga morning</button><button class="btn sm sec" data-act="prevMail" data-kind="evening" data-region="">Preview evening</button><button class="btn sm sec" data-act="prevRem" data-region="TANGA">Preview notice reminder (Tanga)</button></div>
   ${a.preview ? `<p style="margin:12px 0 4px"><b>${esc(a.preview.subject)}</b></p><iframe sandbox title="Email preview" style="width:100%;height:420px;border:1px solid var(--line);border-radius:8px;background:#fff" srcdoc="${esc(a.preview.html)}"></iframe>` : ''}</div>
-  <div class="card" style="margin-top:14px"><h3>Calendar for the KoBo forms</h3><div class="sub">The assessment and sampling forms check each visit against this file. Download it after plans are submitted and after every approved change, then upload it to both forms as <b>ref_calendar.csv</b> (Form, Settings, Media). Without it the check stays off.</div><button class="btn sm" data-act="calCsv">Download ref_calendar.csv</button>${S.calMsg ? `<p class="m" style="margin-top:8px">${esc(S.calMsg)}</p>` : ''}</div>\n  <div class="card" style="margin-top:14px"><h3>Phone alerts</h3><div class="sub">${a.push?.ready ? '<span class="pill good">server ready</span>' : '<span class="pill warn">not set up</span>'} ${a.push ? a.push.devices + ' device(s) subscribed' : ''}${a.push && a.push.devices ? ' (' + Object.entries(a.push.by_role).map(([k, v]) => v + ' ' + k).join(', ') + ')' : ''}. Each person turns alerts on from the header button on their own phone. On iPhone the page must be on the home screen first.</div><button class="btn sm" data-act="pushTest">Send a test alert to HQ devices</button></div>\n  <div class="card" style="margin-top:14px"><h3>Access codes</h3><div class="sub">One code per person. Send each person their own code; do not share this list. HQ code stays with you.</div><div class="tbl"><table><thead><tr><th>Region</th><th>Role</th><th>Name</th><th>Code</th></tr></thead><tbody>${codes}</tbody></table></div></div>`;
+  <div class="card" style="margin-top:14px"><h3>Calendar for the KoBo forms</h3><div class="sub">The assessment and sampling forms check each visit against this file. Download it after plans are submitted and after every approved change, then upload it to both forms as <b>ref_calendar.csv</b> (Form, Settings, Media). Without it the check stays off.</div><button class="btn sm" data-act="calCsv">Download ref_calendar.csv</button>${S.calMsg ? `<p class="m" style="margin-top:8px">${esc(S.calMsg)}</p>` : ''}</div>\n  <div class="card" style="margin-top:14px"><h3>Phone alerts</h3><div class="sub">${a.push?.ready ? '<span class="pill good">server ready</span>' : '<span class="pill warn">not set up</span>'} ${a.push ? a.push.devices + ' device(s) subscribed' : ''}${a.push && a.push.devices ? ' (' + Object.entries(a.push.by_role).map(([k, v]) => v + ' ' + k).join(', ') + ')' : ''}. Each person turns alerts on from the header button on their own phone. On iPhone the page must be on the home screen first.</div><button class="btn sm" data-act="pushTest">Send a test alert to HQ devices</button></div>\n  ${rosterCard(a)}${backupDaysCard(a)}
+  <div class="card" style="margin-top:14px"><h3>Access codes</h3><div class="sub">One code per person. Send each person their own code; do not share this list. HQ code stays with you.</div><div class="tbl"><table><thead><tr><th>Region</th><th>Role</th><th>Name</th><th>Code</th></tr></thead><tbody>${codes}</tbody></table></div></div>`;
 }
 
 
@@ -319,6 +348,7 @@ function personCard(name) {
   <h3 style="margin:16px 0 4px">Test speed</h3>${speed}
   <h3 style="margin:16px 0 4px">What counts against the score</h3><div class="m">Too fast <b>${a.fast}</b> · too slow <b>${a.slow}</b> · outside school hours <b>${a.late}</b> · not on sampling list <b>${a.not_list}</b> · far from school <b>${a.far}</b></div>
   <h3 style="margin:16px 0 4px">Open queries (${flags.length})</h3>${flags.length ? flagList(flags, { limit: 20, names: false }) : '<div class="note">No open queries.</div>'}
+  ${S.daysCache[name]?.length ? `<h3 style="margin:16px 0 4px">Days worked</h3><div class="m"><b>${S.daysCache[name].length}</b> day(s) with tests · first ${shortDate(S.daysCache[name][0][0])} · latest ${shortDate(S.daysCache[name].slice(-1)[0][0])} · ${fmt(S.daysCache[name].reduce((t, d) => t + d[2], 0))} pupils tested. A day counts when at least one test was submitted.</div>` : ''}
   <h3 style="margin:16px 0 4px">Recent work</h3><div class="tbl"><table><thead><tr><th>Day</th><th>School</th><th class="r">Gr</th><th class="r">Tested</th><th class="r">Avg min</th></tr></thead><tbody>${rows || '<tr><td colspan="5" class="empty">No work recorded.</td></tr>'}</tbody></table></div>`;
 }
 const schoolNameOf = (id) => schoolsAll().find((x) => x.id === id)?.name || S.plan?.schools?.find((x) => x.id === id)?.name || id;
@@ -354,7 +384,16 @@ function flagDetail(f) {
   <tr><th>Grade</th><td>${f.grade ? 'Grade ' + f.grade : 'All grades'}</td><th>Test admin</th><td>${f.admin ? lk('person', f.admin, f.admin) : '–'}</td></tr>
   <tr><th>Test date</th><td>${f.date ? dayName(f.date) : '–'}</td><th>Normal</th><td>${esc(f.normal || '–')}</td></tr></tbody></table>
   ${recs ? `<div class="tbl"><table class="dt"><thead><tr><th>Pupil ID</th><th class="r">Pupil no.</th><th class="r">Test min</th><th class="r">Started</th><th class="r">Test set</th><th class="r">KoBo ID</th></tr></thead><tbody>${recs}</tbody></table></div>` : '<div class="note">Pupil-level detail is shown for newly submitted data. Older records list only the school, grade, admin and date.</div>'}
+  ${koboButtons(f)}
   <div class="note" style="margin-top:8px">To find these in KoBo: open the student form's data table, filter on <b>school</b> ${esc(f.school)}, <b>grade</b> ${esc(f.grade || '')}, <b>date</b> ${esc(f.date || '')}, then look up the Pupil ID (stuid) or the KoBo ID (_id). Pupil names are never shown here.</div></div>`;
+}
+function koboButtons(f) {
+  const ids = (f.recs || []).map((r) => Number(r[5])).filter((n) => Number.isFinite(n) && n > 0);
+  if (!ids.length || !S.who || S.who.role === 'volunteer' || S.viewAs) return '';
+  const lbl = { on_hold: 'Needs re-test (on hold)', not_approved: 'Not approved', approved: 'Approved' };
+  const asking = S.koboConfirm && S.koboConfirm.startsWith(f.qk + '|');
+  const btn = (st) => { const key = `${f.qk}|${st}`; const sure = S.koboConfirm === key; return `<button class="btn sm ${sure ? '' : 'sec'}" data-act="koboStatus" data-k="${esc(key)}" data-status="${st}" data-ids="${ids.join(',')}">${sure ? 'Click again to confirm' : esc(lbl[st])}</button>`; };
+  return `<div class="note" style="margin-top:8px"><b>Mark these ${ids.length} submission(s) in KoBo</b> so the decision stays with the data. Pupils are not affected.<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">${btn('on_hold')}${btn('not_approved')}${btn('approved')}</div>${S.koboMsg && S.koboMsg.k === f.qk ? `<div class="m" style="margin-top:6px">${esc(S.koboMsg.t)}</div>` : ''}</div>`;
 }
 const SCHOOL_INFO = (id) => schoolsAll().find((x) => x.id === id) || {};
 
@@ -686,7 +725,7 @@ async function ensureSchools() {
 S.workCache = {};
 async function loadWork(name) {
   if (S.workCache[name]) return;
-  try { S.workCache[name] = (await api('/api/work?name=' + encodeURIComponent(name) + (S.year ? '&year=' + S.year : ''))).work; } catch { S.workCache[name] = []; }
+  try { const r = await api('/api/work?name=' + encodeURIComponent(name) + (S.year ? '&year=' + S.year : '')); S.workCache[name] = r.work; S.daysCache[name] = r.days || []; } catch { S.workCache[name] = []; S.daysCache[name] = []; }
   if (S.cur === 'person:' + name) openDetail(S.cur, false);
 }
 // Last good screen is kept on the device so the app opens instantly, then refreshes behind it.
@@ -703,9 +742,9 @@ async function loadPlan(region) {
   try { S.plan = await api('/api/plan?region=' + r); } catch (e) { S.plan = null; S.planErr = e.message; }
 }
 async function loadAdmin() {
-  const [status, codes, rec] = await Promise.all([api('/api/admin/status'), api('/api/admin/codes').catch(() => null), api('/api/admin/recipients').catch(() => null)]);
+  const [status, codes, rec, ready, roster] = await Promise.all([api('/api/admin/status'), api('/api/admin/codes').catch(() => null), api('/api/admin/recipients').catch(() => null), api('/api/admin/readiness').catch(() => null), api('/api/admin/roster').catch(() => null)]);
   const push = await api('/api/admin/push-status').catch(() => null);
-  S.adm = { status, codes, rec, push, preview: S.adm?.preview || null };
+  S.adm = { status, codes, rec, push, ready, roster, preview: S.adm?.preview || null };
 }
 
 async function go() {
@@ -762,10 +801,39 @@ document.addEventListener('click', async (e) => {
       link.href = url; link.download = 'ref_calendar.csv'; document.body.appendChild(link); link.click(); link.remove(); URL.revokeObjectURL(url);
       S.calMsg = `Downloaded ${rows} planned school visits (${ver}). Upload it to the form as ref_calendar.csv.`; render();
     }
+    else if (a === 'koboStatus') {
+      if (S.koboConfirm !== t.dataset.k) { S.koboConfirm = t.dataset.k; render(); if (S.cur) openDetail(S.cur, false); return; }
+      const qk = t.dataset.k.split('|').slice(0, -1).join('|');
+      try { const r = await api('/api/kobo/status', { method: 'POST', body: { ids: t.dataset.ids.split(',').map(Number), status: t.dataset.status, year: S.ov?.year } }); S.koboMsg = { k: qk, t: `Done: ${r.updated} submission(s) set to "${t.dataset.status.replace('_', ' ')}" in KoBo.` }; }
+      catch (er) { S.koboMsg = { k: qk, t: 'Not done: ' + er.message }; }
+      S.koboConfirm = null; render(); if (S.cur) openDetail(S.cur, false);
+    }
+    else if (a === 'rosterSave') { const id = t.dataset.id; const g = (k) => document.querySelector(`[data-rs="${k}"][data-id="${id}"]`).value; await api('/api/admin/roster', { method: 'POST', body: { action: 'update', id, name: g('name'), region: g('region'), position: g('position') } }); S.rosterMsg = 'Saved.'; await loadAdmin(); render(); }
+    else if (a === 'rosterRemove' || a === 'rosterRestore') { await api('/api/admin/roster', { method: 'POST', body: { action: a === 'rosterRemove' ? 'remove' : 'restore', id: t.dataset.id } }); S.rosterMsg = a === 'rosterRemove' ? 'Removed. Their code no longer works.' : 'Restored.'; await loadAdmin(); render(); }
+    else if (a === 'rosterReissue') { const r = await api('/api/admin/roster', { method: 'POST', body: { action: 'reissue', id: t.dataset.id } }); S.rosterMsg = `New code: ${r.code}. The old code no longer works. Send it to the person privately.`; await loadAdmin(); render(); }
+    else if (a === 'rosterAdd') { try { await api('/api/admin/roster', { method: 'POST', body: { action: 'add', name: $('#newName').value, region: $('#newRegion').value, position: $('#newPos').value } }); S.rosterMsg = 'Person added. Their code is in the Access codes list below.'; } catch (er) { S.rosterMsg = er.message; } await loadAdmin(); render(); }
+    else if (a === 'rosterAlias') { const n = t.dataset.n; const sel = document.querySelector(`[data-ra="${CSS.escape(n)}"]`); if (!sel || !sel.value) return; await api('/api/admin/roster', { method: 'POST', body: { action: 'alias', kobo_name: n, staff_id: sel.value } }); S.rosterMsg = `"${n}" is now counted under the chosen person.`; await loadAdmin(); render(); }
+    else if (a === 'rosterUnalias') { await api('/api/admin/roster', { method: 'POST', body: { action: 'unalias', kobo_name: t.dataset.n } }); await loadAdmin(); render(); }
+    else if (a === 'daysShow') { S.dwFrom = $('#dwFrom').value; S.dwTo = $('#dwTo').value; S.daysRows = await api(`/api/admin/days-worked?from=${S.dwFrom}&to=${S.dwTo}`); render(); }
+    else if (a === 'daysCsv') { S.dwFrom = $('#dwFrom').value; S.dwTo = $('#dwTo').value; await downloadFile(`/api/admin/days-worked?format=csv&from=${S.dwFrom}&to=${S.dwTo}`, 'days-worked.csv'); }
+    else if (a === 'backupDownload') { await downloadFile('/api/admin/backup?full=1', `kf4-backup-${new Date().toISOString().slice(0, 10)}-full.json`); S.backupMsg = 'Downloaded. Keep the file somewhere safe.'; render(); }
+    else if (a === 'backupNow') { const r = await api('/api/admin/backup', { method: 'POST', body: { full: true } }); S.backupMsg = r.emailed ? `Backup emailed to ${r.to || 'HQ'} (${Math.round(r.gz_bytes / 1024)} KB).` : 'Backup built but not emailed (email is not set up).'; await loadAdmin(); render(); }
+    else if (a === 'restoreRun') { const r = await api('/api/admin/restore', { method: 'POST', body: { confirm: ($('#restoreConfirm') || {}).value, backup: S.restoreData, states: Boolean(S.restoreData.states) } }); S.backupMsg = 'Restored: ' + Object.entries(r.restored).map(([k, v]) => `${v} ${k}`).join(', '); S.restoreData = null; await loadAdmin(); render(); }
+    else if (a === 'koboCheck') { const r = await api('/api/admin/kobo-check'); S.koboWho = r.username ? `The connection signs in to KoBo as "${r.username}". The form belongs to "${r.owner}". ${r.username === r.owner ? 'Same account, so writing approved or on-hold status should work.' : 'Different account: writing status needs edit permission on the form for this account.'}` : 'Could not read the KoBo account.'; render(); }
     else if (a === 'refreshNow') { t.disabled = true; await api('/api/admin/refresh', { method: 'POST' }); await loadAdmin(); render(); }
   } catch (er) { alert(er.message); }
 });
+async function downloadFile(path, name) {
+  const res = await fetch(path, { headers: { 'x-access-code': S.code } });
+  if (!res.ok) throw new Error('Download failed');
+  const blob = await res.blob(); const url = URL.createObjectURL(blob); const link = document.createElement('a');
+  link.href = url; link.download = name; document.body.appendChild(link); link.click(); link.remove(); URL.revokeObjectURL(url);
+}
 document.addEventListener('change', async (e) => {
+  if (e.target.id === 'restoreFile' && e.target.files[0]) {
+    try { const f = e.target.files[0]; let text; if (/\.gz$/i.test(f.name)) text = await new Response(f.stream().pipeThrough(new DecompressionStream('gzip'))).text(); else text = await f.text(); S.restoreData = JSON.parse(text); if (S.restoreData.format !== 'kf4-backup-1') throw new Error('not a backup'); } catch { S.restoreData = null; S.backupMsg = 'That file is not a KiuFunza backup.'; }
+    render(); return;
+  }
   const tf = e.target.dataset?.tf; if (tf) { const [id, k] = tf.split(':'); S.tbl[id].f[k] = e.target.value; render(); return; }
   const qf = e.target.dataset?.qf; if (qf) { S.qf[qf] = e.target.value; render(); return; }
   if (e.target.id === 'viewAsSel') { await setViewAs(e.target.value); return; }

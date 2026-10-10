@@ -3,10 +3,33 @@
 // those same facts into short English and Kiswahili text; it never sees names
 // of pupils (there are none in the data) and is told to use only the facts given.
 import { kv } from './store.js';
-import { REGIONS, FIELD_START, FIELD_END, SCHOOL_BY_ID, addWorkingDays, workingDaysBetween } from './config.js';
+import { REGIONS, FIELD_START, FIELD_END, CURRENT_YEAR, SCHOOL_BY_ID, addWorkingDays, workingDaysBetween } from './config.js';
 import { getPlan, withNotices } from './plan.js';
 
 const title = (s) => String(s || '').toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
+
+const nowMinEAT = () => { const d = new Date(Date.now() + 3 * 3600 * 1000); return d.getUTCHours() * 60 + d.getUTCMinutes(); };
+const toMin = (hhmm) => { const m = /^(\d\d):(\d\d)/.exec(hhmm || ''); return m ? +m[1] * 60 + +m[2] : 8 * 60; };
+
+// Planned today, a couple of hours past the start time, and no tests received for that school yet.
+export async function silentVisits(env, today, regionFilter) {
+  const sum = await kv(env).get('v2:sum:' + CURRENT_YEAR);
+  if (!sum) return [];
+  const regs = REGIONS.filter((r) => !regionFilter || r === regionFilter);
+  const plans = await Promise.all(regs.map((r) => getPlan(env, r)));
+  const now = nowMinEAT();
+  const out = [];
+  plans.forEach((plan, k) => {
+    if (plan.status !== 'locked') return;
+    for (const v of plan.visits) {
+      if (v.date !== today) continue;
+      if (now < Math.max(10 * 60, toMin(v.start) + 120)) continue; // give the team time to reach the school and test
+      const s = sum.schools[v.school];
+      if (s && !s.dates.includes(today)) out.push({ region: regs[k], school: v.school, name: s.name, start: v.start, team: v.team || [] });
+    }
+  });
+  return out;
+}
 
 export async function buildBrief(env, sum, today, region = null) {
   const tomorrow = addWorkingDays(today, 1);
@@ -50,6 +73,8 @@ export async function buildBrief(env, sum, today, region = null) {
     } else if (flags.length) out.push({ sev: 'warn', kind: 'flags', text: `${flags.length} flag(s) open, none serious.` });
     else if (sum.national.records) out.push({ sev: 'good', kind: 'flags', text: 'No open flags.' });
   }
+  const silent = await silentVisits(env, today, region);
+  if (silent.length) out.push({ sev: 'bad', kind: 'silent', text: `${silent.length} school(s) planned for today have sent no tests yet: ${silent.slice(0, 4).map((s) => `${s.name.trim()} (${title(s.region)}, planned ${s.start})`).join('; ')}${silent.length > 4 ? '…' : ''}. Check with the team.` });
   if (notices.length) {
     const late = notices.filter((n) => n.state === 'late').length;
     out.push({ sev: late ? 'bad' : 'warn', kind: 'notice', text: `${notices.length} notice(s) to send: ${late} late. ${notices.slice(0, 3).map((n) => `${n.school} (${n.who})`).join('; ')}${notices.length > 3 ? '…' : ''}.` });

@@ -74,7 +74,7 @@ export async function sendMail(env, to, msg) {
     const res = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: { authorization: `Bearer ${env.RESEND_API_KEY}`, 'content-type': 'application/json' },
-      body: JSON.stringify({ from: `${FROM_NAME} <${env.EMAIL_FROM}>`, to: [to], subject: msg.subject, html: msg.html, text: msg.text, ...(env.EMAIL_REPLY_TO ? { reply_to: env.EMAIL_REPLY_TO } : {}) }),
+      body: JSON.stringify({ from: `${FROM_NAME} <${env.EMAIL_FROM}>`, to: [to], subject: msg.subject, html: msg.html, text: msg.text, ...(msg.attachments ? { attachments: msg.attachments } : {}), ...(env.EMAIL_REPLY_TO ? { reply_to: env.EMAIL_REPLY_TO } : {}) }),
     });
     if (!res.ok) throw new Error(`Resend ${res.status}: ${(await res.text()).slice(0, 200)}`);
     return;
@@ -159,10 +159,10 @@ async function codeFor(env, staff) {
   return Object.entries(map || {}).find(([, s]) => s.id === staff.id)?.[0] || null;
 }
 export async function onboardingEmail(env, recipient, siteUrl) {
-  const staff = STAFF.find((s) => s.region === recipient.region && s.role === recipient.role);
+  const staff = STAFF.find((s) => s.active && s.region === recipient.region && s.role === recipient.role);
   if (!staff) return null;
   const code = await codeFor(env, staff);
-  const team = recipient.role === 'rc' ? STAFF.filter((s) => s.region === staff.region && s.id !== staff.id) : [];
+  const team = recipient.role === 'rc' ? STAFF.filter((s) => s.active && s.region === staff.region && s.id !== staff.id) : [];
   const teamRows = [];
   for (const m of team) teamRows.push({ name: m.name, position: m.position, code: await codeFor(env, m) });
   const first = staff.name.split(' ')[0];

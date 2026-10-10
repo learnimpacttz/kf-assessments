@@ -26,3 +26,24 @@ export async function fetchKoboPage(server, assetId, token, cursorUrl, sinceId =
   const data = await resp.json();
   return { results: data.results || [], next: data.next || null, count: data.count ?? null };
 }
+
+// Mark submissions in KoBo itself (approved / not approved / on hold) so the cleaning decision lives with the data.
+const STATUS_UID = { approved: 'validation_status_approved', not_approved: 'validation_status_not_approved', on_hold: 'validation_status_on_hold' };
+export async function setValidation(server, assetId, token, ids, status) {
+  const uid = STATUS_UID[status];
+  if (!uid) throw new Error('Unknown status');
+  const resp = await fetch(`https://${server}/api/v2/assets/${assetId}/data/validation_statuses/`, {
+    method: 'PATCH',
+    headers: { Authorization: `Token ${token}`, 'content-type': 'application/json' },
+    body: JSON.stringify({ payload: { 'validation_status.uid': uid, submission_ids: ids.map(String) } }),
+  });
+  const text = await resp.text();
+  if (!resp.ok) throw new Error(`KoBo ${resp.status}: ${text.slice(0, 160)}`);
+  return text.slice(0, 200);
+}
+export async function koboWho(server, assetId, token) {
+  const h = { Authorization: `Token ${token}` };
+  const me = await (await fetch(`https://${server}/me/?format=json`, { headers: h })).json().catch(() => ({}));
+  const asset = await (await fetch(`https://${server}/api/v2/assets/${assetId}/?format=json`, { headers: h })).json().catch(() => ({}));
+  return { username: me.username || null, owner: asset.owner__username || null };
+}

@@ -7,6 +7,9 @@ import { addStudents, addSampling, addTeachers } from '../src/ingest.js';
 import { recomputeSummaries } from '../src/sync.js';
 import { SCHOOLS_BY_REGION, STAFF, REGIONS } from '../src/config.js';
 
+// fake KoBo: record write-back requests instead of sending them anywhere
+const realFetch = globalThis.fetch; globalThis.__kobo = [];
+globalThis.fetch = async (u, i) => { if (String(u).includes('validation_statuses')) { globalThis.__kobo.push({ url: String(u), method: i.method, body: i.body, auth: i.headers.Authorization ? 'present' : 'missing' }); return new Response('{"detail":"updated"}', { status: 200 }); } return realFetch(u, i); };
 const mem = new Map();
 const locks = new Map();
 const stub = {
@@ -15,7 +18,7 @@ const stub = {
 };
 const PUB = path.resolve('../public');
 const env = {
-  STORE: { idFromName: () => 'x', get: () => stub }, HQ_SECRET: 'HQTEST', AUTH_SALT: 'salt', KOBO_SERVER: 'x',
+  STORE: { idFromName: () => 'x', get: () => stub }, HQ_SECRET: 'HQTEST', AUTH_SALT: 'salt', KOBO_SERVER: 'kobo.test', KOBO_ASSET_ID: 'ASSET1', KOBO_TOKEN: 'tok',
   ASSETS: { fetch: async (req) => { const u = new URL(req.url); let p = path.join(PUB, u.pathname === '/' ? 'index.html' : u.pathname); if (!fs.existsSync(p)) return new Response('nf', { status: 404 }); const ext = path.extname(p); const types = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.png': 'image/png', '.json': 'application/json' }; return new Response(fs.readFileSync(p), { headers: { 'content-type': types[ext] || 'application/octet-stream' } }); } },
 };
 
@@ -76,6 +79,7 @@ await recomputeSummaries(env);
 const sess = {};
 http.createServer(async (req, res) => {
   const u = new URL(req.url, 'http://localhost:8788');
+  if (u.pathname === '/__kobo') { res.writeHead(200, { 'content-type': 'application/json' }); return res.end(JSON.stringify(globalThis.__kobo)); }
   const m = /^\/__as\/(\w+)\/?$/.exec(u.pathname);
   if (m) { const html = fs.readFileSync(path.join(PUB, 'index.html'), 'utf8').replace('<script src="/app.js">', `<script>localStorage.setItem('kf_code','${m[1]}')</script><script src="/app.js">`); res.writeHead(200, { 'content-type': 'text/html' }); return res.end(html); }
   const body = await new Promise((r) => { const c = []; req.on('data', (d) => c.push(d)); req.on('end', () => r(Buffer.concat(c))); });

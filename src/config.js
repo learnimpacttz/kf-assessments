@@ -54,18 +54,30 @@ export const SCHOOL_BY_ID = Object.fromEntries(
 export const SCHOOLS_BY_REGION = {};
 for (const s of Object.values(SCHOOL_BY_ID)) (SCHOOLS_BY_REGION[s.region] ||= []).push(s);
 
-export const STAFF = ROSTER.map(([id, region, position, name]) => ({
-  id,
-  region,
-  position,
-  role: position === 'RC' ? 'rc' : position === 'ARC' ? 'arc' : 'volunteer',
-  name,
-  key: norm(name),
-}));
-const STAFF_BY_KEY = Object.fromEntries(STAFF.map((s) => [s.key, s]));
+const mkStaff = (s) => ({ id: s.id, region: s.region, position: s.position, role: s.position === 'RC' ? 'rc' : s.position === 'ARC' ? 'arc' : 'volunteer', name: s.name, key: norm(s.name), rot: s.rot || 0, active: s.active !== false });
+// The roster starts from the file and can be changed by HQ in the dashboard (stored in the Durable Object).
+// STAFF is edited in place so every module that imported it sees the change.
+export const STAFF = ROSTER.map(([id, region, position, name]) => mkStaff({ id, region, position, name }));
+export const rosterState = { version: 0, aliases: {} };
+let STAFF_BY_KEY = {};
+let STAFF_BY_ID = {};
+function reindex() {
+  STAFF_BY_KEY = Object.fromEntries(STAFF.map((s) => [s.key, s]));
+  STAFF_BY_ID = Object.fromEntries(STAFF.map((s) => [s.id, s]));
+}
+reindex();
+export function setRoster(list, aliases = {}) {
+  STAFF.length = 0;
+  for (const s of list) STAFF.push(mkStaff(s));
+  rosterState.aliases = aliases || {};
+  rosterState.version += 1;
+  reindex();
+}
+export const rosterForSave = () => STAFF.map(({ id, region, position, name, rot, active }) => ({ id, region, position, name, rot, active }));
 export function staffForKoboName(n) {
   const k = norm(n);
-  return STAFF_BY_KEY[k] || STAFF_BY_KEY[NAME_ALIASES[k]] || null;
+  const viaAlias = rosterState.aliases[k] != null ? STAFF_BY_ID[rosterState.aliases[k]] : null;
+  return viaAlias || STAFF_BY_KEY[k] || STAFF_BY_KEY[NAME_ALIASES[k]] || null;
 }
 
 export function targetPerGrade(region) {

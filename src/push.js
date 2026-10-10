@@ -5,8 +5,10 @@
 import { kv } from './store.js';
 import { STAFF, SCHOOL_BY_ID, REGIONS, eatToday, addWorkingDays, FIELD_START, FIELD_END, isWorkingDay } from './config.js';
 import { getPlan, withNotices } from './plan.js';
+import { silentVisits } from './brief.js';
 
 const enc = new TextEncoder();
+const title = (s) => String(s || '').toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
 const b64u = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 const sha = async (s) => b64u(await crypto.subtle.digest('SHA-256', enc.encode(s))).slice(0, 22);
 const SUBS = 'v2:push:subs';
@@ -116,6 +118,20 @@ export async function runAlerts(env, slot, sum) {
         results.push({ flag: id, ...(await pushTo(env, (w) => w.region === r && (w.role === 'rc' || w.role === 'arc'), { title: `Query: ${f.school_name || SCHOOL_BY_ID[f.school]?.name}`, body: f.text + (f.admin ? ` (${f.admin})` : ''), url: '/#allq' })) });
       }
     }
+  }
+  if (slot === 'silent') {
+    const quiet = await silentVisits(env, today, null);
+    for (const r of [...new Set(quiet.map((q) => q.region))]) {
+      const list = quiet.filter((q) => q.region === r);
+      if (!(await once(env, `silent:${r}:${today}:${list.map((x) => x.school).join(',')}`))) continue;
+      results.push({ r, silent: list.length, ...(await pushTo(env, (w) => (w.region === r && (w.role === 'rc' || w.role === 'arc')) || w.role === 'hq', { title: `No tests yet: ${list.slice(0, 2).map((s) => s.name.trim()).join(', ')}${list.length > 2 ? '…' : ''}`, body: `${title(r)}: ${list.length} planned school(s) have sent nothing yet today. Please check with the team.`, url: '/' })) });
+    }
+  }
+  if (slot === 'health') {
+    // a form connection that has not been read for 40 minutes during field hours means the dashboard is going stale
+    const stale = [];
+    for (const kind of ['students', 'sampling', 'teachers']) { const wm = await kv(env).get(`v2:wm:${kind}`); if (wm?.last_check && Date.now() - Date.parse(wm.last_check) > 40 * 60 * 1000) stale.push(kind); }
+    if (stale.length && (await once(env, `health:${today}:${stale.join(',')}:${Math.floor(Date.now() / 3600000)}`))) results.push({ stale, ...(await pushTo(env, (w) => w.role === 'hq', { title: 'Data connection stalled', body: `No fresh read of the ${stale.join(', ')} form(s) for over 40 minutes. Open Admin and press Sync now.`, url: '/#admin' })) });
   }
   if (slot === 'evening') {
     // tomorrow's schools to the team that is planned for them

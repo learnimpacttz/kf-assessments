@@ -1,0 +1,31 @@
+import { silentVisits, buildBrief } from '../src/brief.js';
+import { submitPlan, changeVisit } from '../src/plan.js';
+import { SCHOOLS_BY_REGION } from '../src/config.js';
+const mem = new Map();
+const stub = { get: async (x) => mem.get(x) ?? null, put: async (x, v) => void mem.set(x, v), del: async (x) => void mem.delete(x), acquire: async () => true, release: async () => {} };
+const env = { STORE: { idFromName: () => 'x', get: () => stub } };
+const put = (k, v) => mem.set(k, JSON.stringify(v));
+const dod = SCHOOLS_BY_REGION.DODOMA;          // pilot region, 5 schools, planned on 2026-10-15
+const mk = (dates) => Object.fromEntries(dod.map((s, i) => [s.id, { id: s.id, name: s.name, region: 'DODOMA', dates: dates[i] || [] }]));
+const who = { name: 'HQ' };
+const r = await submitPlan(env, who, 'DODOMA', dod.map((s) => ({ school: s.id, date: '2026-10-15', start: '08:00', team: [] })));
+console.log('pilot plan submitted:', r.plan ? r.plan.status : r.error);
+const realNow = Date.now; let clock;
+const at = (iso) => { clock = Date.parse(iso); Date.now = () => clock; };
+const run = async (label, iso, sumDates) => {
+  at(iso); put('v2:sum:2026', { schools: mk(sumDates), regions: {}, flags: [], national: { records: 1 }, admins: [], work: {} });
+  const q = await silentVisits(env, '2026-10-15', 'DODOMA');
+  console.log(label.padEnd(66), '->', q.length, 'silent school(s)');
+  return q.length;
+};
+const a = await run('07:30 EAT, nothing yet (too early, team still travelling)', '2026-10-15T04:30:00Z', []);
+const b = await run('09:30 EAT, nothing yet (start 08:00 + 2 h not reached)', '2026-10-15T06:30:00Z', []);
+const c = await run('10:30 EAT, nothing from any of the 5 schools', '2026-10-15T07:30:00Z', []);
+const d = await run('10:30 EAT, 3 of 5 schools have tests today', '2026-10-15T07:30:00Z', [['2026-10-15'], ['2026-10-15'], ['2026-10-15']]);
+const e = await run('10:30 EAT, tests exist but on another day', '2026-10-15T07:30:00Z', [['2026-10-14'], ['2026-10-14'], [], [], []]);
+at('2026-10-15T07:30:00Z'); put('v2:sum:2026', { schools: mk([]), regions: {}, flags: [], national: { records: 1 }, admins: [], work: {} });
+const brief = await buildBrief(env, { regions: {}, flags: [], national: { records: 1 }, admins: [] }, '2026-10-15', 'DODOMA');
+console.log('in the briefing:', brief.items.filter((i) => i.kind === 'silent').map((i) => i.text.slice(0, 150)));
+Date.now = realNow;
+const ok = a === 0 && b === 0 && c === 5 && d === 2 && e === 5;
+console.log(ok ? 'ALL PASS' : 'FAILED', { a, b, c, d, e });

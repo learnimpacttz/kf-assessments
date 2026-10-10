@@ -86,6 +86,7 @@ export function summarize(Y, { year, bands, today }) {
     return a;
   };
 
+  const dayMap = {}; // admin -> date -> { schools, tested, h0, h1 }
   const work = {}; // admin -> recent rows [date, school, grade, tested, avg_min]
   const hasSampling = Boolean(Y.nsamp);
   const visitTeam = {}; // school|date -> Set(enumerator)
@@ -110,6 +111,8 @@ export function summarize(Y, { year, bands, today }) {
     a.fast += fast; a.slow += slow; a.late += c.late; a.far += c.far; a.inBand += inBand;
     a.byGrade[grade].tn += c.tn; a.byGrade[grade].ts += c.ts;
     (work[enumerator] ||= []).push([date, schoolId, +grade, c.av, c.tn ? r1(c.ts / c.tn) : null]);
+    const dm = ((dayMap[enumerator] ||= {})[date] ||= { s: new Set(), n: 0, h0: 99, h1: -1 });
+    dm.s.add(schoolId); dm.n += c.av; if (c.h0 < dm.h0) dm.h0 = c.h0; if (c.h1 > dm.h1) dm.h1 = c.h1;
     for (const [pk, pv] of Object.entries(c.ps)) { const dom = pk[0], gg = pk[1]; const slot = sc.res[gg] && sc.res[gg][dom]; if (slot) { slot[0] += pv[0]; slot[1] += pv[1]; } } // results by grade and subject (HQ only downstream)
     let zero = 0;
     for (const v of Object.values(c.st)) zero += v[2];
@@ -259,7 +262,7 @@ export function summarize(Y, { year, bands, today }) {
   nat.pace = r1(paceAll);
   nat.projected = remainingAll <= 0 ? 'done' : paceAll > 0 ? addWorkingDays(today, Math.ceil(remainingAll / paceAll)) : null;
 
-  return { year, as_of: new Date().toISOString(), today, bands, national: nat, regions, schools, admins: adminList, flags: flags.slice(0, 1500), work: Object.fromEntries(Object.entries(work).map(([k, v]) => [k, v.sort((x, y) => (x[0] < y[0] ? 1 : -1)).slice(0, 80)])) };
+  return { year, as_of: new Date().toISOString(), today, bands, national: nat, regions, schools, admins: adminList, flags: flags.slice(0, 1500), days: Object.fromEntries(Object.entries(dayMap).map(([who, m]) => [who, Object.entries(m).sort().map(([d, v]) => [d, v.s.size, v.n, v.h0 === 99 ? null : v.h0, v.h1 < 0 ? null : v.h1])])), work: Object.fromEntries(Object.entries(work).map(([k, v]) => [k, v.sort((x, y) => (x[0] < y[0] ? 1 : -1)).slice(0, 80)])) };
 }
 
 export const staffRoster = () => STAFF;
