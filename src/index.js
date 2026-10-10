@@ -539,6 +539,14 @@ export default {
         }
         return json({ devices: (sum?.devices || []).map(({ raw, ...d }) => d).sort((a, b) => b.tests - a.tests) });
       }
+      if (path === '/api/admin/form-content') {
+        // The deployed form definition, row by row (questions and choice lists, no submissions), so a new file can be compared with it
+        const key = url.searchParams.get('kind') === 'sampling' ? 'KOBO_ASSET_SAMPLING' : url.searchParams.get('kind') === 'teachers' ? 'KOBO_ASSET_TEACHER' : 'KOBO_ASSET_ID';
+        const r = await fetch(`https://${env.KOBO_SERVER || 'kf.kobotoolbox.org'}/api/v2/assets/${env[key]}/?format=json`, { headers: { Authorization: `Token ${env.KOBO_TOKEN}` } });
+        if (!r.ok) return err('KoBo ' + r.status, 502);
+        const a = await r.json(); const c = a.content || {};
+        return json({ name: a.name, date_deployed: a.date_deployed, survey: (c.survey || []).map((q) => ({ type: q.type, list: q.select_from_list_name || null, name: q.name || q.$autoname || null, calc: q.calculation || null, rel: q.relevant || null, req: q.required ?? null, cons: q.constraint || null, filt: q.choice_filter || null, app: q.appearance || null, label: q.label || null, hint: q.hint || null })), choices: (c.choices || []).map((o) => ({ list: o.list_name, name: o.name, label: o.label || null })), settings: c.settings || null });
+      }
       if (path === '/api/admin/form-meta') {
         // What each deployed KoBo form contains in the way of device/user metadata (names and types only, no data)
         const srv = env.KOBO_SERVER || 'kf.kobotoolbox.org';
