@@ -1,7 +1,7 @@
 // Turns the raw per-day aggregates into everything the dashboards show:
 // school progress, test-admin stats, checks/flags, pace and projected finish.
 // Computed once per sync (not per request) and stored; the API only slices it.
-import { devCode as devCodeOf, SCHOOL_BY_ID, SCHOOLS_BY_REGION, REGIONS, FIELD_END, DEFAULT_BANDS, targetPerGrade, staffForKoboName, addWorkingDays, workingDaysBetween, isWorkingDay, STAFF } from './config.js';
+import { devCode as devCodeOf, PRACTICE_BY_ID, PRACTICE_REGION, SCHOOL_BY_ID, SCHOOLS_BY_REGION, REGIONS, FIELD_END, DEFAULT_BANDS, targetPerGrade, staffForKoboName, addWorkingDays, workingDaysBetween, isWorkingDay, STAFF } from './config.js';
 import { HIST_BUCKETS } from './ingest.js';
 
 const pct = (a, b) => (b ? Math.round((a / b) * 100) : null);
@@ -23,7 +23,7 @@ export function buildBands(yrs, excludeYear) {
   const hist = { 1: new Array(HIST_BUCKETS).fill(0), 2: new Array(HIST_BUCKETS).fill(0), 3: new Array(HIST_BUCKETS).fill(0) };
   let any = false;
   for (const [y, Y] of Object.entries(yrs)) {
-    if (y === excludeYear) continue;
+    if (y === excludeYear || y === 'practice') continue;
     for (const [k, c] of Object.entries(Y.cells)) {
       const g = k.split('|')[2];
       if (!hist[g]) continue;
@@ -66,7 +66,7 @@ const above = (h, minutes) => {
 };
 
 const hms = (t) => `${String(Math.floor(t / 3600)).padStart(2, '0')}:${String(Math.floor((t % 3600) / 60)).padStart(2, '0')}`;
-const sname = (id) => (SCHOOL_BY_ID[id]?.name || id).trim();
+const sname = (id) => (SCHOOL_BY_ID[id]?.name || PRACTICE_BY_ID[id]?.name || id).trim();
 
 // What one phone did in one day, in time order. Thresholds are deliberately forgiving: a flag means "look", not "wrong".
 export function analyseDay(date, events) {
@@ -113,7 +113,9 @@ export function phoneDay(events) {
   return Object.values(phones).map((p) => ({ c: p.c, names: Object.entries(p.names).sort((a, b) => b[1] - a[1]).map(([n]) => n), schools: [...p.schools], n: p.n, first: p.first, last: p.last }));
 }
 
-export function summarize(Y, { year, bands, today, owners = {} }) {
+export function summarize(Y, { year, bands, today, owners = {}, practice = false }) {
+  const UNI = practice ? PRACTICE_BY_ID : SCHOOL_BY_ID; // the schools and regions this run covers
+  const RLIST = practice ? [PRACTICE_REGION] : REGIONS;
   const schools = {};
   const admins = {};
   const flags = [];
@@ -123,7 +125,7 @@ export function summarize(Y, { year, bands, today, owners = {} }) {
     g: { 1: { n: 0, av: 0, att: null }, 2: { n: 0, av: 0, att: null }, 3: { n: 0, av: 0, att: null } },
     dates: [], admins: [], maxTeam: 0, tf: 0, res: { 1: { r: [0, 0], a: [0, 0] }, 2: { r: [0, 0], a: [0, 0] }, 3: { r: [0, 0], a: [0, 0] } }, tch: null, done: false, started: false, last: null, first: null,
   });
-  for (const s of Object.values(SCHOOL_BY_ID)) schools[s.id] = mkSchool(s);
+  for (const s of Object.values(UNI)) schools[s.id] = mkSchool(s);
 
   const adminOf = (name) => {
     const a = (admins[name] ||= {
@@ -233,7 +235,7 @@ export function summarize(Y, { year, bands, today, owners = {} }) {
 
   // school-level status
   const regions = {};
-  for (const r of REGIONS) regions[r] = { region: r, schools: [], planned: 0 };
+  for (const r of RLIST) regions[r] = { region: r, schools: [], planned: 0 };
   let nSchoolsDone = 0;
   for (const sc of Object.values(schools)) {
     const reg = regions[sc.region];
@@ -313,7 +315,7 @@ export function summarize(Y, { year, bands, today, owners = {} }) {
 
   // regions
   const days = Object.keys(daily).sort();
-  for (const R of REGIONS) {
+  for (const R of RLIST) {
     const reg = regions[R];
     const ss = reg.schools.map((id) => schools[id]);
     reg.total = ss.length;
@@ -334,7 +336,7 @@ export function summarize(Y, { year, bands, today, owners = {} }) {
     else if (pace > 0) reg.projected = addWorkingDays(today, Math.ceil(remaining / pace));
     else reg.projected = null;
     reg.behind = reg.projected && reg.projected !== 'done' && reg.projected > FIELD_END;
-    reg.flags_open = flags.filter((f) => SCHOOL_BY_ID[f.school]?.region === R).length;
+    reg.flags_open = flags.filter((f) => UNI[f.school]?.region === R).length;
   }
 
   const nat = {

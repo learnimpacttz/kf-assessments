@@ -9,14 +9,15 @@ import { runBackup, buildBackup, restoreBackup, maybeRunScheduledBackup, listBac
 import { setValidation, koboWho, getValidation, clearValidation } from './kobo.js';
 import { fetchKoboPage } from './kobo.js';
 import { subscribe, unsubscribe, takeAlert, hashEndpoint, pushTo, pushStatus, pushReady, runAlerts } from './push.js';
-import { tick, syncStatus, recomputeSummaries, resetAll, resetKind, loadState, loadYear, saveYear, stateYears } from './sync.js';
+import { tick, syncStatus, recomputeSummaries, resetAll, resetKind, loadState, loadYear, saveYear, stateYears, clearPractice } from './sync.js';
 import { getPlan, submitPlan, saveDraft, changeVisit, markNotice, withNotices } from './plan.js';
 import {
-  REGIONS, PARTNERS, REASONS, DAY_REASONS, FIELD_START, FIELD_END, PILOT_DAY, TRAINING_START, CURRENT_YEAR, STAFF, rosterState, staffForKoboName, SCHOOLS_BY_REGION, SCHOOL_BY_ID, eatToday,
+  REGIONS, PARTNERS, REASONS, DAY_REASONS, PRACTICE_BY_ID, PRACTICE_REGION, FIELD_START, FIELD_END, PILOT_DAY, TRAINING_START, CURRENT_YEAR, STAFF, rosterState, staffForKoboName, SCHOOLS_BY_REGION, SCHOOL_BY_ID, eatToday,
   TARGET_PER_GRADE, DODOMA_TARGET_PER_GRADE, NOTICE_AEK_WORKING_DAYS, NOTICE_HT_WORKING_DAYS,
 } from './config.js';
 
 const dayCounts = (p) => { const per = {}; for (const v of p.visits || []) per[v.date] = (per[v.date] || 0) + 1; const n = Object.values(per); return { one: n.filter((x) => x === 1).length, two: n.filter((x) => x === 2).length, three: n.filter((x) => x === 3).length }; };
+const PRACTICE_SCHOOLS_UI = () => Object.values(PRACTICE_BY_ID).map((s) => ({ id: s.id, name: s.name, lga: s.lga, mne: s.mne }));
 const json = (data, status = 200) => Response.json(data, { status, headers: { 'cache-control': 'no-store' } });
 const err = (message, status = 400, extra = {}) => json({ error: message, ...extra }, status);
 
@@ -185,8 +186,8 @@ export default {
       if (path === '/api/query' && method === 'POST') {
         const body = await request.json();
         const school = String(body.key || '').split('|')[1];
-        const reg = SCHOOL_BY_ID[school]?.region;
-        if (!reg || !canSeeRegion(who, reg)) return err('Not your region', 403);
+        const sch = SCHOOL_BY_ID[school] || PRACTICE_BY_ID[school];
+        if (!sch || (!sch.practice && !canSeeRegion(who, sch.region))) return err('Not your region', 403); // practice schools are open to everyone
         const r = await postQuery(env, who, body);
         if (r.error) return err(r.error, r.status || 400);
         return json({ q: r.q });
@@ -262,26 +263,37 @@ export default {
         return json(out);
       }
 
+      // ---------- practice: the training schools, open to everyone, never part of the real numbers ----------
+      if (path === '/api/practice') {
+        const sum = await readSummary(env, 'practice');
+        const queries = await loadQueries(env);
+        if (!sum) return json({ status: 'empty', schools: PRACTICE_SCHOOLS_UI(), note: 'No practice submissions yet. Submit a test or a sampling record for a TRAINING school and it appears here within a few minutes.' });
+        const flags = decorate((sum.flags || []).map((f) => ({ ...f, school_name: PRACTICE_BY_ID[f.school]?.name, region: PRACTICE_REGION, lga: 'TRAINING LGA', ward: 'TRAINING' })), queries);
+        return json({ status: 'ok', as_of: sum.as_of, records: sum.national.records, tested: sum.national.tested, schools: Object.values(sum.schools).map(schoolRow).map((s) => ({ ...s, region: PRACTICE_REGION })), flags, admins: sum.admins.map((a) => ({ name: a.name, position: a.position, region: a.region, tested: a.tested, avg_min: a.avg_min, by_grade: a.by_grade, quality: a.quality, days: a.days })), bands: sum.bands, devices: (sum.devices || []).length });
+      }
+
       // ---------- phones: what each phone did, for the whole team to see ----------
       if (path === '/api/phones') {
         const years = await readYears(env);
         const wantY = url.searchParams.get('year');
-        let year = wantY && years.includes(wantY) ? wantY : null; let dates = [];
+        const isPr = wantY === 'practice'; // practice phones are open to everyone, in every region
+        let year = isPr ? 'practice' : wantY && years.includes(wantY) ? wantY : null; let dates = [];
         for (const y of year ? [year] : [...years].reverse()) { const d = env.DASHBOARD_KV ? await env.DASHBOARD_KV.get(`tl:${y}:dates`, { type: 'json', cacheTtl: 30 }) : null; if (d && d.length) { year = y; dates = d; break; } }
         if (!year || !dates.length) return json({ status: 'none', note: 'No phone data yet. It appears once sampling or test records carry the phone ID.' });
         const date = dates.includes(url.searchParams.get('date')) ? url.searchParams.get('date') : dates[dates.length - 1];
         const doc = await env.DASHBOARD_KV.get(`tl:${year}:${date}`, { type: 'json' });
         const sum = await readSummary(env, year);
-        const myRegion = who.role === 'hq' ? (url.searchParams.get('region') || null) : who.region;
-        const inScope = (sc) => !myRegion || SCHOOL_BY_ID[sc]?.region === myRegion;
+        const myRegion = isPr ? null : who.role === 'hq' ? (url.searchParams.get('region') || null) : who.region;
+        const inScope = (sc) => isPr || !myRegion || SCHOOL_BY_ID[sc]?.region === myRegion;
+        const SI = (id) => SCHOOL_BY_ID[id] || PRACTICE_BY_ID[id];
         const events = (doc?.events || []).filter((e) => inScope(e.sc));
         const codes = new Set(events.map((e) => e.c));
-        const phones = (doc?.phones || []).filter((p) => p.schools.some(inScope)).map((p) => ({ ...p, schools: p.schools.filter(inScope).map((sc) => ({ id: sc, name: SCHOOL_BY_ID[sc]?.name?.trim() })) }));
+        const phones = (doc?.phones || []).filter((p) => p.schools.some(inScope)).map((p) => ({ ...p, schools: p.schools.filter(inScope).map((sc) => ({ id: sc, name: SI(sc)?.name?.trim() })) }));
         const DEVT = new Set(['devoverlap', 'devtravel', 'devswitch', 'devnames', 'namedevs', 'devshare', 'headcount', 'devowner']);
-        const flags = (sum?.flags || []).filter((f) => DEVT.has(f.type) && f.date === date && inScope(f.school)).map((f) => ({ ...f, school_name: SCHOOL_BY_ID[f.school]?.name, region: SCHOOL_BY_ID[f.school]?.region, lga: SCHOOL_BY_ID[f.school]?.lga }));
+        const flags = (sum?.flags || []).filter((f) => DEVT.has(f.type) && f.date === date && inScope(f.school))  .map((f) => ({ ...f, school_name: SI(f.school)?.name, region: SI(f.school)?.region, lga: SI(f.school)?.lga }));
         const bySchool = {};
         for (const e of events) (bySchool[e.sc] ||= new Set()).add(e.c);
-        return json({ status: 'ok', year, date, dates, region: myRegion, events, phones, flags, schools: Object.entries(bySchool).map(([id, set]) => ({ id, name: SCHOOL_BY_ID[id]?.name?.trim(), region: SCHOOL_BY_ID[id]?.region, phones: set.size })) });
+        return json({ status: 'ok', year, date, dates, region: myRegion, events, phones, flags, schools: Object.entries(bySchool).map(([id, set]) => ({ id, name: SI(id)?.name?.trim(), region: SI(id)?.region, phones: set.size })) });
       }
 
       // ---------- compare (regions are public; people are role-limited) ----------
@@ -564,6 +576,7 @@ export default {
         }
         return json(out);
       }
+      if (path === '/api/admin/practice-clear' && method === 'POST') { const b = await request.json().catch(() => ({})); if (b.confirm !== 'CLEAR') return err('Type CLEAR to confirm', 422); await clearPractice(env); return json({ ok: true }); }
       if (path === '/api/admin/push-status') return json(await pushStatus(env));
       if (path === '/api/admin/push-test' && method === 'POST') {
         const b = await request.json();

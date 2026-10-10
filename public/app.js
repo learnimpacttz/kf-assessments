@@ -692,6 +692,29 @@ function viewPhones() {
   <div class="card" style="margin-top:14px"><h3>Phones and people</h3><div class="tbl"><table><thead><tr><th>Phone</th><th>Names used</th><th>Schools</th><th class="r">Records</th><th>Active</th><th class="r">Checks</th></tr></thead><tbody>${prows}</tbody></table></div></div>`;
 }
 
+
+// ---------- Practice: training schools, open to everyone, never counted in the real numbers ----------
+async function loadPractice() {
+  S.prErr = null;
+  try {
+    S.pr = await api('/api/practice');
+    S.prPh = null;
+    if (S.pr.status === 'ok') { try { S.prPh = await api('/api/phones?year=practice' + (S.prDate ? '&date=' + S.prDate : '')); if (S.prPh.date) S.prDate = S.prPh.date; } catch {} }
+  } catch (e) { S.prErr = e.message; }
+}
+function viewPractice() {
+  if (S.prErr) return `<div class="banner bad">${esc(S.prErr)}</div>`;
+  const P = S.pr; if (!P) return '<div class="empty">Loading…</div>';
+  const banner = '<div class="banner warn"><b>PRACTICE AREA.</b> Everything here comes from the TRAINING region (TRAINING SCHOOL 1, 2 and 3). It is for role-play, training and testing the forms. It never counts in the real progress, forecasts, alerts or emails, and the calendar check is off for these schools. Anyone can use it, from any region.</div>';
+  const head = `<div class="pagehead"><div><h2>Practice</h2><p>Submit a test or a sampling record for a TRAINING school and see it here within a few minutes.</p></div>${S.who.role === 'hq' ? '<button class="btn ghost" data-act="practiceClear">Clear practice data</button>' : ''}</div>`;
+  if (P.status !== 'ok') return `${banner}${head}<div class="card"><div class="empty">${esc(P.note || 'No practice records yet.')}</div><div class="sub" style="margin-top:8px">${P.schools.map((x) => esc(x.name) + ' (' + esc(x.id) + ')').join(' · ')}</div></div>`;
+  const srows = P.schools.map((x) => `<tr><td><b>${esc(x.name)}</b><div class="sub">${esc(x.id)}</div></td><td class="r num">${x.started ? 'yes' : 'no'}</td><td class="r num">${x.g ? Object.values(x.g).reduce((a, b) => a + (b.n || 0), 0) : 0}</td><td>${(x.admins || []).length}</td></tr>`).join('');
+  const ph = S.prPh && S.prPh.events ? `<div class="card" style="margin-top:14px"><h3>Phones in practice</h3><div class="sub">One row per phone, each bar a record, so people can see how their own phone shows up on the dashboard.</div>${timelineChart(S.prPh)}</div>` : '';
+  return `${banner}${head}<div class="grid kpis">${kpi('Practice records', fmt(P.records))}${kpi('Pupils tested', fmt(P.tested))}${kpi('Phones', P.devices || 0)}${kpi('Checks raised', (P.flags || []).length)}</div>
+  <div class="card" style="margin-top:14px"><h3>Training schools</h3><div class="tbl"><table><thead><tr><th>School</th><th class="r">Started</th><th class="r">Pupils tested</th><th>People</th></tr></thead><tbody>${srows}</tbody></table></div></div>
+  <div class="card" style="margin-top:14px"><h3>Checks raised on practice records</h3><div class="sub">Open one to see what a real query looks like, and reply to it to practise the process.</div>${flagList(P.flags || [], { limit: 30 })}</div>${ph}`;
+}
+
 // ---------- global search ----------
 function searchItems() {
   const items = [];
@@ -712,12 +735,12 @@ function doSearch(q) {
 // ---------- shell ----------
 const TABS = {
   public: [['progress', 'Progress'], ['compare', 'Compare']],
-  volunteer: [['day', 'My day'], ['work', 'My work'], ['queries', 'My queries'], ['stats', 'My stats'], ['phones', 'Phones'], ['compare', 'Compare']],
-  rc: [['region', 'Region'], ['plan', 'Plan & calendar'], ['team', 'My team'], ['allq', 'Queries'], ['phones', 'Phones'], ['compare', 'Compare'], ['explore', 'Data explorer']],
-  hq: [['hq', 'HQ'], ['regions', 'Regions & plans'], ['plan', 'Plan & calendar'], ['people', 'People'], ['allq', 'Queries'], ['phones', 'Phones'], ['compare', 'Compare'], ['explore', 'Data explorer'], ['admin', 'Admin']],
+  volunteer: [['day', 'My day'], ['work', 'My work'], ['queries', 'My queries'], ['stats', 'My stats'], ['phones', 'Phones'], ['compare', 'Compare'], ['practice', 'Practice']],
+  rc: [['region', 'Region'], ['plan', 'Plan & calendar'], ['team', 'My team'], ['allq', 'Queries'], ['phones', 'Phones'], ['compare', 'Compare'], ['explore', 'Data explorer'], ['practice', 'Practice']],
+  hq: [['hq', 'HQ'], ['regions', 'Regions & plans'], ['plan', 'Plan & calendar'], ['people', 'People'], ['allq', 'Queries'], ['phones', 'Phones'], ['compare', 'Compare'], ['explore', 'Data explorer'], ['admin', 'Admin'], ['practice', 'Practice']],
 };
 const roleKey = () => (!S.who ? 'public' : S.who.role === 'arc' ? 'rc' : S.who.role);
-const VIEWS = { progress: viewProgress, compare: viewCompare, day: viewDay, work: viewWork, queries: viewQueries, stats: viewStats, region: viewRegion, plan: viewPlan, team: viewTeam, explore: viewExplore, hq: viewHQ, regions: viewRegionsHQ, people: viewPeopleHQ, admin: viewAdmin, allq: viewAllQueries, phones: viewPhones };
+const VIEWS = { progress: viewProgress, compare: viewCompare, day: viewDay, work: viewWork, queries: viewQueries, stats: viewStats, region: viewRegion, plan: viewPlan, team: viewTeam, explore: viewExplore, hq: viewHQ, regions: viewRegionsHQ, people: viewPeopleHQ, admin: viewAdmin, allq: viewAllQueries, phones: viewPhones, practice: viewPractice };
 
 function render() {
   const tabs = TABS[roleKey()];
@@ -835,7 +858,7 @@ async function go() {
   if (exm) { S.tab = 'explore'; S.exTab = exm[1]; }
   else if (!S.tab && location.hash && !location.hash.includes(':')) S.tab = location.hash.slice(1);
   if (S.who && !S.ov && !S.viewAs) { const snap = loadSnapshot(); if (snap) { S.ov = snap.ov; S.pub = snap.ov; S.cmp = snap.cmp; S.pred = snap.pred; S.brief = snap.brief; S.stale = snap.t; render(); } }
-  try { await loadData(); S.stale = null; render(); ensureSchools(); if (S.tab === 'explore' && ['teach', 'school', 'linked'].includes(S.exTab)) loadExplore(S.exTab); if (S.tab === 'phones' && !S.ph) loadPhones().then(render); if (location.hash.includes(':')) { try { openDetail(decodeURIComponent(location.hash.slice(1))); } catch {} } } catch (e) { if (e.status === 401 && S.code) { S.code = null; S.who = null; store.set('kf_code', null); loginScreen('Your code was not recognised. Try again.'); } else $('#app').innerHTML = `<div class="banner bad">${esc(e.message)}</div>`; }
+  try { await loadData(); S.stale = null; render(); ensureSchools(); if (S.tab === 'explore' && ['teach', 'school', 'linked'].includes(S.exTab)) loadExplore(S.exTab); if (S.tab === 'phones' && !S.ph) loadPhones().then(render); if (S.tab === 'practice' && !S.pr) loadPractice().then(render); if (location.hash.includes(':')) { try { openDetail(decodeURIComponent(location.hash.slice(1))); } catch {} } } catch (e) { if (e.status === 401 && S.code) { S.code = null; S.who = null; store.set('kf_code', null); loginScreen('Your code was not recognised. Try again.'); } else $('#app').innerHTML = `<div class="banner bad">${esc(e.message)}</div>`; }
 }
 
 document.addEventListener('click', async (e) => {
@@ -845,7 +868,7 @@ document.addEventListener('click', async (e) => {
   const th = e.target.closest('[data-ts]');
   if (th) { const [id, k] = th.dataset.ts.split(':'); const T = S.tbl[id]; if (T.sort === k) T.dir = -T.dir; else { T.sort = k; T.dir = 1; } render(); return; }
   const t = e.target.closest('[data-tab],[data-act]'); if (!t) return;
-  if (t.dataset.tab) { S.tab = t.dataset.tab; S.selVisit = null; if (S.tab === 'plan') { await loadPlan(); } if (S.tab === 'phones') { S.ph = null; render(); await loadPhones(); } if (S.tab === 'admin') await loadAdmin(); render(); return; }
+  if (t.dataset.tab) { S.tab = t.dataset.tab; S.selVisit = null; if (S.tab === 'plan') { await loadPlan(); } if (S.tab === 'phones') { S.ph = null; render(); await loadPhones(); } if (S.tab === 'practice') { S.pr = null; render(); await loadPractice(); } if (S.tab === 'admin') await loadAdmin(); render(); return; }
   const a = t.dataset.act;
   try {
     if (a === 'login') { const c = $('#code').value.trim().toUpperCase(); if (!c) return; S.code = c; try { const r = await api('/api/login'); S.who = r.who; store.set('kf_code', c); S.tab = null; await go(); } catch { S.code = null; loginScreen('That code was not recognised.'); } }
@@ -853,6 +876,7 @@ document.addEventListener('click', async (e) => {
     else if (a === 'showLogin') loginScreen();
     else if (a === 'alerts') await toggleAlerts();
     else if (a === 'exitPreview') await setViewAs('');
+    else if (a === 'practiceClear') { if (prompt('This removes every practice record from the dashboard (KoBo keeps them). Type CLEAR to confirm.') === 'CLEAR') { await api('/api/admin/practice-clear', { method: 'POST', body: { confirm: 'CLEAR' } }); await loadPractice(); render(); } }
     else if (a === 'pushTest') { const r = await api('/api/admin/push-test', { method: 'POST', body: { role: 'hq' } }); alert(r.skipped || `Sent to ${r.sent} device(s)` + (r.errors?.length ? ', errors: ' + r.errors.join(', ') : '')); }
     else if (a === 'prevRem') { S.adm.preview = await api('/api/admin/reminder-preview?region=' + t.dataset.region); render(); }
     else if (a === 'retryPlan') { await loadPlan(); render(); }

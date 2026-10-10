@@ -7,6 +7,7 @@
 // Sampling tool -> `sg[...]` attendance and the random numbers the app drew
 // Teacher form  -> `tf[school]` teacher forms completed
 import { SKILLS_BY_GRADE } from './aggregate.js';
+import { isPracticeSchool } from './config.js';
 
 export const HIST_BUCKETS = 61; // 0.5 min each, last bucket = 30 min and over
 const SKILL_TIME_FIELDS = [
@@ -30,6 +31,11 @@ function pick(r, name, prefixes = ['', 'id_data/', 'att_gr/', 'group_intro/', 's
   return undefined;
 }
 
+// Which stored year a record belongs to. Practice (training-school) records never mix with a real year.
+export function stateYearOf(r) {
+  const school = r['id_data/school'] || r.school || r['group_intro/school'];
+  return isPracticeSchool(school) ? 'practice' : yearOf(r);
+}
 export function yearOf(r) {
   return String(r.year || (r.today || pick(r, 'date') || '').slice(0, 4) || '').slice(0, 4);
 }
@@ -52,7 +58,7 @@ function pushEvent(Y, date, ev) { const day = ((Y.tl ||= {})[date] ||= []); if (
 
 export function addStudents(state, records) {
   for (const r of records) {
-    const year = yearOf(r);
+    const year = stateYearOf(r);
     if (!year) continue;
     const Y = (state.yrs[year] ||= emptyYear());
     const school = r['id_data/school'];
@@ -129,7 +135,7 @@ export function addStudents(state, records) {
 
 export function addSampling(state, records) {
   for (const r of records) {
-    const year = yearOf(r);
+    const year = isPracticeSchool(pick(r, 'school')) ? 'practice' : yearOf(r);
     if (!year) continue;
     const Y = (state.yrs[year] ||= emptyYear());
     const school = pick(r, 'school');

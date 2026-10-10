@@ -133,3 +133,9 @@ export function workingDaysBetween(fromIso, toIso) {
 
 // Phones are shown by a short code, never by the raw KoBo device ID.
 export function devCode(d) { let h = 2166136261; for (let i = 0; i < String(d).length; i++) { h ^= String(d).charCodeAt(i); h = Math.imul(h, 16777619); } return 'D-' + (h >>> 0).toString(16).toUpperCase().padStart(8, '0').slice(0, 6); }
+
+// Practice (training) schools: submitted from the same forms, kept completely apart from the real numbers.
+export const PRACTICE_REGION = 'TRAINING';
+export const PRACTICE_SCHOOLS = [['TRAIN001', 'TRAINING SCHOOL 1', 'M&E'], ['TRAIN002', 'TRAINING SCHOOL 2', 'No-M&E'], ['TRAIN003', 'TRAINING SCHOOL 3', 'M&E']].map(([id, name, mne]) => ({ id, region: PRACTICE_REGION, lga: 'TRAINING LGA', ward: 'TRAINING', name, arm: 'Practice', mne, practice: true }));
+export const PRACTICE_BY_ID = Object.fromEntries(PRACTICE_SCHOOLS.map((s) => [s.id, s]));
+export const isPracticeSchool = (id) => String(id || '').startsWith('TRAIN');

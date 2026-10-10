@@ -93,6 +93,15 @@ for (const region of REGIONS) {
     addTeachers(state, recs);
   });
 }
+// practice (training) records: TRAIN schools, submitted by people from two different regions
+{
+  let pid = 990000;
+  const mk = (school, grade, who, dev, i, day = '2026-10-14') => ({ _id: pid++, year: '2026', today: day, 'group_intro/date': day, 'id_data/school': school, 'id_data/grade': String(grade), 'id_data/enumerator': who, deviceid: dev, 'stu_info/rand_nr': String(i), start: `${day}T09:${String(10 + i).padStart(2, '0')}:00+03:00`, end: `${day}T09:${String(18 + i).padStart(2, '0')}:00+03:00`, 'end_note_gr/testtime_rounded': '8', stu_avail: '1' });
+  const R = [];
+  for (let i = 1; i <= 5; i++) R.push(mk('TRAIN001', 1, 'Hawa Hussein', 'collect:P1', i), mk('TRAIN002', 2, 'Halima Hosea', 'collect:P2', i));
+  R.push(mk('TRAIN001', 1, 'Hawa Hussein', 'collect:P1', 3));
+  addStudents(state, R);
+}
 await stub.put('v2:state', JSON.stringify(state));
 await recomputeSummaries(env);
 
