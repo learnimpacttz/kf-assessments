@@ -584,7 +584,6 @@ export default {
           if (b.action === 'enable') await setCalSync(env, { enabled: true });
           else if (b.action === 'disable') await setCalSync(env, { enabled: false });
           else if (b.action === 'reset_prev') { await kv(env).delete('v2:calsync:csv'); const c = await loadCalSync(env); c.last = null; c.history = []; await kv(env).put('v2:calsync', c); }
-          else if (b.action === 'min') await setCalSync(env, { min_regions: Number(b.min_regions) });
           else if (b.action === 'run') { try { return json({ ran: await syncCalendar(env, { force: true, assets: b.assets || null }), status: await calendarStatus(env) }); } catch (e) { return err(String(e.message || e), 502); } }
           else return err('Unknown action');
         }
@@ -600,6 +599,19 @@ export default {
           else return err('Unknown action');
         }
         const { ...st } = await loadFormJob(env); return json(st);
+      }
+      if (path === '/api/admin/team-note' && method === 'POST') {
+        // One automated note to the HQ team only (never to coordinators): first HQ person is the recipient, the other HQ people are copied
+        const b = await request.json().catch(() => ({}));
+        if (!b.subject || !b.html || !b.text) return err('subject, html and text are required', 422);
+        const rec = await loadRecipients(env);
+        const hq = Object.entries(rec).filter(([, r]) => r.role === 'hq' && r.active !== false);
+        if (!hq.length) return err('No HQ recipients', 409);
+        const [to] = hq.find(([, r]) => r.backup === 'to') || hq[0];
+        const cc = hq.map(([e]) => e).filter((e) => e !== to);
+        const msg = { subject: b.subject, html: b.html, text: b.text, cc, ...(b.attach_b64 ? { attachments: [{ filename: b.filename || 'attachment.docx', content: b.attach_b64 }] } : {}) };
+        await sendMail(env, to, msg);
+        return json({ sent_to: to, cc });
       }
       if (path === '/api/admin/practice-clear' && method === 'POST') { const b = await request.json().catch(() => ({})); if (b.confirm !== 'CLEAR') return err('Type CLEAR to confirm', 422); await clearPractice(env); return json({ ok: true }); }
       if (path === '/api/admin/push-status') return json(await pushStatus(env));

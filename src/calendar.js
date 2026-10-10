@@ -6,7 +6,7 @@ import { getPlan } from './plan.js';
 import { koboForm } from './koboforms.js';
 
 const KEY = 'v2:calsync';
-const DEFAULT = { enabled: false, min_regions: 8, pending: false, dirty_at: null, retry_at: null, last: null, history: [] };
+const DEFAULT = { enabled: false, pending: false, dirty_at: null, retry_at: null, last: null, history: [] };
 export const loadCalSync = async (env) => ({ ...DEFAULT, ...((await kv(env).get(KEY)) || {}) });
 const saveCalSync = (env, st) => kv(env).put(KEY, st);
 
@@ -41,7 +41,7 @@ export async function syncCalendar(env, { force = false, assets = null } = {}) {
   const built = await buildCalendar(env);
   const test = Boolean(assets);
   if (built.rows === 0) { st.last = { at: new Date().toISOString(), skipped: 'no submitted plans yet' }; await saveCalSync(env, st); return st.last; }
-  if (!test && built.regions_submitted < st.min_regions) { st.last = { at: new Date().toISOString(), skipped: `waiting: ${built.regions_submitted} of ${st.min_regions} regions needed have submitted` }; await saveCalSync(env, st); return st.last; }
+  if (!test && built.regions_submitted < built.regions_total) { st.last = { at: new Date().toISOString(), skipped: `waiting: ${built.regions_submitted} of ${built.regions_total} regions have submitted; every region must plan first` }; await saveCalSync(env, st); return st.last; }
   const targets = assets || [env.KOBO_ASSET_ID, env.KOBO_ASSET_SAMPLING].filter(Boolean);
   const prev = (await kv(env).get('v2:calsync:csv')) || 'school,planned_date\n';
   const results = {};
@@ -68,6 +68,5 @@ export async function calendarStatus(env) {
 export async function setCalSync(env, patch) {
   const st = await loadCalSync(env);
   if (typeof patch.enabled === 'boolean') { st.enabled = patch.enabled; if (patch.enabled) { st.pending = true; st.dirty_at = new Date(Date.now() - 6 * 60e3).toISOString(); } }
-  if (Number.isInteger(patch.min_regions) && patch.min_regions >= 1 && patch.min_regions <= REGIONS.length) st.min_regions = patch.min_regions;
   await saveCalSync(env, st); return st;
 }
