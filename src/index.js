@@ -1,3 +1,4 @@
+import { koboForm } from './koboforms.js';
 import { kv } from './store.js';
 import { buildBrief, aiBrief } from './brief.js';
 import { morningDigest, eveningGap, loadRecipients, saveRecipients, runDigests, maybeRunScheduledDigests, sendMail, onboardingEmail, runOnboarding, hqOnboardingEmail, reminderEmail, runReminders } from './digest.js';
@@ -576,6 +577,7 @@ export default {
         }
         return json(out);
       }
+      if (path === '/api/admin/kobo-form' && method === 'POST') { try { return json(await koboForm(env, await request.json())); } catch (e) { return err(String(e.message || e), 502); } }
       if (path === '/api/admin/practice-clear' && method === 'POST') { const b = await request.json().catch(() => ({})); if (b.confirm !== 'CLEAR') return err('Type CLEAR to confirm', 422); await clearPractice(env); return json({ ok: true }); }
       if (path === '/api/admin/push-status') return json(await pushStatus(env));
       if (path === '/api/admin/push-test' && method === 'POST') {
