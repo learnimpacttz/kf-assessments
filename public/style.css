@@ -122,3 +122,5 @@ details.fd{margin-top:6px}details.fd summary{cursor:pointer;font-size:12.5px;fon
 .dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px;vertical-align:0}
 .dot.src-assess{background:var(--teal)}.dot.src-samp{background:var(--gold)}.dot.src-teach{background:var(--brand)}.dot.src-school{background:var(--terra)}.dot.src-linked{background:linear-gradient(90deg,var(--brand),var(--teal))}
 .tabs2 button[aria-selected="true"] .dot{box-shadow:0 0 0 2px #fff}
+
+.orow{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line)}.orow:last-child{border:0}.orow .v{font-family:var(--f-mono);font-size:13px;text-align:right;white-space:nowrap}.orow small{display:block;color:var(--ink3);font-size:11px}

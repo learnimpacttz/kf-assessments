@@ -203,6 +203,7 @@ export function addTeachers(state, records) {
     if (!school) continue;
     const t = (Y.tf[school] ||= { n: 0, date: null, head: 0, subj: 0, male: 0, female: 0, smart: 0, replaced: 0, teach: { 1: { r: 0, a: 0 }, 2: { r: 0, a: 0 }, 3: { r: 0, a: 0 } }, enrol: null, nt: null, nkf: null, weo: null, last: 0 });
     t.n += 1;
+    { const who = String(pick(r, 'enumerator') || '').trim(); if (who) { const P = (Y.tfp ||= {}); P[who] = (P[who] || 0) + 1; } }
     t.date = (pick(r, 'date') || r.today || t.date || '').slice(0, 10);
     const replaced = Boolean(r['t/gr_teacher_info_new/position_new']);
     if (replaced) t.replaced += 1;

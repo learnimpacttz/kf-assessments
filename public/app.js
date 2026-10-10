@@ -124,6 +124,7 @@ function viewRegion() {
   const neededPerDay = remaining > 0 ? remaining / Math.max(1, workingLeft(o.today)) : 0;
   return `${dataBanner()}<div class="pagehead"><div><h2>${esc(title(r.region))} · ${esc(S.who.position || 'Coordinator')}</h2><p>${r.total} schools · target ${tpg} pupils per grade per school</p></div></div>
   <div class="grid kpis">${kpi('Schools complete', `${r.done}<small> / ${r.total}</small>`, pc(r.done, r.total) + '%')}${kpi('Pupils tested', fmt(r.tested), 'of ' + fmt(r.target))}${kpi('Open flags', flags.length, flags.filter((f) => f.sev === 'bad').length + ' need a call')}${kpi('Pace', r.pace + ' / day', 'schools per field day, last 5 days')}${kpi('Projected finish', r.projected === 'done' ? 'Done' : r.projected ? shortDate(r.projected) : '–', r.behind ? 'after the 4 Dec close' : 'before the 4 Dec close')}</div>
+  ${ownSection()}
   <div class="grid two" style="margin-top:14px"><div class="card"><h3>Schools in ${esc(title(r.region))}</h3><div class="sub">Pupils tested against sample, by grade</div><div class="tbl"><table><thead><tr><th>School</th><th class="hide-s">LGA</th><th class="hide-s">Type</th><th class="hide-s">Gr 1</th><th class="hide-s">Gr 2</th><th class="hide-s">Gr 3</th><th>Progress</th><th>Status</th></tr></thead><tbody>${rows}</tbody></table></div></div>
   <div style="display:grid;gap:14px;align-content:start">${briefCard()}${forecastCard(r.region)}<div class="card"><h3>Needs your call</h3><div class="sub">Checked after every submission</div>${flagList(flags)}</div>
   <div class="card"><h3>Tests per day</h3><div class="sub">Dashed line is the daily pace needed to finish by 4 Dec</div>${barChart(r.series, { need: neededPerDay * (tpg * 3 / 1) })}</div></div></div>`;
@@ -193,11 +194,11 @@ function suggest(schools, region, staff) {
   // Protocol: 2 schools a day. The RC leads one school with 2 volunteers, the ARC leads the other with 2 volunteers.
   const rc = staff.find((p) => p.position === 'RC'), arc = staff.find((p) => p.position === 'ARC'), vols = staff.filter((p) => /^Volunteer/.test(p.position)).map((p) => p.name);
   const teams = [[rc?.name, ...vols.slice(0, 2)].filter(Boolean), [arc?.name, ...vols.slice(2, 4)].filter(Boolean)];
-  return sorted.map((s, i) => ({ school: s.id, date: days[Math.floor(i / 2)], start: '08:00', team: teams[i % 2] }));
+  return sorted.map((s, i) => ({ school: s.id, date: days[Math.floor(i / 2)], start: '08:00', team: teams[i % 2], lead: teams[i % 2][0] || null }));
 }
 function dayCountsOf(draft) { const per = {}; for (const v of draft) if (v.date) (per[v.date] ||= []).push(v.school); return per; }
 function readDraftFromDom() {
-  S.draft = S.plan.schools.map((s) => ({ school: s.id, date: document.querySelector(`[data-pl="date"][data-s="${s.id}"]`)?.value || null, start: document.querySelector(`[data-pl="start"][data-s="${s.id}"]`)?.value || '08:00', team: [...document.querySelectorAll(`[data-pt="${s.id}"]:checked`)].map((c) => c.value) }));
+  S.draft = S.plan.schools.map((s) => ({ school: s.id, date: document.querySelector(`[data-pl="date"][data-s="${s.id}"]`)?.value || null, start: document.querySelector(`[data-pl="start"][data-s="${s.id}"]`)?.value || '08:00', team: [...document.querySelectorAll(`[data-pt="${s.id}"]:checked`)].map((c) => c.value), lead: document.querySelector(`[data-pl="lead"][data-s="${s.id}"]`)?.value || null }));
 }
 function dayReasonPanel(region, draft) {
   if (region === 'DODOMA') return '';
@@ -222,7 +223,7 @@ function viewPlan() {
   const slotCls = (v) => (v.outcome === 'visited' ? 'done' : v.outcome === 'missed' ? 'miss' : v.outcome === 'visited_other_day' || v.status === 'moved' ? 'moved' : '');
   const cal = weeks.map((w, wi) => `<h4 style="margin:14px 0 6px">Week ${wi + 1}</h4><div class="cal">${w.map((d) => `<div class="day ${d === today ? 'today' : ''}"><h5>${dayName(d)}<span title="${esc(plan.day_notes?.[d] ? plan.day_notes[d].note : '')}">${(byDate[d] || []).length || ''}${plan.day_notes?.[d] && (byDate[d] || []).length !== 2 ? ' ⓘ' : ''}</span></h5>${(byDate[d] || []).map((v) => `<button class="slot ${slotCls(v)}" data-act="selVisit" data-id="${v.id}"><b>${esc(v.school_name)}</b>${esc(title(v.lga))} · ${esc(v.start)}${v.status === 'moved' ? ' · moved' : ''}</button>`).join('')}</div>`).join('')}</div>`).join('');
   const notice = (st) => ({ sent: '<span class="pill good">sent</span>', late: '<span class="pill bad">late</span>', due: '<span class="pill warn">due today</span>', upcoming: '<span class="pill mute">upcoming</span>' }[st]);
-  const nrows = plan.visits.filter((v) => v.date >= today).sort((a, b) => (a.date < b.date ? -1 : 1)).slice(0, 14).map((v) => `<tr><td><b>${esc(v.school_name)}</b>${plan.changes.some((c) => c.visit_id === v.id) ? ' <span class="pill warn">changed</span>' : ''}<br><span class="m" style="font-size:12px;color:var(--ink3)">${dayName(v.date)}</span></td><td>${notice(v.aek_state)} <span style="font-size:12px;color:var(--ink3)">by ${shortDate(v.aek_due)}</span>${canEdit && !v.notices.aek ? ` <button class="btn sm sec" data-act="notice" data-kind="aek" data-id="${v.id}">Mark sent</button>` : ''}</td><td>${notice(v.ht_state)} <span style="font-size:12px;color:var(--ink3)">by ${shortDate(v.ht_due)}</span>${canEdit && !v.notices.ht ? ` <button class="btn sm sec" data-act="notice" data-kind="ht" data-id="${v.id}">Mark sent</button>` : ''}</td><td>${notice(v.team_state)}${canEdit && !v.notices.team ? ` <button class="btn sm sec" data-act="notice" data-kind="team" data-id="${v.id}">Mark told</button>` : ''}</td></tr>`).join('');
+  const nrows = plan.visits.filter((v) => v.date >= today).sort((a, b) => (a.date < b.date ? -1 : 1)).slice(0, 14).map((v) => `<tr><td><b>${esc(v.school_name)}</b>${plan.changes.some((c) => c.visit_id === v.id) ? ' <span class="pill warn">changed</span>' : ''}${v.lead_name ? ` <span class="pill mute">${v.lead_name === S.who?.name ? 'led by you' : 'lead: ' + esc(v.lead_name.split(' ')[0])}</span>` : ''}<br><span class="m" style="font-size:12px;color:var(--ink3)">${dayName(v.date)}</span></td><td>${notice(v.aek_state)} <span style="font-size:12px;color:var(--ink3)">by ${shortDate(v.aek_due)}</span>${canEdit && !v.notices.aek ? ` <button class="btn sm sec" data-act="notice" data-kind="aek" data-id="${v.id}">Mark sent</button>` : ''}</td><td>${notice(v.ht_state)} <span style="font-size:12px;color:var(--ink3)">by ${shortDate(v.ht_due)}</span>${canEdit && !v.notices.ht ? ` <button class="btn sm sec" data-act="notice" data-kind="ht" data-id="${v.id}">Mark sent</button>` : ''}</td><td>${notice(v.team_state)}${canEdit && !v.notices.team ? ` <button class="btn sm sec" data-act="notice" data-kind="team" data-id="${v.id}">Mark told</button>` : ''}</td></tr>`).join('');
   const changes = plan.changes.slice().reverse().slice(0, 8).map((c) => `<div class="flag"><i class="st ${c.late ? 'bad' : 'warn'}"></i><div><b>${esc(SCH(c.school))} · ${shortDate(c.from.date)} → ${shortDate(c.to.date)}${c.late ? ' · late change' : ''}</b><span>${esc(c.reason)}${c.note ? ': ' + esc(c.note) : ''} · ${esc(c.by)}</span></div></div>`).join('') || '<div class="empty">No changes yet.</div>';
   const v = plan.visits.find((x) => x.id === S.selVisit);
   const editor = v && canEdit ? `<div class="card" style="margin-top:14px"><h3>Change ${esc(v.school_name)}</h3><div class="sub">Planned ${dayName(v.date)} at ${esc(v.start)}. The team and the ward and head teacher notices are re-sent for a new date.</div><div class="f"><label>New date<input type="date" id="chDate" value="${v.date}" min="${planFrom(region)}" max="${S.cfg.field.end}"></label><label>Start<input type="time" id="chStart" value="${esc(v.start)}"></label><label>Reason<select id="chReason">${Object.entries(S.cfg.reasons).map(([k, t]) => `<option value="${k}">${esc(t)}</option>`).join('')}</select></label><textarea id="chNote" placeholder="Short note (required for Other)"></textarea></div><div style="margin-top:10px;display:flex;gap:8px"><button class="btn" data-act="applyChange" data-id="${v.id}">Save change</button><button class="btn sec" data-act="selVisit" data-id="">Cancel</button></div><div id="chErr" class="banner bad" hidden></div></div>` : '';
@@ -246,8 +247,9 @@ function planBuilder(P, canEdit, region) {
   if (!S.dayNotes) S.dayNotes = { ...(P.plan.day_notes || {}) };
   const byId = Object.fromEntries(cur.map((v) => [v.school, v]));
   const people = P.staff.map((p) => p.name);
-  const rows = P.schools.map((s) => { const v = byId[s.id] || { school: s.id, date: '', start: '08:00', team: [] }; return `<tr><td><b>${esc(s.name)}</b></td><td class="hide-s">${esc(title(s.lga))}</td><td class="hide-s">${esc(armLabel(s))}</td><td><input type="date" data-pl="date" data-s="${s.id}" value="${esc(v.date)}" min="${planFrom(region)}" max="${S.cfg.field.end}"></td><td><input type="time" data-pl="start" data-s="${s.id}" value="${esc(v.start)}"></td><td><details class="teamd"><summary>${(v.team || []).length ? esc((v.team || []).map((n) => n.split(' ')[0]).join(', ')) : 'Choose team'}</summary><div class="teamlist">${people.map((n) => `<label><input type="checkbox" data-pt="${s.id}" data-pl="team" data-s="${s.id}" value="${esc(n)}" ${(v.team || []).includes(n) ? 'checked' : ''}> ${esc(n)}</label>`).join('')}</div></details></td></tr>`; }).join('');
-  return `<div class="banner">Not submitted yet. The dates and teams below follow the protocol: 2 schools a day, the Regional Coordinator and the Assistant each leading one school with 2 volunteers. Change what does not fit. After you submit the plan locks.</div>
+  const leads = P.staff.filter((p) => /^(RC|ARC)$/.test(p.position)).map((p) => p.name);
+  const rows = P.schools.map((s) => { const v = byId[s.id] || { school: s.id, date: '', start: '08:00', team: [] }; return `<tr><td><b>${esc(s.name)}</b></td><td class="hide-s">${esc(title(s.lga))}</td><td class="hide-s">${esc(armLabel(s))}</td><td><input type="date" data-pl="date" data-s="${s.id}" value="${esc(v.date)}" min="${planFrom(region)}" max="${S.cfg.field.end}"></td><td><input type="time" data-pl="start" data-s="${s.id}" value="${esc(v.start)}"></td><td><select data-pl="lead" data-s="${s.id}" title="Who leads this school"><option value="">Lead: auto</option>${leads.map((n) => `<option value="${esc(n)}" ${(v.lead || '') === n ? 'selected' : ''}>Lead: ${esc(n.split(' ')[0])}</option>`).join('')}</select><details class="teamd"><summary>${(v.team || []).length ? esc((v.team || []).map((n) => n.split(' ')[0]).join(', ')) : 'Choose team'}</summary><div class="teamlist">${people.map((n) => `<label><input type="checkbox" data-pt="${s.id}" data-pl="team" data-s="${s.id}" value="${esc(n)}" ${(v.team || []).includes(n) ? 'checked' : ''}> ${esc(n)}</label>`).join('')}</div></details></td></tr>`; }).join('');
+  return `<div class="banner">Not submitted yet. The dates and teams below follow the protocol: 2 schools a day, the Regional Coordinator and the Assistant each leading one school with 2 volunteers. The Lead is the RC or the ARC; where both are at one school the RC leads. Change what does not fit. After you submit the plan locks.</div>
   <div class="card" style="margin-top:12px"><div class="tbl"><table><thead><tr><th>School</th><th class="hide-s">LGA</th><th class="hide-s">Type</th><th>Date</th><th>Start</th><th>Team</th></tr></thead><tbody>${rows}</tbody></table></div>
   <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn sec" data-act="resuggest">Re-suggest dates and teams</button></div></div>
   ${dayReasonPanel(region, cur)}
@@ -460,6 +462,31 @@ function koboButtons(f) {
 const SCHOOL_INFO = (id) => schoolsAll().find((x) => x.id === id) || {};
 
 // ---------- People (HQ) and My team (coordinator) ----------
+// ---- coordinators' own work and the regional team block ----
+const STATUS_TXT = { good: 'on target', warn: 'close', bad: 'behind' };
+function ownRows(rows) {
+  return rows.map((x) => `<div class="orow"><div>${esc(x.label)}${x.target ? `<small>Target: ${esc(x.target)}</small>` : ''}</div><div class="v">${esc(x.display)}</div><div>${x.status ? chip(STATUS_TXT[x.status], x.status) : ''}</div></div>`).join('');
+}
+function ownCard(o, title, sub) {
+  if (!o) return '';
+  const a = o.assessment, l = o.led;
+  const today = (o.today || []).map((t) => `<div class="m"><b>${esc(t.name)}</b> · ${esc(t.start)} · team ${esc((t.team || []).map((n) => n.split(' ')[0]).join(', ') || 'not set')}${t.present.length ? ` · here so far: ${esc(t.present.map((n) => n.split(' ')[0]).join(', '))}` : ''}</div>`).join('');
+  return `<div class="card"><h3>${esc(title)}</h3><div class="sub">${esc(sub)}</div>
+  <div class="grid kpis" style="margin:8px 0">${kpi('Pupils tested', fmt(a.tested), a.sampling + ' sampling forms')}${kpi('Schools led', l.planned, l.done + ' on the planned day')}${kpi('Teacher forms', fmt(o.baseline.forms), 'baseline and M&E')}${kpi('Plan changes', o.plan.changes, o.plan.late_changes + ' late')}</div>
+  ${today ? `<h4 style="margin:10px 0 4px">Today</h4>${today}` : ''}
+  <h4 style="margin:12px 0 4px">What is expected</h4>${ownRows(o.rows)}
+  <div class="m" style="margin-top:8px">Queries: ${o.queries.replies} replies, ${o.queries.closed} closed by you, ${o.queries.open} open in the region${o.queries.unanswered ? ` (${o.queries.unanswered} with no reply yet)` : ''}. Surprise visits: shown here when they run.${o.not_tracked ? ' ' + esc(o.not_tracked) : ''}</div></div>`;
+}
+function teamBlockCard(tb, title) {
+  if (!tb) return '';
+  return `<div class="card"><h3>${esc(title || 'Regional coordination team')}</h3><div class="sub">${esc(tb.people.map((p) => p.name + ' (' + p.position + ')').join(' · '))}. The RC is responsible for all of this work, the ARC's included.</div>
+  <div class="grid kpis" style="margin:8px 0">${kpi('Pupils tested by the two', fmt(tb.tested), tb.sampling + ' sampling forms')}${kpi('Visits', tb.visits.planned, tb.visits.done + ' on the planned day')}${kpi('Notices', tb.notices.due ? tb.notices.pct + '%' : '–', 'sent on time')}${kpi('Teacher forms', fmt(tb.baseline_forms), 'baseline and M&E')}</div>${ownRows(tb.rows)}</div>`;
+}
+function ownSection() {
+  const m = S.ov?.mine; if (!m || !m.own) return '';
+  const rcView = S.who.role === 'rc';
+  return `<div class="grid two" style="margin-top:14px">${ownCard(m.own, 'Your own work', rcView ? 'The schools you lead and your own records. As Regional Coordinator you also answer for the Assistant\'s work, shown on the right.' : 'The schools you lead and your own records. You report to ' + (m.own.reports_to || 'your Regional Coordinator') + '.')}${teamBlockCard(m.team_block)}</div>${rcView && m.arc_own ? `<div style="margin-top:14px">${ownCard(m.arc_own, 'Your Assistant: ' + m.arc_own.person.name, 'You are responsible for this work too.')}</div>` : ''}`;
+}
 // ---- how early records are sent ----
 const lagText = (h) => (h == null ? '–' : h < 1 ? Math.max(1, Math.round(h * 60)) + ' min' : h < 48 ? (Math.round(h * 10) / 10) + ' h' : Math.round(h / 24) + ' days');
 const sameChip = (s) => (s ? chip(s.same_pct + '%', s.same_pct >= 90 ? 'good' : s.same_pct >= 70 ? 'warn' : 'bad') : '<span class="m">–</span>');
@@ -475,7 +502,7 @@ function submitBoard(rows) {
 }
 function peopleTable(rows, hq) {
   const cols = [
-    { k: 'name', label: 'Name', val: (a) => a.name, search: (a) => a.name, html: (a) => `<b>${lk('person', a.name, a.name)}</b>` },
+    { k: 'name', label: 'Name', val: (a) => a.name, search: (a) => a.name, html: (a) => `<b>${lk('person', a.name, a.name)}</b>${S.who && a.staff_id === S.who.id ? ' ' + chip('You', 'gold') : ''}` },
     ...(hq ? [{ k: 'region', label: 'Region', val: (a) => a.region || '', search: (a) => a.region, html: (a) => (a.region ? lk('region', a.region, title(a.region)) : '–') }] : []),
     { k: 'role', label: 'Role', val: (a) => roleLabel(a), search: (a) => roleLabel(a), html: (a) => `<span class="chip c-${a.role === 'rc' ? 'navy' : a.role === 'arc' ? 'teal' : a.role === 'unlisted' ? 'mute' : 'gold'}">${esc(roleLabel(a))}</span>` },
     { k: 'tested', label: 'Tested', cls: 'r', val: (a) => a.tested, html: (a) => `<span class="num">${fmt(a.tested)}</span>` },
@@ -498,8 +525,18 @@ function peopleTable(rows, hq) {
   ];
   return dataTable(hq ? 'people' : 'team', cols, rows, { filters, sort: 'quality', dir: 1, open: (a) => 'person:' + a.name, placeholder: 'Search a name or region' });
 }
+const SHORT_ROW = { plan: 'Plan', visits: 'Visits', notices: 'Notices', briefing: 'Team told', attend: 'Team present', sameday: 'Same-day sends', queries: 'Old queries', late_changes: 'Late changes' };
+function coordinatorsBlock() {
+  const o = S.ov; if (!o.coordinators) return '';
+  const val = (x, k) => (x.rows.find((r) => r.key === k) || {});
+  const cell = (r) => (r.status ? chip(esc(r.display), r.status) : esc(r.display || '–'));
+  const rowsC = o.coordinators.map((c) => `<tr class="click" data-open="person:${esc(c.person.name)}"><td><b>${esc(c.person.name)}</b></td><td>${esc(title(c.person.region))}</td><td>${chip(esc(c.person.position), c.person.role === 'rc' ? 'navy' : 'teal')}</td><td class="r num">${fmt(c.assessment.tested)}</td><td class="r num">${c.assessment.sampling}</td><td class="r num">${c.led.done}/${c.led.due || 0}</td><td>${cell(val(c, 'notices'))}</td><td>${cell(val(c, 'briefing'))}</td><td>${cell(val(c, 'sameday'))}</td><td>${qChip(c.assessment.quality)}</td><td class="r num">${c.queries.replies}/${c.queries.closed}</td><td class="r num">${c.baseline.forms}</td></tr>`).join('');
+  const rowsT = Object.values(o.team_blocks).map((t) => `<tr><td><b>${esc(title(t.region))}</b></td><td>${esc(t.people.map((p) => p.name.split(' ')[0] + ' (' + p.position + ')').join(', '))}</td><td style="white-space:normal;line-height:2.1">${t.rows.map((r) => chip(esc(SHORT_ROW[r.key] || r.label) + ': ' + esc(r.display), r.status || 'mute')).join(' ')}</td></tr>`).join('');
+  return `<div class="card" style="margin-top:14px"><h3>Coordinators' own work</h3><div class="sub">What each RC and ARC did themselves, apart from supervising the team. Chips use the targets in each person's card. Replies / closed are queries.</div><div class="tbl"><table><thead><tr><th>Name</th><th>Region</th><th>Role</th><th class="r">Tested</th><th class="r">Sampling</th><th class="r">Led, done</th><th>Notices on time</th><th>Team told</th><th>Same-day sends</th><th>Quality</th><th class="r">Replies / closed</th><th class="r">Teacher forms</th></tr></thead><tbody>${rowsC}</tbody></table></div></div>
+  <div class="card" style="margin-top:14px"><h3>Regional coordination teams</h3><div class="sub">What each RC and ARC did together for their region</div><div class="tbl"><table><thead><tr><th>Region</th><th>Team</th><th>Status</th></tr></thead><tbody>${rowsT}</tbody></table></div></div>`;
+}
 function viewPeopleHQ() {
-  return `${dataBanner()}<div class="pagehead"><div><h2>Coordinators and volunteers</h2><p>Click a name for the full card. Click a column to sort. Chips are coloured against the normal range for each grade.</p></div></div>${submitBoard(S.ov.admins)}<div class="card" style="margin-top:14px">${peopleTable(S.ov.admins, true)}<div class="legend"><span><i style="background:var(--good)"></i>normal</span><span><i style="background:var(--gold)"></i>borderline</span><span><i style="background:var(--bad)"></i>outside the normal range</span><span>Normal test time: ${bandsText()}</span></div></div>`;
+  return `${dataBanner()}<div class="pagehead"><div><h2>Coordinators and volunteers</h2><p>Click a name for the full card. Click a column to sort. Chips are coloured against the normal range for each grade.</p></div></div>${coordinatorsBlock()}${submitBoard(S.ov.admins)}<div class="card" style="margin-top:14px">${peopleTable(S.ov.admins, true)}<div class="legend"><span><i style="background:var(--good)"></i>normal</span><span><i style="background:var(--gold)"></i>borderline</span><span><i style="background:var(--bad)"></i>outside the normal range</span><span>Normal test time: ${bandsText()}</span></div></div>`;
 }
 function viewTeam() {
   return `${dataBanner()}<div class="pagehead"><div><h2>My team</h2><p>Pace, test speed and quality for everyone in ${esc(title(S.who.region))}. Click a name for their card.</p></div></div>${submitBoard(S.ov.mine.admins)}<div class="card" style="margin-top:14px">${peopleTable(S.ov.mine.admins, false)}</div>`;

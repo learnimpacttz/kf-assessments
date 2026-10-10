@@ -5,7 +5,7 @@
 // per visit, and the team is told what is expected at the same time.
 import { kv } from './store.js';
 import {
-  SCHOOL_BY_ID, SCHOOLS_BY_REGION, FIELD_START, FIELD_END, PILOT_DAY, planWindow, DAY_REASONS, MAX_SCHOOLS_PER_DAY, DODOMA_MAX_SCHOOLS_PER_DAY, REASONS,
+  STAFF, SCHOOL_BY_ID, SCHOOLS_BY_REGION, FIELD_START, FIELD_END, PILOT_DAY, planWindow, DAY_REASONS, MAX_SCHOOLS_PER_DAY, DODOMA_MAX_SCHOOLS_PER_DAY, REASONS,
   NOTICE_AEK_WORKING_DAYS, NOTICE_HT_WORKING_DAYS, addWorkingDays, workingDaysBetween, isWorkingDay,
 } from './config.js';
 
@@ -17,6 +17,26 @@ export async function getPlan(env, region) {
 
 const uid = () => Math.random().toString(36).slice(2, 8);
 
+// Who leads the school: the RC leads one school and the ARC the other; where both are at the same school the RC leads and the ARC supports.
+const coordsOf = (region) => STAFF.filter((s) => s.active && s.region === region && (s.role === 'rc' || s.role === 'arc'));
+export function leadOfVisit(v, region) {
+  if (v.lead) return v.lead;
+  const c = coordsOf(region); const rc = c.find((s) => s.role === 'rc'), arc = c.find((s) => s.role === 'arc');
+  const team = v.team || [];
+  if (rc && team.includes(rc.name)) return rc.name;
+  if (arc && team.includes(arc.name)) return arc.name;
+  return null;
+}
+function leadErrors(region, visits) {
+  const errors = []; const c = coordsOf(region); const rc = c.find((s) => s.role === 'rc'), arc = c.find((s) => s.role === 'arc');
+  for (const v of visits) {
+    const nm = SCHOOL_BY_ID[v.school]?.name || v.school; const team = v.team || [];
+    if (v.lead && !c.some((s) => s.name === v.lead)) errors.push(`${nm}: the lead must be the Regional Coordinator or the Assistant Coordinator`);
+    else if (v.lead && !team.includes(v.lead)) errors.push(`${nm}: the lead ${v.lead} must also be in the team`);
+    if (rc && arc && team.includes(rc.name) && team.includes(arc.name) && v.lead && v.lead !== rc.name) errors.push(`${nm}: when the RC and the ARC are at the same school, the RC leads`);
+  }
+  return errors;
+}
 const dayNoteOk = (kind, n) => n && DAY_REASONS[kind][n.code] && String(n.note || '').trim().length >= 8;
 function validateVisits(region, visits, dayNotes = {}) {
   const errors = [];
@@ -54,9 +74,9 @@ function validateVisits(region, visits, dayNotes = {}) {
 export async function submitPlan(env, who, region, visits, dayNotes = {}) {
   const cur = await getPlan(env, region);
   if (cur.status === 'locked') return { error: 'The plan is already submitted. Use a change with a reason.', status: 409 };
-  const clean = visits.map((v) => ({ id: v.id || uid(), school: v.school, date: v.date, start: v.start || '08:00', team: (v.team || []).slice(0, 8), notices: {}, status: 'planned' }));
+  const clean = visits.map((v) => ({ id: v.id || uid(), school: v.school, date: v.date, start: v.start || '08:00', team: (v.team || []).slice(0, 8), lead: v.lead || null, notices: {}, status: 'planned' }));
   const notes = Object.fromEntries(Object.entries(dayNotes || {}).map(([d, n]) => [d, { code: n.code, note: String(n.note || '').slice(0, 300) }]));
-  const errors = validateVisits(region, clean, notes);
+  const errors = [...validateVisits(region, clean, notes), ...leadErrors(region, clean)];
   if (errors.length) return { error: 'The plan has problems', errors, status: 422 };
   const plan = { region, status: 'locked', version: 1, visits: clean, day_notes: notes, changes: [], submitted_at: new Date().toISOString(), submitted_by: who.name };
   await kv(env).put(key(region), plan);
@@ -66,12 +86,12 @@ export async function submitPlan(env, who, region, visits, dayNotes = {}) {
 export async function saveDraft(env, region, visits, dayNotes = {}) {
   const cur = await getPlan(env, region);
   if (cur.status === 'locked') return { error: 'Plan is locked', status: 409 };
-  const draft = { ...cur, day_notes: dayNotes || {}, visits: visits.map((v) => ({ id: v.id || uid(), school: v.school, date: v.date || null, start: v.start || '08:00', team: v.team || [], notices: {}, status: 'planned' })) };
+  const draft = { ...cur, day_notes: dayNotes || {}, visits: visits.map((v) => ({ id: v.id || uid(), school: v.school, date: v.date || null, start: v.start || '08:00', team: v.team || [], lead: v.lead || null, notices: {}, status: 'planned' })) };
   await kv(env).put(key(region), draft);
   return { plan: draft };
 }
 
-export async function changeVisit(env, who, region, { visit_id, new_date, new_start, new_team, reason_code, note }, today) {
+export async function changeVisit(env, who, region, { visit_id, new_date, new_start, new_team, new_lead, reason_code, note }, today) {
   const plan = await getPlan(env, region);
   if (plan.status !== 'locked') return { error: 'Submit the plan first', status: 409 };
   const v = plan.visits.find((x) => x.id === visit_id);
@@ -99,6 +119,7 @@ export async function changeVisit(env, who, region, { visit_id, new_date, new_st
   v.date = date;
   v.start = new_start || v.start;
   if (new_team) v.team = new_team.slice(0, 8);
+  if (new_lead) { const le = leadErrors(region, [{ ...v, lead: new_lead }]); if (le.length) return { error: le[0], status: 422 }; v.lead = new_lead; }
   plan.version += 1;
   await kv(env).put(key(region), plan);
   return { plan };
@@ -125,7 +146,7 @@ export function withNotices(plan, today, schoolVisits) {
       let outcome = null;
       if (v.date <= today) outcome = dates.includes(v.date) ? 'visited' : dates.length ? 'visited_other_day' : v.date < today ? 'missed' : 'today';
       return {
-        ...v, school_name: SCHOOL_BY_ID[v.school]?.name, lga: SCHOOL_BY_ID[v.school]?.lga, mne: SCHOOL_BY_ID[v.school]?.mne,
+        ...v, lead_name: leadOfVisit(v, plan.region), school_name: SCHOOL_BY_ID[v.school]?.name, lga: SCHOOL_BY_ID[v.school]?.lga, mne: SCHOOL_BY_ID[v.school]?.mne,
         aek_due: aekDue, ht_due: htDue,
         aek_state: state(v.notices?.aek, aekDue), ht_state: state(v.notices?.ht, htDue), team_state: state(v.notices?.team, htDue),
         outcome,

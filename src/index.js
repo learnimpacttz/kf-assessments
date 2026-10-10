@@ -1,4 +1,5 @@
 import { koboForm } from './koboforms.js';
+import { ownWork, teamBlock, coordinatorOverview } from './own.js';
 import { buildCalendar, markCalendarDirty, syncCalendar, calendarStatus, setCalSync, loadCalSync } from './calendar.js';
 import { loadFormJob, saveFormJob, runFormJob, maybeRunFormJob } from './formjob.js';
 import { kv } from './store.js';
@@ -133,10 +134,17 @@ export default {
           base.calendar_changes = feed.sort((x, y) => (y.at > x.at ? 1 : -1)).slice(0, 40);
           const plans = {};
           (await Promise.all(REGIONS.map((r) => getPlan(env, r)))).forEach((p, k) => { plans[REGIONS[k]] = { status: p.status, visits: p.visits.length, changes: p.changes.length, late_changes: p.changes.filter((c) => c.late).length, submitted_at: p.submitted_at, days_one: dayCounts(p).one, days_three: dayCounts(p).three }; });
-          return json({ ...base, staff: STAFF.filter((s) => s.active).map((s) => ({ id: s.id, name: s.name, position: s.position, region: s.region, role: s.role })), admins: sum.admins, flags: decorate(sum.flags.map((f) => ({ ...f, school_name: SCHOOL_BY_ID[f.school]?.name, region: SCHOOL_BY_ID[f.school]?.region, lga: SCHOOL_BY_ID[f.school]?.lga, ward: SCHOOL_BY_ID[f.school]?.ward })), queries).slice(0, 600), plans, unlisted: sum.admins.filter((a) => a.role === 'unlisted').map((a) => a.name) });
+          const plansAll = Object.fromEntries(await Promise.all(REGIONS.map(async (rg) => [rg, await getPlan(env, rg)])));
+          const flagsByRegion = {}; for (const rg of REGIONS) flagsByRegion[rg] = decorate(sum.flags.filter((f) => SCHOOL_BY_ID[f.school]?.region === rg), queries);
+          const coord = coordinatorOverview({ sum, queries, today: eatToday(), plans: plansAll, flagsByRegion });
+          return json({ ...base, ...coord, staff: STAFF.filter((s) => s.active).map((s) => ({ id: s.id, name: s.name, position: s.position, region: s.region, role: s.role })), admins: sum.admins, flags: decorate(sum.flags.map((f) => ({ ...f, school_name: SCHOOL_BY_ID[f.school]?.name, region: SCHOOL_BY_ID[f.school]?.region, lga: SCHOOL_BY_ID[f.school]?.lga, ward: SCHOOL_BY_ID[f.school]?.ward })), queries).slice(0, 600), plans, unlisted: sum.admins.filter((a) => a.role === 'unlisted').map((a) => a.name) });
         }
         if (who.role === 'rc' || who.role === 'arc') {
-          return json({ ...base, mine: regionBundle(sum, who.region, who, queries) });
+          const bundle = regionBundle(sum, who.region, who, queries);
+          const plan = await getPlan(env, who.region);
+          const ctx = { sum, plan, queries, flags: bundle.flags, today: eatToday() };
+          const me = STAFF.find((s) => s.id === who.id);
+          return json({ ...base, mine: { ...bundle, own: me ? ownWork(ctx, me) : null, team_block: teamBlock(ctx, who.region), arc_own: who.role === 'rc' ? (() => { const a = STAFF.find((s) => s.active && s.region === who.region && s.role === 'arc'); return a ? ownWork(ctx, a) : null; })() : null } });
         }
         // volunteer: own numbers, own queries, own work, and region ranks
         const me = sum.admins.find((a) => a.staff_id === who.id) || null;
@@ -630,7 +638,7 @@ export default {
       if (path === '/api/admin/refresh' && method === 'POST') return json({ ran: await tick(env, { force: true }) });
       if (path === '/api/admin/resync' && method === 'POST') {
         const b = await request.json();
-        if (b.kind === 'teachers') for (const y of await stateYears(env)) { const Y = await loadYear(env, y); if (Y && Object.keys(Y.tf || {}).length) { Y.tf = {}; await saveYear(env, y, Y); } } // teacher aggregates are rebuilt from scratch so nothing is counted twice
+        if (b.kind === 'teachers') for (const y of await stateYears(env)) { const Y = await loadYear(env, y); if (Y && Object.keys(Y.tf || {}).length) { Y.tf = {}; Y.tfp = {}; await saveYear(env, y, Y); } } // teacher aggregates are rebuilt from scratch so nothing is counted twice
         await resetKind(env, b.kind); return json({ ok: true, kind: b.kind });
       }
       if (path === '/api/admin/recompute' && method === 'POST') { await recomputeSummaries(env, null, { allDays: true }); return json({ ok: true }); }

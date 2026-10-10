@@ -130,7 +130,7 @@ export function summarize(Y, { year, bands, today, owners = {}, practice = false
   const mkSchool = (s) => ({
     id: s.id, name: s.name, region: s.region, lga: s.lga, ward: s.ward, arm: s.arm, mne: s.mne,
     g: { 1: { n: 0, av: 0, att: null }, 2: { n: 0, av: 0, att: null }, 3: { n: 0, av: 0, att: null } },
-    dates: [], admins: [], maxTeam: 0, tf: 0, res: { 1: { r: [0, 0], a: [0, 0] }, 2: { r: [0, 0], a: [0, 0] }, 3: { r: [0, 0], a: [0, 0] } }, tch: null, done: false, started: false, last: null, first: null,
+    dates: [], dayAdmins: {}, admins: [], maxTeam: 0, tf: 0, res: { 1: { r: [0, 0], a: [0, 0] }, 2: { r: [0, 0], a: [0, 0] }, 3: { r: [0, 0], a: [0, 0] } }, tch: null, done: false, started: false, last: null, first: null,
   });
   for (const s of Object.values(UNI)) schools[s.id] = mkSchool(s);
 
@@ -138,7 +138,7 @@ export function summarize(Y, { year, bands, today, owners = {}, practice = false
     const a = (admins[name] ||= {
       name, staff: staffForKoboName(name), n: 0, tn: 0, ts: 0, days: new Set(), schools: new Set(),
       fast: 0, slow: 0, late: 0, far: 0, notList: 0, dup: 0, zero: 0, byGrade: { 1: { tn: 0, ts: 0 }, 2: { tn: 0, ts: 0 }, 3: { tn: 0, ts: 0 } },
-      inBand: 0, listChecked: 0, sb: [0, 0, 0, 0, 0, 0, 0], sbs: [0, 0, 0, 0, 0, 0, 0],
+      samp: 0, tf: 0, inBand: 0, listChecked: 0, sb: [0, 0, 0, 0, 0, 0, 0], sbs: [0, 0, 0, 0, 0, 0, 0],
     });
     return a;
   };
@@ -165,6 +165,7 @@ export function summarize(Y, { year, bands, today, owners = {}, practice = false
     sc.g[grade].av += c.av;
     if (!sc.dates.includes(date)) sc.dates.push(date);
     if (enumerator && !sc.admins.includes(enumerator)) sc.admins.push(enumerator);
+    if (enumerator) { const da = (sc.dayAdmins[date] ||= []); if (!da.includes(enumerator)) da.push(enumerator); }
     (visitTeam[schoolId + '|' + date] ||= new Set()).add(enumerator);
     const d = ((daily[date] ||= {})[sc.region] = (daily[date][sc.region] || 0) + c.av);
     void d;
@@ -202,6 +203,7 @@ export function summarize(Y, { year, bands, today, owners = {}, practice = false
     if (!sc) continue;
     if (sg.att !== null) sc.g[grade].att = sg.att;
     if (sg.dev && sg.date) noteDev(sg.dev, sg.devWho || sg.enum || '', schoolId, sg.date, 1);
+    if (sg.enum) { adminOf(sg.enum).samp += 1; if (sg.date) { const da = (sc.dayAdmins[sg.date] ||= []); if (!da.includes(sg.enum)) da.push(sg.enum); } }
     if (sg.sb && sg.enum) mergeSb(adminOf(sg.enum).sbs, sg.sb);
     if (sg.sb && sg.enum && sg.sb[2] + sg.sb[3] > 0) flags.push({ sev: 'warn', type: 'latesub', school: schoolId, grade: +grade, admin: sg.enum, date: sg.date || '', text: `Sampling form sent 2 or more days after the visit`, hint: 'Send records the same day. Turn on auto send in KoBo Collect so nothing waits on the phone.' });
     const seen = new Map();
@@ -304,6 +306,7 @@ export function summarize(Y, { year, bands, today, owners = {}, practice = false
   });
 
   // admins -> scores
+  for (const [nm, n] of Object.entries(Y.tfp || {})) adminOf(nm).tf = n; // teacher and baseline forms sent, by person
   const adminList = Object.values(admins).map((a) => {
     const avgAll = a.tn ? a.ts / a.tn : null;
     const tooFastShare = a.tn ? a.fast / a.tn : 0;
@@ -321,7 +324,7 @@ export function summarize(Y, { year, bands, today, owners = {}, practice = false
       fast: a.fast, slow: a.slow, late: a.late, far: a.far, not_list: a.notList, zero: a.zero,
       by_grade: Object.fromEntries([1, 2, 3].map((g) => [g, a.byGrade[g].tn ? r1(a.byGrade[g].ts / a.byGrade[g].tn) : null])),
       quality, fast_share: pct(a.fast, a.tn),
-      sub: subStats(a.sb), subs: subStats(a.sbs), sub_all: subStats(sumSb(a.sb, a.sbs)),
+      samp: a.samp, tf: a.tf, sub: subStats(a.sb), subs: subStats(a.sbs), sub_all: subStats(sumSb(a.sb, a.sbs)),
     };
   });
 
