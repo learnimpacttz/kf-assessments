@@ -13,6 +13,14 @@ export const TARGET_PER_GRADE = 20; // 20 pupils per grade per school (60 a scho
 export const DODOMA_TARGET_PER_GRADE = 40; // Dodoma training region: 40 x 3 = 120
 export const MAX_SCHOOLS_PER_DAY = 3; // 2-3 per region per day
 export const DODOMA_MAX_SCHOOLS_PER_DAY = 5;
+// Protocol: 2 schools a day per region (the coordinator and the assistant each lead one school with 2 volunteers).
+// One school (everyone together, for a large school) or three schools (small schools close together) are allowed,
+// but the plan must say why.
+export const STANDARD_SCHOOLS_PER_DAY = 2;
+export const DAY_REASONS = {
+  three: { small_schools: 'The schools are small', close_by: 'The schools are close to each other and the roads allow it', other: 'Other (explain)' },
+  one: { large_school: 'Large school: the whole team works together', distance: 'Distance or a difficult road', remote: 'Remote school', other: 'Other (explain)' },
+};
 export const NOTICE_AEK_WORKING_DAYS = 5; // ward education officer
 export const NOTICE_HT_WORKING_DAYS = 3; // head teacher
 export const FIELD_HOURS = [7, 14]; // from the student form's own time-limit note

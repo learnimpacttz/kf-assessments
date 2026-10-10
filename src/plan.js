@@ -5,7 +5,7 @@
 // per visit, and the team is told what is expected at the same time.
 import { kv } from './store.js';
 import {
-  SCHOOL_BY_ID, SCHOOLS_BY_REGION, FIELD_START, FIELD_END, PILOT_DAY, planWindow, MAX_SCHOOLS_PER_DAY, DODOMA_MAX_SCHOOLS_PER_DAY, REASONS,
+  SCHOOL_BY_ID, SCHOOLS_BY_REGION, FIELD_START, FIELD_END, PILOT_DAY, planWindow, DAY_REASONS, MAX_SCHOOLS_PER_DAY, DODOMA_MAX_SCHOOLS_PER_DAY, REASONS,
   NOTICE_AEK_WORKING_DAYS, NOTICE_HT_WORKING_DAYS, addWorkingDays, workingDaysBetween, isWorkingDay,
 } from './config.js';
 
@@ -17,7 +17,8 @@ export async function getPlan(env, region) {
 
 const uid = () => Math.random().toString(36).slice(2, 8);
 
-function validateVisits(region, visits) {
+const dayNoteOk = (kind, n) => n && DAY_REASONS[kind][n.code] && String(n.note || '').trim().length >= 8;
+function validateVisits(region, visits, dayNotes = {}) {
   const errors = [];
   const ids = new Set((SCHOOLS_BY_REGION[region] || []).map((s) => s.id));
   const cap = region === 'DODOMA' ? DODOMA_MAX_SCHOOLS_PER_DAY : MAX_SCHOOLS_PER_DAY;
@@ -33,29 +34,39 @@ function validateVisits(region, visits) {
       if (v.date < w0 || v.date > w1) errors.push(`${SCHOOL_BY_ID[v.school]?.name}: ${v.date} is outside ${w0} to ${w1}`);
       if (region === 'DODOMA' && v.date !== PILOT_DAY) errors.push(`${SCHOOL_BY_ID[v.school]?.name}: the pilot schools are visited on the pilot day, ${PILOT_DAY}`);
       if (!isWorkingDay(v.date)) errors.push(`${SCHOOL_BY_ID[v.school]?.name}: ${v.date} is a weekend`);
-      perDay[v.date] = (perDay[v.date] || 0) + 1;
+      (perDay[v.date] ||= []).push(v);
     }
   }
-  for (const [d, n] of Object.entries(perDay)) if (n > cap) errors.push(`${d}: ${n} schools planned, the limit is ${cap} a day`);
+  for (const [d, vs] of Object.entries(perDay)) {
+    const n = vs.length;
+    if (n > cap) errors.push(`${d}: ${n} schools planned, the limit is ${cap} a day`);
+    if (region !== 'DODOMA' && n === 3 && !dayNoteOk('three', dayNotes[d])) errors.push(`${d}: 3 schools in one day needs a reason (small schools, close together) and a short explanation of at least 8 characters`);
+    if (region !== 'DODOMA' && n === 1 && !dayNoteOk('one', dayNotes[d])) errors.push(`${d}: only 1 school that day needs a reason (large school, distance, remote) and a short explanation of at least 8 characters`);
+    if (n >= 2) { // nobody can be at two schools on the same day
+      const where = {};
+      for (const v of vs) for (const person of v.team || []) { if (where[person] && where[person] !== v.school) errors.push(`${d}: ${person} is in the team of two different schools`); where[person] = v.school; }
+    }
+  }
   for (const id of ids) if (!seen.has(id)) errors.push(`${SCHOOL_BY_ID[id].name} has no date yet`);
   return errors;
 }
 
-export async function submitPlan(env, who, region, visits) {
+export async function submitPlan(env, who, region, visits, dayNotes = {}) {
   const cur = await getPlan(env, region);
   if (cur.status === 'locked') return { error: 'The plan is already submitted. Use a change with a reason.', status: 409 };
   const clean = visits.map((v) => ({ id: v.id || uid(), school: v.school, date: v.date, start: v.start || '08:00', team: (v.team || []).slice(0, 8), notices: {}, status: 'planned' }));
-  const errors = validateVisits(region, clean);
+  const notes = Object.fromEntries(Object.entries(dayNotes || {}).map(([d, n]) => [d, { code: n.code, note: String(n.note || '').slice(0, 300) }]));
+  const errors = validateVisits(region, clean, notes);
   if (errors.length) return { error: 'The plan has problems', errors, status: 422 };
-  const plan = { region, status: 'locked', version: 1, visits: clean, changes: [], submitted_at: new Date().toISOString(), submitted_by: who.name };
+  const plan = { region, status: 'locked', version: 1, visits: clean, day_notes: notes, changes: [], submitted_at: new Date().toISOString(), submitted_by: who.name };
   await kv(env).put(key(region), plan);
   return { plan };
 }
 
-export async function saveDraft(env, region, visits) {
+export async function saveDraft(env, region, visits, dayNotes = {}) {
   const cur = await getPlan(env, region);
   if (cur.status === 'locked') return { error: 'Plan is locked', status: 409 };
-  const draft = { ...cur, visits: visits.map((v) => ({ id: v.id || uid(), school: v.school, date: v.date || null, start: v.start || '08:00', team: v.team || [], notices: {}, status: 'planned' })) };
+  const draft = { ...cur, day_notes: dayNotes || {}, visits: visits.map((v) => ({ id: v.id || uid(), school: v.school, date: v.date || null, start: v.start || '08:00', team: v.team || [], notices: {}, status: 'planned' })) };
   await kv(env).put(key(region), draft);
   return { plan: draft };
 }
@@ -81,6 +92,10 @@ export async function changeVisit(env, who, region, { visit_id, new_date, new_st
     reason_code, reason: REASONS[reason_code], note: (note || '').slice(0, 300), late,
   });
   if (date !== v.date) { v.notices = {}; v.status = 'moved'; }
+  plan.day_notes ||= {};
+  const dayNote = { code: 'change', note: `${REASONS[reason_code]}${note ? ': ' + String(note).slice(0, 200) : ''} (changed by ${who.name})` };
+  plan.day_notes[date] = plan.day_notes[date] || dayNote;
+  if (date !== v.date) plan.day_notes[v.date] = plan.day_notes[v.date] || dayNote;
   v.date = date;
   v.start = new_start || v.start;
   if (new_team) v.team = new_team.slice(0, 8);

@@ -65,7 +65,7 @@ const above = (h, minutes) => {
   return s;
 };
 
-export function summarize(Y, { year, bands, today }) {
+export function summarize(Y, { year, bands, today, owners = {} }) {
   const schools = {};
   const admins = {};
   const flags = [];
@@ -86,6 +86,16 @@ export function summarize(Y, { year, bands, today }) {
     return a;
   };
 
+  const dayPeople = {}; // school|date -> { names, devs }
+  const dayDev = {};    // date|device -> { names, school }
+  const devReg = {};    // device -> { names: {name: n}, days, schools, n }
+  const noteDev = (dev, who, schoolId, date, n, fromTests = false) => {
+    if (!dev) return;
+    const dp = (dayPeople[schoolId + '|' + date] ||= { names: new Set(), devs: new Set(), tdevs: new Set() }); dp.devs.add(dev); if (fromTests) dp.tdevs.add(dev); if (who) dp.names.add(who);
+    const dd = (dayDev[date + '|' + dev + '|' + schoolId] ||= new Set()); if (who) dd.add(who);
+    const r = (devReg[dev] ||= { names: {}, days: new Set(), schools: new Set(), n: 0 });
+    if (who) r.names[who] = (r.names[who] || 0) + n; r.days.add(date); r.schools.add(schoolId); r.n += n;
+  };
   const dayMap = {}; // admin -> date -> { schools, tested, h0, h1 }
   const work = {}; // admin -> recent rows [date, school, grade, tested, avg_min]
   const hasSampling = Boolean(Y.nsamp);
@@ -111,6 +121,8 @@ export function summarize(Y, { year, bands, today }) {
     a.fast += fast; a.slow += slow; a.late += c.late; a.far += c.far; a.inBand += inBand;
     a.byGrade[grade].tn += c.tn; a.byGrade[grade].ts += c.ts;
     (work[enumerator] ||= []).push([date, schoolId, +grade, c.av, c.tn ? r1(c.ts / c.tn) : null]);
+    (dayPeople[schoolId + '|' + date] ||= { names: new Set(), devs: new Set(), tdevs: new Set() }).names.add(enumerator);
+    for (const [dv, cnt] of Object.entries(c.dv || {})) noteDev(dv, enumerator, schoolId, date, cnt, true);
     const dm = ((dayMap[enumerator] ||= {})[date] ||= { s: new Set(), n: 0, h0: 99, h1: -1 });
     dm.s.add(schoolId); dm.n += c.av; if (c.h0 < dm.h0) dm.h0 = c.h0; if (c.h1 > dm.h1) dm.h1 = c.h1;
     for (const [pk, pv] of Object.entries(c.ps)) { const dom = pk[0], gg = pk[1]; const slot = sc.res[gg] && sc.res[gg][dom]; if (slot) { slot[0] += pv[0]; slot[1] += pv[1]; } } // results by grade and subject (HQ only downstream)
@@ -130,6 +142,7 @@ export function summarize(Y, { year, bands, today }) {
     const sc = schools[schoolId];
     if (!sc) continue;
     if (sg.att !== null) sc.g[grade].att = sg.att;
+    if (sg.dev && sg.date) noteDev(sg.dev, sg.devWho || sg.enum || '', schoolId, sg.date, 1);
     const seen = new Map();
     let notList = 0;
     const byAdmin = {};
@@ -205,6 +218,28 @@ export function summarize(Y, { year, bands, today }) {
     reg.schools.push(sc.id);
   }
 
+  // ---- people and phones: who was physically at the school ----
+  const devCode = (d) => { let h = 2166136261; for (let i = 0; i < d.length; i++) { h ^= d.charCodeAt(i); h = Math.imul(h, 16777619); } return 'D-' + (h >>> 0).toString(16).toUpperCase().padStart(8, '0').slice(0, 6); };
+  for (const [key, dp] of Object.entries(dayPeople)) {
+    const [schoolId, date] = key.split('|'); const sc = schools[schoolId]; if (!sc) continue;
+    sc.people = sc.people || {};
+    sc.people[date] = [dp.names.size, dp.devs.size];
+    // only when the TEST records carry phone IDs: sampling phones alone say nothing about how many people tested
+    if (dp.tdevs.size && dp.tdevs.size < dp.names.size) flags.push({ sev: 'warn', type: 'headcount', school: schoolId, admin: [...dp.names].join(', '), date, text: `${dp.names.size} test admins recorded by name but only ${dp.tdevs.size} phone(s) sent tests`, hint: 'Someone may have used another person\'s phone or name. Confirm who was at the school.', normal: 'one phone per test admin' });
+  }
+  for (const [key, names] of Object.entries(dayDev)) {
+    const [date, dev, schoolId] = key.split('|'); if (!schools[schoolId]) continue;
+    if (names.size >= 2) flags.push({ sev: 'warn', type: 'devshare', school: schoolId, admin: [...names].join(' and '), date, text: `One phone (${devCode(dev)}) was used under ${names.size} names on the same day: ${[...names].join(', ')}`, hint: 'Each person should use their own phone. Confirm who tested.', normal: 'one name per phone' });
+    const ownerId = owners[dev];
+    if (ownerId != null) for (const nm of names) { const st = staffForKoboName(nm); if (st && st.id !== ownerId) { const own = STAFF.find((x) => x.id === ownerId); flags.push({ sev: 'bad', type: 'devowner', school: schoolId, admin: nm, date, text: `${nm} submitted from the phone registered to ${own ? own.name : 'another person'} (${devCode(dev)})`, hint: 'Check whether the phone was lent or the wrong name was chosen.', normal: 'own phone' }); } }
+  }
+  const devices = Object.entries(devReg).map(([dev, r]) => {
+    const top = Object.entries(r.names).sort((a, b) => b[1] - a[1]);
+    const share = top.length ? top[0][1] / r.n : 0;
+    const sugg = top.length && r.n >= 5 && share >= 0.7 ? staffForKoboName(top[0][0]) : null;
+    return { code: devCode(dev), raw: dev, tests: r.n, days: r.days.size, schools: r.schools.size, names: top.slice(0, 4).map(([n, c]) => [n, c]), suggested: sugg ? sugg.id : null, owner: owners[dev] ?? null, mixed: top.length > 1 && share < 0.9 };
+  });
+
   // admins -> scores
   const adminList = Object.values(admins).map((a) => {
     const avgAll = a.tn ? a.ts / a.tn : null;
@@ -262,7 +297,7 @@ export function summarize(Y, { year, bands, today }) {
   nat.pace = r1(paceAll);
   nat.projected = remainingAll <= 0 ? 'done' : paceAll > 0 ? addWorkingDays(today, Math.ceil(remainingAll / paceAll)) : null;
 
-  return { year, as_of: new Date().toISOString(), today, bands, national: nat, regions, schools, admins: adminList, flags: flags.slice(0, 1500), days: Object.fromEntries(Object.entries(dayMap).map(([who, m]) => [who, Object.entries(m).sort().map(([d, v]) => [d, v.s.size, v.n, v.h0 === 99 ? null : v.h0, v.h1 < 0 ? null : v.h1])])), work: Object.fromEntries(Object.entries(work).map(([k, v]) => [k, v.sort((x, y) => (x[0] < y[0] ? 1 : -1)).slice(0, 80)])) };
+  return { year, as_of: new Date().toISOString(), today, bands, devices, national: nat, regions, schools, admins: adminList, flags: flags.slice(0, 1500), days: Object.fromEntries(Object.entries(dayMap).map(([who, m]) => [who, Object.entries(m).sort().map(([d, v]) => [d, v.s.size, v.n, v.h0 === 99 ? null : v.h0, v.h1 < 0 ? null : v.h1])])), work: Object.fromEntries(Object.entries(work).map(([k, v]) => [k, v.sort((x, y) => (x[0] < y[0] ? 1 : -1)).slice(0, 80)])) };
 }
 
 export const staffRoster = () => STAFF;

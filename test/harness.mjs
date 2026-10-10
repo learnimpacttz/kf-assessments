@@ -16,8 +16,11 @@ const stub = {
   get: async (k) => mem.get(k) ?? null, put: async (k, v) => void mem.set(k, v), del: async (k) => void mem.delete(k),
   acquire: async () => true, release: async () => {},
 };
+const kvMem = new Map();
+const FAKE_KV = { get: async (k, o) => { const e = kvMem.get(k); if (!e) return null; const t = typeof o === 'string' ? o : o?.type; return t === 'json' ? JSON.parse(e.v) : t === 'arrayBuffer' ? e.v : e.v; }, put: async (k, v, o) => void kvMem.set(k, { v: typeof v === 'string' || v instanceof ArrayBuffer ? v : JSON.stringify(v), meta: o?.metadata }), list: async ({ prefix }) => ({ keys: [...kvMem.entries()].filter(([k]) => k.startsWith(prefix || '')).map(([name, e]) => ({ name, metadata: e.meta })), list_complete: true }), delete: async (k) => void kvMem.delete(k) };
 const PUB = path.resolve('../public');
 const env = {
+  DASHBOARD_KV: FAKE_KV,
   STORE: { idFromName: () => 'x', get: () => stub }, HQ_SECRET: 'HQTEST', AUTH_SALT: 'salt', KOBO_SERVER: 'kobo.test', KOBO_ASSET_ID: 'ASSET1', KOBO_TOKEN: 'tok',
   ASSETS: { fetch: async (req) => { const u = new URL(req.url); let p = path.join(PUB, u.pathname === '/' ? 'index.html' : u.pathname); if (!fs.existsSync(p)) return new Response('nf', { status: 404 }); const ext = path.extname(p); const types = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.png': 'image/png', '.json': 'application/json' }; return new Response(fs.readFileSync(p), { headers: { 'content-type': types[ext] || 'application/octet-stream' } }); } },
 };
@@ -31,11 +34,13 @@ function visit(year, region, schoolIdx, date, nSchoolsStaff) {
   const recs = [], samp = [];
   for (const g of [1, 2, 3]) {
     const att = 40 + Math.floor(Math.random() * 60);
-    samp.push({ year, 'id_data/school': s.id, 'id_data/grade': String(g), 'id_data/enumerator': staff[0].name, 'att_gr/att': String(att), ...Object.fromEntries(Array.from({ length: 20 }, (_, k) => ['att_gr/int' + (k + 1), String((k + 1) * 3)])), date });
+    samp.push({ year, 'id_data/school': s.id, 'id_data/grade': String(g), 'id_data/enumerator': staff[0].name, deviceid: 'collect:' + staff[0].name.replace(/\s/g, ''), 'att_gr/att': String(att), ...Object.fromEntries(Array.from({ length: 20 }, (_, k) => ['att_gr/int' + (k + 1), String((k + 1) * 3)])), date });
     for (let i = 1; i <= 20; i++) {
       const adm = staff[(i + g) % staff.length].name;
+      const forced = region === 'TANGA' && schoolIdx === 3 && year === '2026';
+      const dev = forced ? 'collect:SHARED' : 'collect:' + adm.replace(/\s/g, '');
       const rushed = region === 'TANGA' && g === 2 && i % 7 === 0 && schoolIdx === 1;
-      recs.push({ _id: id++, year, today: date, 'group_intro/date': date, 'id_data/school': s.id, 'id_data/grade': String(g), 'id_data/enumerator': adm, 'stu_info/rand_nr': String(i * 3), start: `${date}T0${8 + (i % 4)}:${10 + i}:00+03:00`, 'end_note_gr/testtime_rounded': String(rushed ? 1.5 : (g * 2.6 + rnd(2, 5)).toFixed(1)), stu_avail: '1', ['k' + g + '_g_words']: '1', _submission_time: date + 'T10:00:00' });
+      recs.push({ _id: id++, year, today: date, 'group_intro/date': date, 'id_data/school': s.id, 'id_data/grade': String(g), 'id_data/enumerator': adm, 'stu_info/rand_nr': String(i * 3), start: `${date}T0${8 + (i % 4)}:${10 + i}:00+03:00`, 'end_note_gr/testtime_rounded': String(rushed ? 1.5 : (g * 2.6 + rnd(2, 5)).toFixed(1)), stu_avail: '1', deviceid: dev, ['k' + g + '_g_words']: '1', _submission_time: date + 'T10:00:00' });
     }
   }
   return { recs, samp };

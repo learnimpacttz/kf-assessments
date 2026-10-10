@@ -20,25 +20,53 @@ export async function buildBackup(env, full) {
   return out;
 }
 
-export async function runBackup(env, { full = false, to } = {}) {
+// Every night the backup is stored inside Cloudflare (Workers KV, kept apart from the live store, 21 days for daily
+// copies and about 4 months for Sunday full copies). Once a week, with the Sunday full copy, it is also emailed.
+export async function runBackup(env, { full = false, email = false, testTo = null } = {}) {
   const data = await buildBackup(env, full);
   const json = JSON.stringify(data);
   const gz = await gzip(json);
   const day = data.at.slice(0, 10);
-  const meta = { at: data.at, bytes: json.length, gz_bytes: gz.byteLength, full: Boolean(full), items: { plans: Object.values(data.plans).filter((p) => p.status === 'locked').length, queries: Object.keys(data.queries).length, years: data.states ? Object.keys(data.states).length : 0 } };
-  let emailed = false;
-  const target = to || env.BACKUP_TO || 'mkamukulu@learnimpact.org';
-  if (env.EMAIL_ENABLED === 'true' && env.EMAIL_FROM && env.RESEND_API_KEY && gz.byteLength < 30 * 1024 * 1024) {
-    await sendMail(env, target, {
-      subject: `KiuFunza 4 · Automated backup · ${day}${full ? ' (full)' : ''}`,
-      html: `<p><b>AUTOMATED BACKUP · NO REPLY NEEDED</b></p><p>Field plans and their changes (${meta.items.plans} submitted), queries and replies (${meta.items.queries}), the roster and email recipients${full ? ', and the stored data for ' + meta.items.years + ' year(s)' : ''}. Keep this file somewhere safe. HQ can restore from it in the Admin tab.</p>`,
-      text: `AUTOMATED BACKUP - no reply needed\nKiuFunza 4 backup ${day}${full ? ' (full)' : ''}. Keep the attachment safe.`,
-      attachments: [{ filename: `kf4-backup-${day}${full ? '-full' : ''}.json.gz`, content: b64(gz) }],
-    });
-    emailed = true;
+  const key = `bk:${day}${full ? '-full' : ''}`;
+  const meta = { at: data.at, key, bytes: json.length, gz_bytes: gz.byteLength, full: Boolean(full), items: { plans: Object.values(data.plans).filter((p) => p.status === 'locked').length, queries: Object.keys(data.queries).length, years: data.states ? Object.keys(data.states).length : 0 } };
+  let stored = false;
+  if (env.DASHBOARD_KV && gz.byteLength < 24 * 1024 * 1024) { await env.DASHBOARD_KV.put(key, gz, { expirationTtl: (full ? 120 : 21) * 86400, metadata: { at: data.at, full: Boolean(full), gz_bytes: gz.byteLength, plans: meta.items.plans, queries: meta.items.queries, years: meta.items.years } }); stored = true; }
+  let emailed = false, to = null, cc = [];
+  if (email && env.EMAIL_ENABLED === 'true' && env.EMAIL_FROM && env.RESEND_API_KEY && gz.byteLength < 30 * 1024 * 1024) {
+    const rec = Object.entries(await loadRecipients(env)).filter(([, r]) => r.active !== false);
+    to = testTo || rec.find(([, r]) => r.backup === 'to')?.[0] || env.BACKUP_TO || null;
+    cc = testTo ? [] : rec.filter(([, r]) => r.backup === 'cc').map(([e]) => e); // a test goes only to the address given
+    if (to) {
+      await sendMail(env, to, {
+        cc,
+        subject: `${testTo ? '[TEST] ' : ''}KiuFunza 4 · Automated weekly backup · ${day}`,
+        html: `<p><b>AUTOMATED BACKUP · NO REPLY NEEDED</b></p><p>Weekly full backup of the field dashboard: field plans and their changes (${meta.items.plans} submitted), queries and replies (${meta.items.queries}), the roster, email recipients and the stored data for ${meta.items.years} year(s). A copy is also kept inside Cloudflare every night. Please keep this file somewhere safe. HQ can restore from it in the Admin tab.</p>`,
+        text: `AUTOMATED BACKUP - no reply needed\nKiuFunza 4 weekly backup ${day}. Keep the attachment safe.`,
+        attachments: [{ filename: `kf4-backup-${day}-full.json.gz`, content: b64(gz) }],
+      });
+      emailed = true;
+    }
   }
-  await kv(env).put('v2:backup:last', { ...meta, emailed, to: emailed ? target : null });
-  return { ...meta, emailed };
+  await kv(env).put('v2:backup:last', { ...meta, stored, emailed, to, cc });
+  return { ...meta, stored, emailed, to, cc };
+}
+
+export async function listBackups(env) {
+  if (!env.DASHBOARD_KV) return [];
+  const out = [];
+  let cursor;
+  do { const r = await env.DASHBOARD_KV.list({ prefix: 'bk:', cursor }); for (const k of r.keys) out.push({ key: k.name, ...(k.metadata || {}) }); cursor = r.list_complete ? null : r.cursor; } while (cursor);
+  return out.sort((a, b) => (a.key < b.key ? 1 : -1));
+}
+export async function readStoredBackup(env, key) {
+  if (!/^bk:\d{4}-\d\d-\d\d(-full)?$/.test(key || '')) return null;
+  const buf = await env.DASHBOARD_KV.get(key, 'arrayBuffer');
+  if (!buf) return null;
+  return JSON.parse(await new Response(new Blob([buf]).stream().pipeThrough(new DecompressionStream('gzip'))).text());
+}
+export async function rawStoredBackup(env, key) {
+  if (!/^bk:\d{4}-\d\d-\d\d(-full)?$/.test(key || '')) return null;
+  return env.DASHBOARD_KV.get(key, 'arrayBuffer');
 }
 
 export async function maybeRunScheduledBackup(env) {
@@ -48,7 +76,8 @@ export async function maybeRunScheduledBackup(env) {
   const ran = (await kv(env).get('v2:backup:ran')) || {};
   if (ran.day === day) return null;
   await kv(env).put('v2:backup:ran', { day });
-  return runBackup(env, { full: now.getUTCDay() === 0 });
+  const sunday = now.getUTCDay() === 0;
+  return runBackup(env, { full: sunday, email: sunday }); // nightly into Cloudflare; the Sunday full copy is also emailed
 }
 
 // Restores plans, queries, roster and recipients. Year aggregates are restored only if asked and present.

@@ -19,7 +19,7 @@ export async function saveRecipients(env, rows) {
   for (const r of rows || []) {
     const email = String(r.email || '').trim().toLowerCase();
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) continue;
-    out[email] = { name: String(r.name || '').slice(0, 80), role: ['hq', 'rc', 'arc'].includes(r.role) ? r.role : 'rc', region: r.region ? String(r.region).toUpperCase() : null, copy: Boolean(r.copy), active: r.active !== false && !r.paused, from: /^\d{4}-\d\d-\d\d$/.test(r.from || '') ? r.from : null };
+    out[email] = { name: String(r.name || '').slice(0, 80), role: ['hq', 'rc', 'arc'].includes(r.role) ? r.role : 'rc', region: r.region ? String(r.region).toUpperCase() : null, copy: Boolean(r.copy), backup: r.backup === 'to' || r.backup === 'cc' ? r.backup : undefined, active: r.active !== false && !r.paused, from: /^\d{4}-\d\d-\d\d$/.test(r.from || '') ? r.from : null };
   }
   await kv(env).put(RKEY, out);
   return Object.keys(out).length;
@@ -74,7 +74,7 @@ export async function sendMail(env, to, msg) {
     const res = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: { authorization: `Bearer ${env.RESEND_API_KEY}`, 'content-type': 'application/json' },
-      body: JSON.stringify({ from: `${FROM_NAME} <${env.EMAIL_FROM}>`, to: [to], subject: msg.subject, html: msg.html, text: msg.text, ...(msg.attachments ? { attachments: msg.attachments } : {}), ...(env.EMAIL_REPLY_TO ? { reply_to: env.EMAIL_REPLY_TO } : {}) }),
+      body: JSON.stringify({ from: `${FROM_NAME} <${env.EMAIL_FROM}>`, to: [to], subject: msg.subject, html: msg.html, text: msg.text, ...(msg.cc && msg.cc.length ? { cc: msg.cc } : {}), ...(msg.attachments ? { attachments: msg.attachments } : {}), ...(env.EMAIL_REPLY_TO ? { reply_to: env.EMAIL_REPLY_TO } : {}) }),
     });
     if (!res.ok) throw new Error(`Resend ${res.status}: ${(await res.text()).slice(0, 200)}`);
     return;

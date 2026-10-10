@@ -105,6 +105,7 @@ export function addStudents(state, records) {
         if (raw === '1') p[0] += 1;
       }
     }
+    if (r.deviceid) { c.dv ||= {}; c.dv[r.deviceid] = (c.dv[r.deviceid] || 0) + 1; }
     const cf = calFields(r);
     if (cf.cal_status === 'diff' || cf.cal_status === 'none') {
       const cal = (c.cal ||= { n: 0, a: 0, b: 0, c: 0, planned: cf.cal_planned || '', other: [] });
@@ -141,6 +142,8 @@ export function addSampling(state, records) {
     sg.list = [...new Set([...(sg.list || []), ...list])]; // empty when the class had 20 or fewer present (test all)
     sg.date = (pick(r, 'date') || r.today || '').slice(0, 10);
     sg.enum = pick(r, 'enumerator') || '';
+    const dev = r.deviceid || pick(r, 'deviceid'); // the phone that sent the sampling form
+    if (dev) { sg.dev = dev; sg.devWho = sg.enum; }
     sg.sub = r._submission_time || '';
     Y.nsamp = (Y.nsamp || 0) + 1;
   }

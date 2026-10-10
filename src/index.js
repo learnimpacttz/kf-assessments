@@ -5,17 +5,18 @@ import { loadQueries, decorate, postQuery, flagKey } from './queries.js';
 import { identify, staffCodes, canSeeRegion } from './auth.js';
 import { forecast, atRiskSchools } from './predict.js';
 import { ensureRoster, changeRoster, rosterOptions } from './roster.js';
-import { runBackup, buildBackup, restoreBackup, maybeRunScheduledBackup } from './backup.js';
-import { setValidation, koboWho } from './kobo.js';
+import { runBackup, buildBackup, restoreBackup, maybeRunScheduledBackup, listBackups, readStoredBackup, rawStoredBackup } from './backup.js';
+import { setValidation, koboWho, getValidation, clearValidation } from './kobo.js';
 import { fetchKoboPage } from './kobo.js';
 import { subscribe, unsubscribe, takeAlert, hashEndpoint, pushTo, pushStatus, pushReady, runAlerts } from './push.js';
 import { tick, syncStatus, recomputeSummaries, resetAll, resetKind, loadState, loadYear, saveYear, stateYears } from './sync.js';
 import { getPlan, submitPlan, saveDraft, changeVisit, markNotice, withNotices } from './plan.js';
 import {
-  REGIONS, PARTNERS, REASONS, FIELD_START, FIELD_END, PILOT_DAY, TRAINING_START, CURRENT_YEAR, STAFF, rosterState, staffForKoboName, SCHOOLS_BY_REGION, SCHOOL_BY_ID, eatToday,
+  REGIONS, PARTNERS, REASONS, DAY_REASONS, FIELD_START, FIELD_END, PILOT_DAY, TRAINING_START, CURRENT_YEAR, STAFF, rosterState, staffForKoboName, SCHOOLS_BY_REGION, SCHOOL_BY_ID, eatToday,
   TARGET_PER_GRADE, DODOMA_TARGET_PER_GRADE, NOTICE_AEK_WORKING_DAYS, NOTICE_HT_WORKING_DAYS,
 } from './config.js';
 
+const dayCounts = (p) => { const per = {}; for (const v of p.visits || []) per[v.date] = (per[v.date] || 0) + 1; const n = Object.values(per); return { one: n.filter((x) => x === 1).length, two: n.filter((x) => x === 2).length, three: n.filter((x) => x === 3).length }; };
 const json = (data, status = 200) => Response.json(data, { status, headers: { 'cache-control': 'no-store' } });
 const err = (message, status = 400, extra = {}) => json({ error: message, ...extra }, status);
 
@@ -61,7 +62,7 @@ function publicView(sum) {
 
 const schoolRow = (s) => ({
   id: s.id, name: s.name, lga: s.lga, ward: s.ward, arm: s.arm, mne: s.mne, g: s.g, started: s.started, done: s.done,
-  first: s.first, last: s.last, dates: s.dates, admins: s.admins, max_team: s.maxTeam, teacher_forms: s.tf,
+  first: s.first, last: s.last, dates: s.dates, admins: s.admins, max_team: s.maxTeam, max_devices: s.people ? Math.max(0, ...Object.values(s.people).map((p) => p[1])) : 0, people: s.people || null, teacher_forms: s.tf,
 });
 
 function rankAdmins(admins) {
@@ -90,7 +91,7 @@ export default {
     try {
       if (path === '/api/config') {
         return json({
-          year: CURRENT_YEAR, field: { start: FIELD_START, end: FIELD_END }, pilot_day: PILOT_DAY, training_start: TRAINING_START, regions: REGIONS, partners: PARTNERS, reasons: REASONS,
+          year: CURRENT_YEAR, field: { start: FIELD_START, end: FIELD_END }, pilot_day: PILOT_DAY, training_start: TRAINING_START, regions: REGIONS, partners: PARTNERS, reasons: REASONS, day_reasons: DAY_REASONS,
           targets: { per_grade: TARGET_PER_GRADE, dodoma_per_grade: DODOMA_TARGET_PER_GRADE },
           notice: { aek_working_days: NOTICE_AEK_WORKING_DAYS, head_teacher_working_days: NOTICE_HT_WORKING_DAYS },
           today: eatToday(),
@@ -123,7 +124,7 @@ export default {
         const base = { status: 'ok', who, year, years, rehearsal, as_of: sum.as_of, today: eatToday(), bands: sum.bands, ...publicView(sum) };
         if (who.role === 'hq') {
           const plans = {};
-          (await Promise.all(REGIONS.map((r) => getPlan(env, r)))).forEach((p, k) => { plans[REGIONS[k]] = { status: p.status, visits: p.visits.length, changes: p.changes.length, late_changes: p.changes.filter((c) => c.late).length, submitted_at: p.submitted_at }; });
+          (await Promise.all(REGIONS.map((r) => getPlan(env, r)))).forEach((p, k) => { plans[REGIONS[k]] = { status: p.status, visits: p.visits.length, changes: p.changes.length, late_changes: p.changes.filter((c) => c.late).length, submitted_at: p.submitted_at, days_one: dayCounts(p).one, days_three: dayCounts(p).three }; });
           return json({ ...base, staff: STAFF.filter((s) => s.active).map((s) => ({ id: s.id, name: s.name, position: s.position, region: s.region, role: s.role })), admins: sum.admins, flags: decorate(sum.flags.map((f) => ({ ...f, school_name: SCHOOL_BY_ID[f.school]?.name, region: SCHOOL_BY_ID[f.school]?.region, lga: SCHOOL_BY_ID[f.school]?.lga, ward: SCHOOL_BY_ID[f.school]?.ward })), queries).slice(0, 600), plans, unlisted: sum.admins.filter((a) => a.role === 'unlisted').map((a) => a.name) });
         }
         if (who.role === 'rc' || who.role === 'arc') {
@@ -297,8 +298,8 @@ export default {
           if (who.role !== 'rc' && who.role !== 'arc' && who.role !== 'hq') return err('Only coordinators can change the plan', 403);
           const body = await request.json();
           let r;
-          if (body.action === 'submit') r = await submitPlan(env, who, region, body.visits || []);
-          else if (body.action === 'draft') r = await saveDraft(env, region, body.visits || []);
+          if (body.action === 'submit') r = await submitPlan(env, who, region, body.visits || [], body.day_notes || {});
+          else if (body.action === 'draft') r = await saveDraft(env, region, body.visits || [], body.day_notes || {});
           else if (body.action === 'change') r = await changeVisit(env, who, region, body, today);
           else if (body.action === 'notice') r = await markNotice(env, who, region, body);
           else return err('Unknown action');
@@ -395,9 +396,10 @@ export default {
         const page = await fetchKoboPage(env.KOBO_SERVER || 'kf.kobotoolbox.org', env[kind], env.KOBO_TOKEN, null, 0);
         const keys = new Set(); for (const r of page.results.slice(0, 40)) for (const k of Object.keys(r)) keys.add(k);
         // optional: how often each value of a few SAFE coded fields occurs (counts only, never free text)
-        const SAFE = /(^|\/)(position|position_new|position_label_eng|position_label_eng_new|gender|gender_new|smartphone|smartphone_new|grade[123]|grade[123]_subs|grade[123]_subs_label|s[123]_(kisw|arit)|weo_att|mne|arm|year|confirm|assi_confirm|no_teachers|no_kf_teachers)$/;
+        const SAFE = /(^|\/)(deviceid|_submitted_by|rc_username|username|phonenumber|subscriberid|position|position_new|position_label_eng|position_label_eng_new|gender|gender_new|smartphone|smartphone_new|grade[123]|grade[123]_subs|grade[123]_subs_label|s[123]_(kisw|arit)|weo_att|mne|arm|year|confirm|assi_confirm|no_teachers|no_kf_teachers)$/;
         const counts = {};
-        for (const k of (url.searchParams.get('counts') || '').split(',').filter((x) => SAFE.test(x))) { const c = {}; for (const r of page.results) { const v = String(r[k] ?? '(blank)').slice(0, 60); c[v] = (c[v] || 0) + 1; } counts[k] = Object.fromEntries(Object.entries(c).sort((a, b) => b[1] - a[1]).slice(0, 12)); }
+        const OPAQUE = /(deviceid|_submitted_by|rc_username|username|phonenumber|subscriberid)$/;
+        for (const k of (url.searchParams.get('counts') || '').split(',').filter((x) => SAFE.test(x))) { if (OPAQUE.test(k)) { const vals = page.results.map((r) => String(r[k] ?? '')).filter(Boolean); const m = {}; vals.forEach((v) => (m[v] = (m[v] || 0) + 1)); counts[k] = { filled: vals.length, of: page.results.length, distinct: Object.keys(m).length, top_share_pct: vals.length ? Math.round((100 * Math.max(...Object.values(m))) / vals.length) : 0 }; continue; } const c = {}; for (const r of page.results) { const v = String(r[k] ?? '(blank)').slice(0, 60); c[v] = (c[v] || 0) + 1; } counts[k] = Object.fromEntries(Object.entries(c).sort((a, b) => b[1] - a[1]).slice(0, 12)); }
         return json({ kind, counts, records_seen: page.results.length, total: page.count, keys: [...keys].filter((k) => !/bank|acc_|account|mobile|tin|checkno|name$|_name|branch|geolocation|gps/i.test(k)).sort() });
       }
       if (path === '/api/admin/readiness') {
@@ -445,14 +447,17 @@ export default {
         return json({ staff: STAFF.map((s) => ({ id: s.id, name: s.name, region: s.region, position: s.position, role: s.role, active: s.active })), aliases: rosterState.aliases, unlisted: [...names], options: rosterOptions() });
       }
       if (path === '/api/admin/backup') {
-        if (method === 'POST') { const b = await request.json().catch(() => ({})); return json(await runBackup(env, { full: Boolean(b.full) })); }
+        if (method === 'POST') { const b = await request.json().catch(() => ({})); return json(await runBackup(env, { full: Boolean(b.full), email: Boolean(b.email), testTo: /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(b.test_to || '') ? b.test_to : null })); }
+        if (url.searchParams.get('list') === '1') return json({ backups: await listBackups(env), last: await kv(env).get('v2:backup:last') });
+        if (url.searchParams.get('key')) { const raw = await rawStoredBackup(env, url.searchParams.get('key')); if (!raw) return err('No such backup', 404); return new Response(raw, { headers: { 'content-type': 'application/gzip', 'content-disposition': `attachment; filename="${url.searchParams.get('key').slice(3)}.json.gz"`, 'cache-control': 'no-store' } }); }
         const data = await buildBackup(env, url.searchParams.get('full') === '1');
         return new Response(JSON.stringify(data), { headers: { 'content-type': 'application/json', 'content-disposition': `attachment; filename="kf4-backup-${data.at.slice(0, 10)}${data.full ? '-full' : ''}.json"`, 'cache-control': 'no-store' } });
       }
       if (path === '/api/admin/restore' && method === 'POST') {
         const b = await request.json();
         if (b.confirm !== 'RESTORE') return err('Type RESTORE to confirm', 422);
-        const r = await restoreBackup(env, b.backup, { states: Boolean(b.states) });
+        const source = b.key ? await readStoredBackup(env, b.key) : b.backup;
+        const r = await restoreBackup(env, source, { states: Boolean(b.states) });
         if (r.error) return err(r.error, 422);
         await ensureRoster(env, true); await recomputeSummaries(env);
         return json(r);
@@ -477,7 +482,35 @@ export default {
         for (const r of rows) { const p = (per[r.name] ||= { name: r.name, region: r.region, position: r.position, days: 0, schools: 0, pupils: 0, first: r.date, last: r.date }); p.days += 1; p.schools += r.schools; p.pupils += r.pupils; if (r.date < p.first) p.first = r.date; if (r.date > p.last) p.last = r.date; }
         return json({ note: 'A day counts when at least one test was submitted. Training days, travel days and days without tests are not included.', year: sum.year, people: Object.values(per) });
       }
+      if (path === '/api/admin/kobo-test' && method === 'POST') {
+        // Writes one real submission's status and puts it back exactly as it was. Every step is reported.
+        const b = await request.json();
+        const srv = env.KOBO_SERVER || 'kf.kobotoolbox.org';
+        const steps = [];
+        const id = Number(b.id);
+        if (!Number.isFinite(id)) return err('Give a submission id', 422);
+        const before = await getValidation(srv, env.KOBO_ASSET_ID, env.KOBO_TOKEN, id); steps.push({ step: 'read status before', status: before });
+        await setValidation(srv, env.KOBO_ASSET_ID, env.KOBO_TOKEN, [id], 'on_hold'); steps.push({ step: 'set to on hold', ok: true });
+        const during = await getValidation(srv, env.KOBO_ASSET_ID, env.KOBO_TOKEN, id); steps.push({ step: 'read status after writing', status: during });
+        if (before) await setValidation(srv, env.KOBO_ASSET_ID, env.KOBO_TOKEN, [id], before.replace('validation_status_', '')); else await clearValidation(srv, env.KOBO_ASSET_ID, env.KOBO_TOKEN, id);
+        const after = await getValidation(srv, env.KOBO_ASSET_ID, env.KOBO_TOKEN, id); steps.push({ step: 'restored, read status again', status: after });
+        return json({ id, steps, restored_exactly: (after || null) === (before || null), write_worked: during === 'validation_status_on_hold' });
+      }
       if (path === '/api/admin/kobo-check') return json(await koboWho(env.KOBO_SERVER || 'kf.kobotoolbox.org', env.KOBO_ASSET_ID, env.KOBO_TOKEN));
+      if (path === '/api/admin/devices') {
+        const { sum } = await loadSummary(env, url.searchParams.get('year') || CURRENT_YEAR);
+        if (method === 'POST') {
+          const b = await request.json();
+          const dev = (sum?.devices || []).find((d) => d.code === b.code);
+          if (!dev) return err('Device not found', 404);
+          const owners = (await kv(env).get('v2:devowners')) || {};
+          if (b.staff_id) owners[dev.raw] = Number(b.staff_id); else delete owners[dev.raw];
+          await kv(env).put('v2:devowners', owners);
+          await recomputeSummaries(env);
+          return json({ ok: true });
+        }
+        return json({ devices: (sum?.devices || []).map(({ raw, ...d }) => d).sort((a, b) => b.tests - a.tests) });
+      }
       if (path === '/api/admin/push-status') return json(await pushStatus(env));
       if (path === '/api/admin/push-test' && method === 'POST') {
         const b = await request.json();
@@ -510,7 +543,7 @@ export default {
       if (out.length) console.log(JSON.stringify(out));
       const hhmm = new Date().toISOString().slice(11, 16);
       const hourNow = Number(hhmm.slice(0, 2));
-      const alertSlot = { '04:05': 'morning', '07:30': 'silent', '13:30': 'evening' }[hhmm] || (hhmm.endsWith(':00') && hourNow >= 4 && hourNow <= 15 ? 'health' : null); // health: every hour of the field day
+      const alertSlot = { '04:05': 'morning', '08:00': 'silent', '13:30': 'evening' }[hhmm] || (hhmm.endsWith(':00') && hourNow >= 4 && hourNow <= 15 ? 'health' : null); // health: every hour of the field day
       if (alertSlot) {
         const day = eatToday(); const last = (await kv(env).get('v2:push:ran')) || {};
         const ranKey = alertSlot + ':' + hhmm;

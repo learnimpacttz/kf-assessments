@@ -48,7 +48,8 @@ export async function recomputeSummaries(env, years) {
     const Y = state.yrs[y];
     if (!Y) continue;
     const bands = buildBands(state.yrs, y);
-    const sum = summarize(Y, { year: y, bands, today });
+    const owners = (await kv(env).get('v2:devowners')) || {};
+    const sum = summarize(Y, { year: y, bands, today, owners });
     await kv(env).put(`v2:sum:${y}`, sum);
     // Derived read-only copies go to Workers KV: fast at the edge, and a minute of staleness does not matter here.
     // Running totals, plans and locks stay in the Durable Object because those must be strongly consistent.

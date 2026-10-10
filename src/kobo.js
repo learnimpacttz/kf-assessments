@@ -47,3 +47,14 @@ export async function koboWho(server, assetId, token) {
   const asset = await (await fetch(`https://${server}/api/v2/assets/${assetId}/?format=json`, { headers: h })).json().catch(() => ({}));
   return { username: me.username || null, owner: asset.owner__username || null };
 }
+
+export async function getValidation(server, assetId, token, id) {
+  const r = await fetch(`https://${server}/api/v2/assets/${assetId}/data/${id}/validation_status/?format=json`, { headers: { Authorization: `Token ${token}` } });
+  const text = await r.text();
+  if (!r.ok) throw new Error(`KoBo ${r.status}: ${text.slice(0, 160)}`);
+  try { const j = JSON.parse(text); return j.uid || null; } catch { return null; }
+}
+export async function clearValidation(server, assetId, token, id) {
+  const r = await fetch(`https://${server}/api/v2/assets/${assetId}/data/${id}/validation_status/`, { method: 'DELETE', headers: { Authorization: `Token ${token}` } });
+  if (!r.ok && r.status !== 204) throw new Error(`KoBo ${r.status}: ${(await r.text()).slice(0, 160)}`);
+}

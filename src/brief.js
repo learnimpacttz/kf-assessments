@@ -23,7 +23,7 @@ export async function silentVisits(env, today, regionFilter) {
     if (plan.status !== 'locked') return;
     for (const v of plan.visits) {
       if (v.date !== today) continue;
-      if (now < Math.max(10 * 60, toMin(v.start) + 120)) continue; // give the team time to reach the school and test
+      if (now < Math.max(11 * 60, toMin(v.start) + 120)) continue; // 11:00 at the earliest: some schools are remote, so give the team time to arrive and test
       const s = sum.schools[v.school];
       if (s && !s.dates.includes(today)) out.push({ region: regs[k], school: v.school, name: s.name, start: v.start, team: v.team || [] });
     }
