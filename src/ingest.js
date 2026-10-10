@@ -9,6 +9,23 @@
 import { SKILLS_BY_GRADE } from './aggregate.js';
 import { isPracticeSchool } from './config.js';
 
+// How late a record was sent: whole days after the visit date (0 = the same day) and hours from finishing the form to sending it
+const parseUtc = (s) => Date.parse(/[zZ]$|[+-]\d\d:?\d\d$/.test(s) ? s : s + 'Z');
+function lateness(r, visitDate) {
+  const sub = parseUtc(String(r._submission_time || '')); if (Number.isNaN(sub) || !visitDate) return null;
+  const sd = new Date(sub + 3 * 3600e3).toISOString().slice(0, 10);
+  const days = Math.max(0, Math.round((Date.parse(sd) - Date.parse(visitDate)) / 86400000));
+  const end = Date.parse(String(r.end || r.start || ''));
+  return { b: Math.min(3, days), lag: Number.isNaN(end) ? null : Math.max(0, (sub - end) / 3600e3) };
+}
+// [same day, 1 day, 2 days, 3+ days, hours summed, longest hours, records with hours]
+function addLate(slot, L) {
+  if (!L) return slot;
+  const s = slot || [0, 0, 0, 0, 0, 0, 0]; s[L.b] += 1;
+  if (L.lag !== null) { s[4] += L.lag; s[6] += 1; if (L.lag > s[5]) s[5] = L.lag; }
+  return s;
+}
+
 export const HIST_BUCKETS = 61; // 0.5 min each, last bucket = 30 min and over
 const SKILL_TIME_FIELDS = [
   's1_letters_time', 's1_syllables_time', 's1_words_time', 's1_sentences_time', 's1_nr_recog_time', 's1_nr_compare_time', 's1_nr_addition_time', 's1_subtraction_time',
@@ -71,6 +88,7 @@ export function addStudents(state, records) {
     Y.n += 1;
     c.n += 1;
     c.sub = r._submission_time || c.sub;
+    c.sb = addLate(c.sb, lateness(r, date));
     // availability: 1 = pupil present and tested, 2 = absent (emergence)
     if (String(r.stu_avail) !== '2') c.av += 1;
 
@@ -167,6 +185,7 @@ export function addSampling(state, records) {
       }
     }
     sg.sub = r._submission_time || '';
+    sg.sb = addLate(sg.sb, lateness(r, sg.date));
     Y.nsamp = (Y.nsamp || 0) + 1;
   }
   return state;

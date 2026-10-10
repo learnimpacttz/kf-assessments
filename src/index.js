@@ -142,7 +142,11 @@ export default {
         const me = sum.admins.find((a) => a.staff_id === who.id) || null;
         const bundle = regionBundle(sum, who.region, who, queries);
         const myName = me?.name || who.name;
+        // where this person stands on sending records early, among people in the region (earliest first)
+        const peers = sum.admins.filter((a) => a.region === who.region && a.sub_all && a.sub_all.n >= 3).sort((x, y) => (y.sub_all.same_pct - x.sub_all.same_pct) || ((x.sub_all.avg_h ?? 1e9) - (y.sub_all.avg_h ?? 1e9)));
+        const pos = peers.findIndex((a) => a.staff_id === who.id);
         const mine = {
+          sub_rank: pos >= 0 ? { pos: pos + 1, of: peers.length } : null,
           region: bundle.region, me, schools: bundle.schools,
           work: sum.work[myName] || [],
           flags: bundle.flags.filter((f) => f.admin === myName),

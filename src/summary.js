@@ -113,6 +113,13 @@ export function phoneDay(events) {
   return Object.values(phones).map((p) => ({ c: p.c, names: Object.entries(p.names).sort((a, b) => b[1] - a[1]).map(([n]) => n), schools: [...p.schools], n: p.n, first: p.first, last: p.last }));
 }
 
+// Submission timeliness helpers (slot = [same day, 1 day, 2 days, 3+ days, hours summed, longest hours, records with hours])
+const mergeSb = (into, from) => { for (let i = 0; i < 7; i++) into[i] = i === 5 ? Math.max(into[i], from[i] || 0) : into[i] + (from[i] || 0); };
+const sumSb = (a, b) => { const o = [0, 0, 0, 0, 0, 0, 0]; mergeSb(o, a); mergeSb(o, b); return o; };
+function subStats(s) {
+  const n = s[0] + s[1] + s[2] + s[3]; if (!n) return null;
+  return { n, same: s[0], d1: s[1], d2: s[2], d3: s[3], same_pct: Math.round((100 * s[0]) / n), avg_h: s[6] ? Math.round((s[4] / s[6]) * 10) / 10 : null, max_h: s[6] ? Math.round(s[5] * 10) / 10 : null };
+}
 export function summarize(Y, { year, bands, today, owners = {}, practice = false }) {
   const UNI = practice ? PRACTICE_BY_ID : SCHOOL_BY_ID; // the schools and regions this run covers
   const RLIST = practice ? [PRACTICE_REGION] : REGIONS;
@@ -131,7 +138,7 @@ export function summarize(Y, { year, bands, today, owners = {}, practice = false
     const a = (admins[name] ||= {
       name, staff: staffForKoboName(name), n: 0, tn: 0, ts: 0, days: new Set(), schools: new Set(),
       fast: 0, slow: 0, late: 0, far: 0, notList: 0, dup: 0, zero: 0, byGrade: { 1: { tn: 0, ts: 0 }, 2: { tn: 0, ts: 0 }, 3: { tn: 0, ts: 0 } },
-      inBand: 0, listChecked: 0,
+      inBand: 0, listChecked: 0, sb: [0, 0, 0, 0, 0, 0, 0], sbs: [0, 0, 0, 0, 0, 0, 0],
     });
     return a;
   };
@@ -170,6 +177,8 @@ export function summarize(Y, { year, bands, today, owners = {}, practice = false
     a.n += c.n; a.tn += c.tn; a.ts += c.ts; a.days.add(date); a.schools.add(schoolId);
     a.fast += fast; a.slow += slow; a.late += c.late; a.far += c.far; a.inBand += inBand;
     a.byGrade[grade].tn += c.tn; a.byGrade[grade].ts += c.ts;
+    if (c.sb) mergeSb(a.sb, c.sb);
+    if (c.sb && c.sb[2] + c.sb[3] > 0) flags.push({ sev: 'warn', type: 'latesub', school: schoolId, grade: +grade, admin: enumerator, date, text: `${c.sb[2] + c.sb[3]} test record(s) sent 2 or more days after the visit`, hint: 'Send records the same day. Turn on auto send in KoBo Collect so nothing waits on the phone.' });
     (work[enumerator] ||= []).push([date, schoolId, +grade, c.av, c.tn ? r1(c.ts / c.tn) : null]);
     (dayPeople[schoolId + '|' + date] ||= { names: new Set(), devs: new Set(), tdevs: new Set() }).names.add(enumerator);
     for (const [dv, cnt] of Object.entries(c.dv || {})) noteDev(dv, enumerator, schoolId, date, cnt, true);
@@ -193,6 +202,8 @@ export function summarize(Y, { year, bands, today, owners = {}, practice = false
     if (!sc) continue;
     if (sg.att !== null) sc.g[grade].att = sg.att;
     if (sg.dev && sg.date) noteDev(sg.dev, sg.devWho || sg.enum || '', schoolId, sg.date, 1);
+    if (sg.sb && sg.enum) mergeSb(adminOf(sg.enum).sbs, sg.sb);
+    if (sg.sb && sg.enum && sg.sb[2] + sg.sb[3] > 0) flags.push({ sev: 'warn', type: 'latesub', school: schoolId, grade: +grade, admin: sg.enum, date: sg.date || '', text: `Sampling form sent 2 or more days after the visit`, hint: 'Send records the same day. Turn on auto send in KoBo Collect so nothing waits on the phone.' });
     const seen = new Map();
     let notList = 0;
     const byAdmin = {};
@@ -310,6 +321,7 @@ export function summarize(Y, { year, bands, today, owners = {}, practice = false
       fast: a.fast, slow: a.slow, late: a.late, far: a.far, not_list: a.notList, zero: a.zero,
       by_grade: Object.fromEntries([1, 2, 3].map((g) => [g, a.byGrade[g].tn ? r1(a.byGrade[g].ts / a.byGrade[g].tn) : null])),
       quality, fast_share: pct(a.fast, a.tn),
+      sub: subStats(a.sb), subs: subStats(a.sbs), sub_all: subStats(sumSb(a.sb, a.sbs)),
     };
   });
 

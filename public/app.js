@@ -22,7 +22,7 @@ const pc = (a, b) => (b ? Math.round((a / b) * 100) : 0);
 const dayName = (iso) => new Date(iso + 'T00:00:00Z').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' });
 const shortDate = (iso) => (iso ? new Date(iso + 'T00:00:00Z').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' }) : '–');
 const title = (s) => String(s || '').toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
-const FLAG_LABEL = { fast: 'Test too fast', slow: 'Test too slow', window: 'Outside school hours', gps: 'Far from school', skilltime: 'Skills skipped', dup: 'Pupil tested twice', notlist: 'Not on sampling list', team: 'Team size', over: 'Over the sample', short: 'Short of the sample', nosample: 'No sampling record', offcal: 'Visited off the calendar', headcount: 'Fewer phones than people', devshare: 'One phone, several names', devowner: 'Someone else\'s phone', devoverlap: 'Tests overlap on one phone', devtravel: 'Phone at two schools too fast', devswitch: 'Phone jumping between grades', devnames: 'Names changing on one phone', namedevs: 'One person, several phones' };
+const FLAG_LABEL = { fast: 'Test too fast', slow: 'Test too slow', window: 'Outside school hours', gps: 'Far from school', skilltime: 'Skills skipped', dup: 'Pupil tested twice', notlist: 'Not on sampling list', latesub: 'Sent late', team: 'Team size', over: 'Over the sample', short: 'Short of the sample', nosample: 'No sampling record', offcal: 'Visited off the calendar', headcount: 'Fewer phones than people', devshare: 'One phone, several names', devowner: 'Someone else\'s phone', devoverlap: 'Tests overlap on one phone', devtravel: 'Phone at two schools too fast', devswitch: 'Phone jumping between grades', devnames: 'Names changing on one phone', namedevs: 'One person, several phones' };
 
 // ---------- shared pieces ----------
 const kpi = (l, v, s = '') => `<div class="kpi"><div class="l">${l}</div><div class="v num">${v}</div><div class="s">${s}</div></div>`;
@@ -169,6 +169,7 @@ function viewStats() {
   return `<div class="pagehead"><div><h2>My stats</h2><p>${esc(me.name)}</p></div></div>
   <div class="grid kpis">${kpi('Pupils tested', fmt(me.tested))}${kpi('Avg test time', (me.avg_min ?? '–') + ' min')}${kpi('Quality', me.quality ?? '–', 'out of 100')}${kpi('School days', me.days, me.schools + ' schools')}</div>
   <div class="card" style="margin-top:14px"><h3>Test speed</h3><div class="sub">Your average against the normal range for each grade, from earlier rounds</div>${[1, 2, 3].map(band).join('')}</div>
+  <div class="card" style="margin-top:14px"><h3>My submissions</h3><div class="sub">Sending the same day keeps your records safe and helps the team close the school on time.</div>${me.sub_all ? `<div class="grid kpis">${kpi('Sent the same day', me.sub_all.same_pct + '%', me.sub_all.n + ' records')}${kpi('Usual delay', lagText(me.sub_all.avg_h), 'form finished to sent')}${kpi('Longest wait', lagText(me.sub_all.max_h))}${kpi('Your place', S.ov.mine.sub_rank ? S.ov.mine.sub_rank.pos + ' of ' + S.ov.mine.sub_rank.of : '–', 'earliest first, in your region')}</div>` : '<div class="empty">Appears after your first records are sent.</div>'}</div>
   <div class="card" style="margin-top:14px"><h3>What makes up your quality score</h3><div class="sub">Tests in the normal time range, pupils from the sampling list, clean records</div><div class="m">Too fast: <b>${me.fast}</b> · Too slow: <b>${me.slow}</b> · Outside school hours: <b>${me.late}</b> · Not on sampling list: <b>${me.not_list}</b></div></div>`;
 }
 
@@ -459,12 +460,28 @@ function koboButtons(f) {
 const SCHOOL_INFO = (id) => schoolsAll().find((x) => x.id === id) || {};
 
 // ---------- People (HQ) and My team (coordinator) ----------
+// ---- how early records are sent ----
+const lagText = (h) => (h == null ? '–' : h < 1 ? Math.max(1, Math.round(h * 60)) + ' min' : h < 48 ? (Math.round(h * 10) / 10) + ' h' : Math.round(h / 24) + ' days');
+const sameChip = (s) => (s ? chip(s.same_pct + '%', s.same_pct >= 90 ? 'good' : s.same_pct >= 70 ? 'warn' : 'bad') : '<span class="m">–</span>');
+function submitBoard(rows) {
+  const ok = rows.filter((a) => a.sub_all && a.sub_all.n >= 5);
+  if (ok.length < 2) return '<div class="card" style="margin-top:14px"><h3>Who sends records early</h3><div class="sub">Appears once people have sent at least 5 records.</div></div>';
+  const ord = ok.slice().sort((x, y) => (y.sub_all.same_pct - x.sub_all.same_pct) || ((x.sub_all.avg_h ?? 1e9) - (y.sub_all.avg_h ?? 1e9)));
+  const line = (a, i) => `<tr><td class="num">${i}</td><td><b>${lk('person', a.name, a.name)}</b></td><td>${sameChip(a.sub_all)}</td><td class="r num">${lagText(a.sub_all.avg_h)}</td><td class="r num">${lagText(a.sub_all.max_h)}</td><td class="r num">${a.sub_all.d1 + a.sub_all.d2 + a.sub_all.d3}</td></tr>`;
+  const head = '<thead><tr><th>#</th><th>Name</th><th>Same day</th><th class="r">Delay</th><th class="r">Longest</th><th class="r">Days late</th></tr></thead>';
+  const n = Math.min(5, Math.floor(ord.length / 2));
+  return `<div class="grid two"><div class="card"><h3>Earliest to send</h3><div class="sub">Share of records sent the same day as the visit, then the usual wait between finishing a form and sending it. Thank these people.</div><div class="tbl"><table>${head}<tbody>${ord.slice(0, n).map((a, i) => line(a, i + 1)).join('')}</tbody></table></div></div>
+  <div class="card"><h3>Latest to send</h3><div class="sub">A record that waits on the phone can be lost. Sending the same day (auto send on) fixes it.</div><div class="tbl"><table>${head}<tbody>${ord.slice(-n).reverse().map((a, i) => line(a, ord.length - i)).join('')}</tbody></table></div></div></div>`;
+}
 function peopleTable(rows, hq) {
   const cols = [
     { k: 'name', label: 'Name', val: (a) => a.name, search: (a) => a.name, html: (a) => `<b>${lk('person', a.name, a.name)}</b>` },
     ...(hq ? [{ k: 'region', label: 'Region', val: (a) => a.region || '', search: (a) => a.region, html: (a) => (a.region ? lk('region', a.region, title(a.region)) : '–') }] : []),
     { k: 'role', label: 'Role', val: (a) => roleLabel(a), search: (a) => roleLabel(a), html: (a) => `<span class="chip c-${a.role === 'rc' ? 'navy' : a.role === 'arc' ? 'teal' : a.role === 'unlisted' ? 'mute' : 'gold'}">${esc(roleLabel(a))}</span>` },
     { k: 'tested', label: 'Tested', cls: 'r', val: (a) => a.tested, html: (a) => `<span class="num">${fmt(a.tested)}</span>` },
+    { k: 'sameday', label: 'Same-day sends', cls: 'r', val: (a) => a.sub_all?.same_pct ?? null, html: (a) => sameChip(a.sub_all) },
+    { k: 'lag', label: 'Usual delay', cls: 'r', small: true, val: (a) => a.sub_all?.avg_h ?? null, html: (a) => `<span class="num">${lagText(a.sub_all?.avg_h)}</span>` },
+
     { k: 'g1', label: 'Gr 1 min', cls: 'r', small: true, val: (a) => a.by_grade[1], html: (a) => speedChip(a.by_grade[1], 1) },
     { k: 'g2', label: 'Gr 2 min', cls: 'r', small: true, val: (a) => a.by_grade[2], html: (a) => speedChip(a.by_grade[2], 2) },
     { k: 'g3', label: 'Gr 3 min', cls: 'r', small: true, val: (a) => a.by_grade[3], html: (a) => speedChip(a.by_grade[3], 3) },
@@ -482,10 +499,10 @@ function peopleTable(rows, hq) {
   return dataTable(hq ? 'people' : 'team', cols, rows, { filters, sort: 'quality', dir: 1, open: (a) => 'person:' + a.name, placeholder: 'Search a name or region' });
 }
 function viewPeopleHQ() {
-  return `${dataBanner()}<div class="pagehead"><div><h2>Coordinators and volunteers</h2><p>Click a name for the full card. Click a column to sort. Chips are coloured against the normal range for each grade.</p></div></div><div class="card">${peopleTable(S.ov.admins, true)}<div class="legend"><span><i style="background:var(--good)"></i>normal</span><span><i style="background:var(--gold)"></i>borderline</span><span><i style="background:var(--bad)"></i>outside the normal range</span><span>Normal test time: ${bandsText()}</span></div></div>`;
+  return `${dataBanner()}<div class="pagehead"><div><h2>Coordinators and volunteers</h2><p>Click a name for the full card. Click a column to sort. Chips are coloured against the normal range for each grade.</p></div></div>${submitBoard(S.ov.admins)}<div class="card" style="margin-top:14px">${peopleTable(S.ov.admins, true)}<div class="legend"><span><i style="background:var(--good)"></i>normal</span><span><i style="background:var(--gold)"></i>borderline</span><span><i style="background:var(--bad)"></i>outside the normal range</span><span>Normal test time: ${bandsText()}</span></div></div>`;
 }
 function viewTeam() {
-  return `${dataBanner()}<div class="pagehead"><div><h2>My team</h2><p>Pace, test speed and quality for everyone in ${esc(title(S.who.region))}. Click a name for their card.</p></div></div><div class="card">${peopleTable(S.ov.mine.admins, false)}</div>`;
+  return `${dataBanner()}<div class="pagehead"><div><h2>My team</h2><p>Pace, test speed and quality for everyone in ${esc(title(S.who.region))}. Click a name for their card.</p></div></div>${submitBoard(S.ov.mine.admins)}<div class="card" style="margin-top:14px">${peopleTable(S.ov.mine.admins, false)}</div>`;
 }
 
 // ---------- Data explorer (schools) ----------

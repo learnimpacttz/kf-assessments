@@ -43,6 +43,9 @@ function visit(year, region, schoolIdx, date, nSchoolsStaff) {
       recs.push({ _id: id++, year, today: date, 'group_intro/date': date, 'id_data/school': s.id, 'id_data/grade': String(g), 'id_data/enumerator': adm, 'stu_info/rand_nr': String(i * 3), start: `${date}T0${8 + (i % 4)}:${10 + i}:00+03:00`, 'end_note_gr/testtime_rounded': String(rushed ? 1.5 : (g * 2.6 + rnd(2, 5)).toFixed(1)), stu_avail: '1', deviceid: dev, ['k' + g + '_g_words']: '1', _submission_time: date + 'T10:00:00' });
     }
   }
+  // submission times: some people send within the hour, some a day or two later
+  const stamp = (r) => { const nm = String(r['id_data/enumerator'] || ''); let h = 0; for (const ch of nm) h = (h * 31 + ch.charCodeAt(0)) >>> 0; const e0 = Date.parse(r.end || r.start || ''); const end = Number.isNaN(e0) ? Date.parse(date + 'T10:00:00+03:00') : e0; const add = h % 4 === 0 ? 50 * 3600e3 : h % 4 === 1 ? 26 * 3600e3 : 45 * 60e3; r._submission_time = new Date(end + add).toISOString().slice(0, 19); };
+  for (const r of recs) stamp(r); for (const r of samp) stamp(r);
   return { recs, samp };
 }
 for (const region of REGIONS) {
