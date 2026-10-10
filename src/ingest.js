@@ -40,6 +40,13 @@ function localHour(startIso) {
   return m ? parseInt(m[1], 10) : null;
 }
 
+// New fields added by the calendar check (their group name may differ, so match on the field name)
+function calFields(r) {
+  const out = {};
+  for (const k in r) { const m = /(?:^|\/)(cal_status|cal_planned|cal_confirm|cal_confirm_other|cal_reason|cal_reason_other|cal_approved)$/.exec(k); if (m && r[k] !== '' && r[k] != null) out[m[1]] = r[k]; }
+  return out;
+}
+
 export function addStudents(state, records) {
   for (const r of records) {
     const year = yearOf(r);
@@ -98,6 +105,12 @@ export function addStudents(state, records) {
         if (raw === '1') p[0] += 1;
       }
     }
+    const cf = calFields(r);
+    if (cf.cal_status === 'diff' || cf.cal_status === 'none') {
+      const cal = (c.cal ||= { n: 0, a: 0, b: 0, c: 0, planned: cf.cal_planned || '', other: [] });
+      cal.n += 1; const ans = cf.cal_confirm; if (ans === 'a' || ans === 'b' || ans === 'c') cal[ans] += 1;
+      if (cf.cal_confirm_other && cal.other.length < 3 && !cal.other.includes(cf.cal_confirm_other)) cal.other.push(String(cf.cal_confirm_other).slice(0, 120));
+    }
     const rn = r['stu_info/rand_nr'];
     const sgk = `${school}|${grade}`;
     const sg = (Y.sg[sgk] ||= { att: null, list: null, rn: [], date: null });
@@ -121,6 +134,8 @@ export function addSampling(state, records) {
       if (v !== null) list.push(v);
     }
     const sg = (Y.sg[`${school}|${grade}`] ||= { att: null, list: null, rn: [], date: null });
+    const cf = calFields(r);
+    if (cf.cal_status === 'diff' || cf.cal_status === 'none') sg.cal = { status: cf.cal_status, planned: cf.cal_planned || '', reason: cf.cal_reason || '', other: String(cf.cal_reason_other || '').slice(0, 160), approved: cf.cal_approved || '' };
     sg.att = att;
     // keep every draw for the class: a class may be sampled again and pupils tested from an earlier draw
     sg.list = [...new Set([...(sg.list || []), ...list])]; // empty when the class had 20 or fewer present (test all)

@@ -43,6 +43,14 @@ for (const region of REGIONS) {
   const n = { TANGA: 11, SINGIDA: 12, MARA: 3, MTWARA: 2 }[region] ?? 6;
   for (let i = 0; i < Math.min(n, cnt); i++) { const day = 19 + Math.floor(i / 3) + (i >= 12 ? 2 : 0); const { recs, samp } = visit('2026', region, i, `2026-10-${String(day).padStart(2, '0')}`); addStudents(state, recs); addSampling(state, samp); }
 }
+// calendar-check answers coming back from the forms (Tanga school 3: one sampling record off-calendar, tests answered 'c' and 'b')
+{
+  const sc = SCHOOLS_BY_REGION.TANGA[2]; const nm = 'Hatibu Lugendo';
+  addSampling(state, [{ year: '2026', 'id_data/school': sc.id, 'id_data/grade': '2', 'att_gr/att': '80', 'id_data/enumerator': nm, date: '2026-10-21', 'id_data/cal_status': 'diff', 'id_data/cal_planned': '2026-10-22', 'id_data/cal_reason': 'rain', 'id_data/cal_approved': 'no', ...Object.fromEntries(Array.from({ length: 20 }, (_, k) => ['att_gr/int' + (k + 1), String((k + 1) * 3)])) }]);
+  const recs = [];
+  for (let i = 0; i < 6; i++) recs.push({ _id: 900000 + i, year: '2026', today: '2026-10-21', 'group_intro/date': '2026-10-21', 'id_data/school': sc.id, 'id_data/grade': '2', 'id_data/enumerator': nm, 'stu_info/rand_nr': String(i + 1), start: '2026-10-21T09:10:00+03:00', 'end_note_gr/testtime_rounded': '8', stu_avail: '1', 'id_data/cal_status': 'diff', 'id_data/cal_planned': '2026-10-22', 'id_data/cal_confirm': i < 2 ? 'c' : 'b', 'id_data/cal_confirm_other': i < 2 ? 'Head teacher asked us to come earlier' : '' });
+  addStudents(state, recs);
+}
 await stub.put('v2:state', JSON.stringify(state));
 await recomputeSummaries(env);
 

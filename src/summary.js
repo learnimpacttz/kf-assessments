@@ -148,6 +148,24 @@ export function summarize(Y, { year, bands, today }) {
     if (hasSampling && notList >= 3) flags.push({ sev: 'warn', type: 'notlist', recs: offRecs.slice(0, 10), normal: 'drawn numbers: ' + (sg.list || []).slice(0, 20).join(', '), school: schoolId, grade: +grade, admin: Object.keys(byAdmin)[0] || '', date: sc.dates.slice(-1)[0], text: `${notList} pupil(s) not on the sampling list in Grade ${grade}`, hint: 'The pupil was not drawn by the app. Replace or explain.' });
   }
 
+  // visits off the calendar, with the reason the forms collected
+  const REASON_TEXT = { rain: 'rain or flooded road', transport: 'transport problem', school_closed: 'school closed or exams', permit: 'permit or notice not ready', illness: 'staff illness', team: 'team change', approved: 'calendar changed and approved by HQ', other: 'other' };
+  for (const [sgk, sg] of Object.entries(Y.sg)) {
+    if (!sg.cal) continue;
+    const [schoolId, grade] = sgk.split('|'); const sc = schools[schoolId]; if (!sc) continue;
+    const why = sg.cal.reason === 'other' ? 'other: ' + (sg.cal.other || 'no detail') : REASON_TEXT[sg.cal.reason] || 'no reason given';
+    const unapproved = sg.cal.approved === 'no';
+    flags.push({ sev: unapproved || !sg.cal.reason ? 'bad' : 'warn', type: 'offcal', school: schoolId, grade: +grade, admin: sg.enum || '', date: sg.date || '', text: sg.cal.status === 'none' ? `Sampled a school that is not in the calendar. Reason: ${why}` : `Planned for ${sg.cal.planned}, sampled on ${sg.date}. Reason: ${why}${unapproved ? '. Not yet approved by HQ' : ''}`, hint: 'Check that the coordinator updated the calendar and HQ approved the change.', normal: sg.cal.planned ? 'planned ' + sg.cal.planned : 'not in calendar' });
+  }
+  for (const [key, c] of Object.entries(Y.cells)) {
+    if (!c.cal) continue;
+    const [date, schoolId, grade, enumerator] = key.split('|'); if (!schools[schoolId]) continue;
+    const unanswered = c.cal.n - c.cal.a - c.cal.b - c.cal.c;
+    if (!c.cal.c && !unanswered) continue; // every test was explained by an accepted answer (updated calendar, or finishing a previous day)
+    const ans = `${c.cal.a} calendar updated and approved, ${c.cal.b} finishing pupils left from a previous day, ${c.cal.c} other${c.cal.other[0] ? ' (' + c.cal.other[0] + ')' : ''}${unanswered ? ', ' + unanswered + ' no answer' : ''}`;
+    flags.push({ sev: unanswered ? 'bad' : 'warn', type: 'offcal', school: schoolId, grade: +grade, admin: enumerator, date, text: `${c.cal.n} test(s) on a day other than the planned ${c.cal.planned || 'date'}. Answer: ${ans}`, hint: 'Confirm the reason with the test admin.', normal: c.cal.planned ? 'planned ' + c.cal.planned : 'not in calendar' });
+  }
+
   // school-level status
   const regions = {};
   for (const r of REGIONS) regions[r] = { region: r, schools: [], planned: 0 };

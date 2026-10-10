@@ -309,6 +309,18 @@ export default {
         await kv(env).put(`v2:arch:${b.year}`, meta);
         return json({ archived: meta });
       }
+      if (path === '/api/admin/calendar-csv') {
+        // Reference file for the KoBo forms (upload as media named ref_calendar.csv). One row per planned school.
+        const plans = await Promise.all(REGIONS.map((r) => getPlan(env, r)));
+        const q = (v) => { const s = String(v ?? ''); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+        const stamp = new Date(Date.now() + 3 * 3600 * 1000).toISOString().slice(0, 16).replace('T', ' ');
+        const version = plans.reduce((a, p) => a + (p.version || 0), 0);
+        const rows = [['school', 'planned_date', 'school_name', 'region', 'lga', 'start', 'team']];
+        rows.push(['_CALENDAR', `v${version} ${stamp}`, 'calendar switch and version', '', '', '', '']);
+        let n = 0;
+        plans.forEach((p, k) => { if (p.status !== 'locked') return; for (const v of p.visits) { const s = SCHOOL_BY_ID[v.school]; rows.push([v.school, v.date, s?.name?.trim() || '', REGIONS[k], s?.lga || '', v.start || '', (v.team || []).join('; ')]); n++; } });
+        return new Response(rows.map((r) => r.map(q).join(',')).join('\n') + '\n', { headers: { 'content-type': 'text/csv; charset=utf-8', 'content-disposition': `attachment; filename="ref_calendar.csv"`, 'x-calendar-rows': String(n), 'x-calendar-version': `v${version}`, 'cache-control': 'no-store' } });
+      }
       if (path === '/api/admin/push-status') return json(await pushStatus(env));
       if (path === '/api/admin/push-test' && method === 'POST') {
         const b = await request.json();
