@@ -3,10 +3,10 @@
 // Until then everything runs as a preview HQ can read in the Admin tab.
 import { kv } from './store.js';
 import { staffCodes } from './auth.js';
-import { STAFF } from './config.js';
+import { STAFF, PLAN_DEADLINE } from './config.js';
 import { buildBrief } from './brief.js';
-import { getPlan, withNotices } from './plan.js';
-import { REGIONS, SCHOOLS_BY_REGION, eatToday, isWorkingDay, addDays, FIELD_START, FIELD_END } from './config.js';
+import { getPlan, withNotices, planProgress } from './plan.js';
+import { REGIONS, SCHOOLS_BY_REGION, eatToday, isWorkingDay, addDays, FIELD_START, FIELD_END, workingDaysBetween } from './config.js';
 import { loadQueries, flagKey } from './queries.js';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -46,10 +46,21 @@ export async function morningDigest(env, sum, region, today, siteUrl) {
     for (const v of vs) lines.push({ r, name: v.school_name, lga: v.lga, start: v.start, team: (v.team || []).join(', ') || 'whole team' });
   }
   if (lines.length) todayRows = `<p style="margin:14px 0 4px"><b>Today's visits / Ziara za leo</b></p><table style="width:100%;border-collapse:collapse;font-size:13.5px">${lines.map((l) => `<tr><td style="padding:5px 0;border-bottom:1px solid #eef1f6">${esc(l.name)}${region ? '' : ' · ' + esc(title(l.r))}</td><td style="border-bottom:1px solid #eef1f6">${esc(title(l.lga))}</td><td style="border-bottom:1px solid #eef1f6">${esc(l.start)}</td><td style="border-bottom:1px solid #eef1f6">${esc(l.team)}</td></tr>`).join('')}</table>`;
+  let planLine = '', planText = '';
+  if (!region) {
+    const pp = await planProgress(env, REGIONS);
+    if (pp.missing.length) {
+      const late = today > PLAN_DEADLINE, left = Math.max(0, workingDaysBetween(today, PLAN_DEADLINE));
+      const when = late ? 'overdue (deadline ' + PLAN_DEADLINE + ')' : today === PLAN_DEADLINE ? 'due today' : left + ' working day(s) to the deadline of ' + PLAN_DEADLINE;
+      planText = `Field plans submitted: ${pp.submitted} of ${pp.total} (${when}). Missing: ${pp.missing.map(title).join(', ')}.`;
+      planLine = `<p style="margin:6px 0">${dot(late ? 'bad' : 'warn')}<b>${esc(planText)}</b></p>`;
+    }
+  }
+  if (planText) brief.items = brief.items.filter((i) => !/have not submitted the field plan/.test(i.text)); // the deadline line above replaces it
   const items = brief.items.map((i) => `<p style="margin:6px 0">${dot(i.sev)}${esc(i.text)}</p>`).join('') || '<p>Nothing to report yet.</p>';
   const tm = Object.entries(brief.tomorrow_schools).map(([r, s]) => `<p style="margin:4px 0">${region ? '' : '<b>' + esc(title(r)) + '</b>: '}${s.map(esc).join(', ')}</p>`).join('');
-  const html = layout(`KiuFunza 4 · ${region ? title(region) : 'National'} morning brief`, today, `${items}${todayRows}${tm ? `<p style="margin:14px 0 4px"><b>Tomorrow / Kesho</b></p>${tm}` : ''}`, `Sent automatically by the LearnImpact KiuFunza field dashboard. Open it for live numbers: <a href="${esc(siteUrl)}" style="color:#354062">${esc(siteUrl)}</a>`);
-  const text = ['AUTOMATED UPDATE - no reply needed', `KiuFunza 4 · ${region ? title(region) : 'National'} morning brief · ${today}`, ...brief.items.map((i) => '- ' + i.text), ...lines.map((l) => `Today: ${l.name} (${l.start}) ${l.team}`), siteUrl].join('\n');
+  const html = layout(`KiuFunza 4 · ${region ? title(region) : 'National'} morning brief`, today, `${planLine}${items}${todayRows}${tm ? `<p style="margin:14px 0 4px"><b>Tomorrow / Kesho</b></p>${tm}` : ''}`, `Sent automatically by the LearnImpact KiuFunza field dashboard. Open it for live numbers: <a href="${esc(siteUrl)}" style="color:#354062">${esc(siteUrl)}</a>`);
+  const text = ['AUTOMATED UPDATE - no reply needed', `KiuFunza 4 · ${region ? title(region) : 'National'} morning brief · ${today}`, ...(planText ? ['- ' + planText] : []), ...brief.items.map((i) => '- ' + i.text), ...lines.map((l) => `Today: ${l.name} (${l.start}) ${l.team}`), siteUrl].join('\n');
   return { subject: `KiuFunza 4 · Automated field update · ${region ? title(region) : 'National'} · ${today}`, html, text };
 }
 
@@ -193,6 +204,19 @@ export async function runOnboarding(env, { dry = true, only = null } = {}) {
     if (!sendOk) { results.push({ email, preview: true }); continue; }
     try { await sendMail(env, email, msg); results.push({ email, sent: true }); } catch (e) { results.push({ email, error: String(e && e.message) }); }
   }
+  // after the deadline, HQ is told by name which regions are still missing
+  if (today > PLAN_DEADLINE) {
+    const pp = await planProgress(env, REGIONS);
+    if (pp.missing.length) {
+      const text = `Field plans overdue (deadline ${PLAN_DEADLINE}): ${pp.missing.map(title).join(', ')}. Submitted: ${pp.submitted} of ${pp.total}.`;
+      const msg = { subject: `KiuFunza 4 · Automated reminder · ${pp.missing.length} field plan(s) overdue`, html: layout('KiuFunza 4 · Field plans overdue', today, `<p>${esc(text)}</p><p><a href="${esc(siteUrl)}/#regions" style="color:#354062">Open Regions &amp; plans</a></p>`, 'Sent automatically by the LearnImpact KiuFunza field dashboard.'), text: 'AUTOMATED REMINDER\n' + text };
+      for (const [email, r] of Object.entries(recipients)) {
+        if (r.role !== 'hq' || r.active === false || (r.from && today < r.from)) continue;
+        if (!sendOk) { results.push({ email, preview: true, subject: msg.subject }); continue; }
+        try { await sendMail(env, email, msg); results.push({ email, sent: true }); } catch (e) { results.push({ email, error: String(e && e.message) }); }
+      }
+    }
+  }
   return results;
 }
 
@@ -223,8 +247,9 @@ export async function reminderEmail(env, region, today, siteUrl) {
   const link = `<a href="${esc(siteUrl)}/#plan" style="color:#354062">Open Plan &amp; calendar</a>`;
   if (plan.status !== 'locked') {
     if (today < '2026-10-16') return null;
-    const html = layout(`KiuFunza 4 · ${title(region)} plan reminder`, today, `<p>The whole-field calendar for ${esc(title(region))} has not been submitted yet. Field work starts on 19 October, and the notices to ward officers (5 working days) and head teachers (3 working days) depend on it.</p><p>${link}</p>`, `Sent automatically by the LearnImpact KiuFunza field dashboard.`);
-    return { subject: `KiuFunza 4 · Automated reminder · ${title(region)} field plan not submitted`, html, text: `AUTOMATED REMINDER\n${title(region)} field plan is not submitted. ${siteUrl}/#plan` };
+    const dueTxt = today > PLAN_DEADLINE ? `It was due on ${PLAN_DEADLINE} and is now overdue.` : today === PLAN_DEADLINE ? 'It is due today.' : `Please submit it by ${PLAN_DEADLINE}.`;
+    const html = layout(`KiuFunza 4 · ${title(region)} plan reminder`, today, `<p>The whole-field calendar for ${esc(title(region))} has not been submitted yet. ${dueTxt} Field work starts on 19 October, and the notices to ward officers (5 working days) and head teachers (3 working days) depend on it.</p><p>${link}</p>`, `Sent automatically by the LearnImpact KiuFunza field dashboard.`);
+    return { subject: `KiuFunza 4 · Automated reminder · ${title(region)} field plan not submitted`, html, text: `AUTOMATED REMINDER\n${title(region)} field plan is not submitted. ${dueTxt} ${siteUrl}/#plan` };
   }
   const dec = withNotices(plan, today, null).visits.filter((v) => v.date > today);
   const items = [];

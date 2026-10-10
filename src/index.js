@@ -13,7 +13,7 @@ import { subscribe, unsubscribe, takeAlert, hashEndpoint, pushTo, pushStatus, pu
 import { tick, syncStatus, recomputeSummaries, resetAll, resetKind, loadState, loadYear, saveYear, stateYears, clearPractice } from './sync.js';
 import { getPlan, submitPlan, saveDraft, changeVisit, markNotice, withNotices } from './plan.js';
 import {
-  REGIONS, PARTNERS, REASONS, DAY_REASONS, PRACTICE_BY_ID, PRACTICE_REGION, FIELD_START, FIELD_END, PILOT_DAY, TRAINING_START, CURRENT_YEAR, STAFF, rosterState, staffForKoboName, SCHOOLS_BY_REGION, SCHOOL_BY_ID, eatToday,
+  REGIONS, PARTNERS, REASONS, DAY_REASONS, PRACTICE_BY_ID, PRACTICE_REGION, PLAN_DEADLINE, FIELD_START, FIELD_END, PILOT_DAY, TRAINING_START, CURRENT_YEAR, STAFF, rosterState, staffForKoboName, SCHOOLS_BY_REGION, SCHOOL_BY_ID, eatToday,
   TARGET_PER_GRADE, DODOMA_TARGET_PER_GRADE, NOTICE_AEK_WORKING_DAYS, NOTICE_HT_WORKING_DAYS,
 } from './config.js';
 
@@ -121,9 +121,10 @@ export default {
       // ---------- role-aware overview ----------
       if (path === '/api/overview') {
         const { years, sum, year, rehearsal } = await loadSummary(env, url.searchParams.get('year'));
-        if (!sum) return json({ status: 'waiting', who, years });
+        const planDue = (who.role === 'rc' || who.role === 'arc') && who.region ? { deadline: PLAN_DEADLINE, locked: (await getPlan(env, who.region)).status === 'locked' } : null;
+        if (!sum) return json({ status: 'waiting', who, years, plan_due: planDue });
         const queries = await loadQueries(env);
-        const base = { status: 'ok', who, year, years, rehearsal, as_of: sum.as_of, today: eatToday(), bands: sum.bands, ...publicView(sum) };
+        const base = { status: 'ok', who, year, years, rehearsal, as_of: sum.as_of, today: eatToday(), bands: sum.bands, plan_due: planDue, ...publicView(sum) };
         if (who.role === 'hq') {
           const plans = {};
           (await Promise.all(REGIONS.map((r) => getPlan(env, r)))).forEach((p, k) => { plans[REGIONS[k]] = { status: p.status, visits: p.visits.length, changes: p.changes.length, late_changes: p.changes.filter((c) => c.late).length, submitted_at: p.submitted_at, days_one: dayCounts(p).one, days_three: dayCounts(p).three }; });

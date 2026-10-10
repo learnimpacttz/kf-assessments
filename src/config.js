@@ -139,3 +139,6 @@ export const PRACTICE_REGION = 'TRAINING';
 export const PRACTICE_SCHOOLS = [['TRAIN001', 'TRAINING SCHOOL 1', 'M&E'], ['TRAIN002', 'TRAINING SCHOOL 2', 'No-M&E'], ['TRAIN003', 'TRAINING SCHOOL 3', 'M&E']].map(([id, name, mne]) => ({ id, region: PRACTICE_REGION, lga: 'TRAINING LGA', ward: 'TRAINING', name, arm: 'Practice', mne, practice: true }));
 export const PRACTICE_BY_ID = Object.fromEntries(PRACTICE_SCHOOLS.map((s) => [s.id, s]));
 export const isPracticeSchool = (id) => String(id || '').startsWith('TRAIN');
+
+// Every coordinator submits the whole-field plan by this date (the notices to ward officers and head teachers depend on it)
+export const PLAN_DEADLINE = '2026-10-16';

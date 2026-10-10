@@ -133,3 +133,10 @@ export function withNotices(plan, today, schoolVisits) {
     }),
   };
 }
+
+// Which regions have submitted their whole-field plan
+export async function planProgress(env, regions) {
+  const plans = await Promise.all(regions.map((r) => getPlan(env, r)));
+  const missing = regions.filter((r, k) => plans[k].status !== 'locked');
+  return { total: regions.length, submitted: regions.length - missing.length, missing };
+}

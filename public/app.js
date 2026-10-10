@@ -750,7 +750,14 @@ function render() {
   if (!tabs.find((t) => t[0] === S.tab)) S.tab = tabs[0][0];
   $('#nav').innerHTML = tabs.map(([k, t]) => `<button role="tab" aria-selected="${k === S.tab}" data-tab="${k}">${t}</button>`).join('');
   $('#who').innerHTML = S.viewAs ? `${viewAsControl()}<button class="ghost" data-act="exitPreview">Back to HQ</button>` : S.who ? `${viewAsControl()}<span>${esc(S.who.name)}${S.who.position ? ' · ' + esc(S.who.position) : ''}</span><button class="ghost" data-act="alerts" id="alertsBtn">${alertsLabel()}</button><button class="ghost" data-act="logout">Sign out</button>` : '<button class="ghost" data-act="showLogin">Sign in</button>';
-  $('#app').innerHTML = previewBanner() + VIEWS[S.tab]();
+  const pd = S.ov && S.ov.plan_due;
+  let planBanner = '';
+  if (pd && !pd.locked && !S.viewAs) {
+    const left = Math.round((Date.parse(pd.deadline) - Date.parse(new Date(Date.now() + 3 * 3600e3).toISOString().slice(0, 10))) / 86400000);
+    const msg = left > 0 ? `Submit your whole-field plan by ${dayName(pd.deadline)} (${left} day${left > 1 ? 's' : ''} left).` : left === 0 ? 'Your whole-field plan is due TODAY.' : `Your whole-field plan is overdue (it was due ${dayName(pd.deadline)}).`;
+    planBanner = `<div class="banner ${left <= 0 ? 'bad' : ''}"><b>Plan not submitted.</b> ${msg} The notices to ward officers and head teachers depend on it. <a href="#plan" data-tab="plan"><b>Open Plan &amp; calendar</b></a></div>`;
+  }
+  $('#app').innerHTML = previewBanner() + planBanner + VIEWS[S.tab]();
   $('#gswrap').hidden = !S.who;
 }
 
