@@ -406,7 +406,7 @@ export default {
         const years = (await kv(env).get('v2:years')) || [];
         const sum26 = years.includes(CURRENT_YEAR) ? await kv(env).get('v2:sum:' + CURRENT_YEAR) : null;
         const plans = await Promise.all(REGIONS.map((r) => getPlan(env, r)));
-        const submitted = plans.filter((p) => p.status === 'locked').length;
+        const submitted = plans.filter((p, k) => REGIONS[k] !== 'DODOMA' && p.status === 'locked').length;
         const rec = await loadRecipients(env);
         const push = await pushStatus(env);
         const cal = await kv(env).get('v2:calcsv:last');
