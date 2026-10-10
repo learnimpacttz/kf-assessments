@@ -15,6 +15,8 @@ async function api(path, opts = {}) {
   return data;
 }
 
+// Treatment / Control is what the programme cares about; M&E (team visit) is added as a second detail
+const armLabel = (s) => `${s.arm || ''}${s.mne === 'M&E' ? ' · M&E' : s.mne ? ' · test only' : ''}`;
 const fmt = (n) => (n == null ? '–' : Number(n).toLocaleString('en-GB'));
 const pc = (a, b) => (b ? Math.round((a / b) * 100) : 0);
 const dayName = (iso) => new Date(iso + 'T00:00:00Z').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' });
@@ -117,7 +119,7 @@ function viewRegion() {
   const remaining = r.total - r.done;
   const rows = schools.slice().sort((a, b) => (a.done - b.done) || (b.started - a.started) || a.name.localeCompare(b.name)).map((s) => {
     const t = s.g[1].av + s.g[2].av + s.g[3].av, tg = s.g[1].target + s.g[2].target + s.g[3].target;
-    return `<tr><td><b>${esc(s.name)}</b></td><td class="hide-s">${esc(title(s.lga))}</td><td class="hide-s">${s.mne === 'M&E' ? 'M&amp;E' : 'Test only'}</td><td class="num hide-s">${s.g[1].av}/${s.g[1].target}</td><td class="num hide-s">${s.g[2].av}/${s.g[2].target}</td><td class="num hide-s">${s.g[3].av}/${s.g[3].target}</td><td>${bar(pc(t, tg))}</td><td>${statusPill(s)}</td></tr>`;
+    return `<tr><td><b>${esc(s.name)}</b></td><td class="hide-s">${esc(title(s.lga))}</td><td class="hide-s">${esc(armLabel(s))}</td><td class="num hide-s">${s.g[1].av}/${s.g[1].target}</td><td class="num hide-s">${s.g[2].av}/${s.g[2].target}</td><td class="num hide-s">${s.g[3].av}/${s.g[3].target}</td><td>${bar(pc(t, tg))}</td><td>${statusPill(s)}</td></tr>`;
   }).join('');
   const neededPerDay = remaining > 0 ? remaining / Math.max(1, workingLeft(o.today)) : 0;
   return `${dataBanner()}<div class="pagehead"><div><h2>${esc(title(r.region))} · ${esc(S.who.position || 'Coordinator')}</h2><p>${r.total} schools · target ${tpg} pupils per grade per school</p></div></div>
@@ -243,7 +245,7 @@ function planBuilder(P, canEdit, region) {
   if (!S.dayNotes) S.dayNotes = { ...(P.plan.day_notes || {}) };
   const byId = Object.fromEntries(cur.map((v) => [v.school, v]));
   const people = P.staff.map((p) => p.name);
-  const rows = P.schools.map((s) => { const v = byId[s.id] || { school: s.id, date: '', start: '08:00', team: [] }; return `<tr><td><b>${esc(s.name)}</b></td><td class="hide-s">${esc(title(s.lga))}</td><td class="hide-s">${s.mne === 'M&E' ? 'M&amp;E' : 'Test only'}</td><td><input type="date" data-pl="date" data-s="${s.id}" value="${esc(v.date)}" min="${planFrom(region)}" max="${S.cfg.field.end}"></td><td><input type="time" data-pl="start" data-s="${s.id}" value="${esc(v.start)}"></td><td><details class="teamd"><summary>${(v.team || []).length ? esc((v.team || []).map((n) => n.split(' ')[0]).join(', ')) : 'Choose team'}</summary><div class="teamlist">${people.map((n) => `<label><input type="checkbox" data-pt="${s.id}" data-pl="team" data-s="${s.id}" value="${esc(n)}" ${(v.team || []).includes(n) ? 'checked' : ''}> ${esc(n)}</label>`).join('')}</div></details></td></tr>`; }).join('');
+  const rows = P.schools.map((s) => { const v = byId[s.id] || { school: s.id, date: '', start: '08:00', team: [] }; return `<tr><td><b>${esc(s.name)}</b></td><td class="hide-s">${esc(title(s.lga))}</td><td class="hide-s">${esc(armLabel(s))}</td><td><input type="date" data-pl="date" data-s="${s.id}" value="${esc(v.date)}" min="${planFrom(region)}" max="${S.cfg.field.end}"></td><td><input type="time" data-pl="start" data-s="${s.id}" value="${esc(v.start)}"></td><td><details class="teamd"><summary>${(v.team || []).length ? esc((v.team || []).map((n) => n.split(' ')[0]).join(', ')) : 'Choose team'}</summary><div class="teamlist">${people.map((n) => `<label><input type="checkbox" data-pt="${s.id}" data-pl="team" data-s="${s.id}" value="${esc(n)}" ${(v.team || []).includes(n) ? 'checked' : ''}> ${esc(n)}</label>`).join('')}</div></details></td></tr>`; }).join('');
   return `<div class="banner">Not submitted yet. The dates and teams below follow the protocol: 2 schools a day, the Regional Coordinator and the Assistant each leading one school with 2 volunteers. Change what does not fit. After you submit the plan locks.</div>
   <div class="card" style="margin-top:12px"><div class="tbl"><table><thead><tr><th>School</th><th class="hide-s">LGA</th><th class="hide-s">Type</th><th>Date</th><th>Start</th><th>Team</th></tr></thead><tbody>${rows}</tbody></table></div>
   <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn sec" data-act="resuggest">Re-suggest dates and teams</button></div></div>
@@ -391,7 +393,7 @@ function schoolCard(id) {
   const flags = flagsAll().filter((f) => f.school === id && isOpen(f));
   const rows = [1, 2, 3].map((g) => `<tr><td>Grade ${g}</td><td class="r num">${s.g[g].att ?? '–'}</td><td class="r num">${s.g[g].target}</td><td class="r num">${s.g[g].av}</td><td>${s.g[g].done ? '<span class="pill good">complete</span>' : s.g[g].n ? '<span class="pill warn">in progress</span>' : '<span class="pill mute">not started</span>'}</td></tr>`).join('');
   return `<h2>${esc(s.name)}</h2><p class="m">${s.region ? lk('region', s.region, title(s.region)) + ' · ' : ''}${esc(title(s.lga))} LGA · ${esc(title(s.ward || ''))} ward · ${esc(s.id)}</p>
-  <p style="margin:8px 0">${statusPill(s)} <span class="pill mute">${s.mne === 'M&E' ? 'M&amp;E (team visit)' : 'Test only (one person)'}</span> <span class="pill mute">${esc(s.arm)}</span></p>
+  <p style="margin:8px 0">${statusPill(s)} <span class="pill mute">${esc(s.arm)}</span> <span class="pill mute">${s.mne === 'M&E' ? 'M&amp;E (team visit)' : 'Test only (one person)'}</span></p>
   <div class="grid kpis">${kpi('Visit', s.first ? shortDate(s.first) + (s.last && s.last !== s.first ? ' – ' + shortDate(s.last) : '') : 'not yet')}${kpi('People by name', s.max_team || '–', 'test admins recorded')}${kpi('Phones', s.max_devices || '–', 'different phones that sent tests')}${kpi('Teacher forms', s.teacher_forms)}${kpi('Test admins', s.admins.length)}</div>
   <h3 style="margin:16px 0 4px">Pupils by grade</h3><div class="tbl"><table><thead><tr><th>Grade</th><th class="r">Attended</th><th class="r">Sample</th><th class="r">Tested</th><th>Status</th></tr></thead><tbody>${rows}</tbody></table></div>
   ${s.people && Object.keys(s.people).length ? `<h3 style="margin:16px 0 4px">People at the school, by day</h3><div class="tbl"><table><thead><tr><th>Day</th><th class="r">Names</th><th class="r">Phones</th><th></th></tr></thead><tbody>${Object.entries(s.people).sort().map(([d, [nn, dd]]) => `<tr><td>${shortDate(d)}</td><td class="r num">${nn}</td><td class="r num">${dd || '–'}</td><td>${dd && dd < nn ? chip('fewer phones than names', 'warn') : dd ? chip('matches', 'good') : chip('no phone data', 'mute')}</td></tr>`).join('')}</tbody></table></div><div class="m" style="margin-top:4px">Each person should use their own phone. The sampling form already sends the phone ID; the test form will once the updated form is installed.</div>` : ''}
@@ -469,7 +471,7 @@ function schoolTable(rows, hq) {
     { k: 'name', label: 'School', val: (s) => s.name, search: (s) => s.name + ' ' + s.id, html: (s) => `<b>${lk('school', s.id, s.name)}</b>` },
     ...(hq ? [{ k: 'region', label: 'Region', val: (s) => s.region, search: (s) => s.region, html: (s) => lk('region', s.region, title(s.region)) }] : []),
     { k: 'lga', label: 'LGA', val: (s) => s.lga, search: (s) => s.lga + ' ' + (s.ward || ''), small: true, html: (s) => esc(title(s.lga)) },
-    { k: 'type', label: 'Type', val: (s) => s.mne, small: true, html: (s) => chip(s.mne === 'M&E' ? 'M&amp;E' : 'Test only', s.mne === 'M&E' ? 'teal' : 'mute') },
+    { k: 'type', label: 'Group', val: (s) => s.arm, small: true, html: (s) => chip(esc(armLabel(s)), s.arm === 'Treatment' ? 'teal' : 'mute') },
     { k: 'att', label: 'Attended 1/2/3', cls: 'r', small: true, val: (s) => s.g[1].att, html: (s) => `<span class="num">${s.g[1].att ?? '–'}/${s.g[2].att ?? '–'}/${s.g[3].att ?? '–'}</span>` },
     ...[1, 2, 3].map((g) => ({ k: 'g' + g, label: 'Gr ' + g, cls: 'r', small: true, val: (s) => pc(s.g[g].av, s.g[g].target), html: (s) => chip(`${s.g[g].av}/${s.g[g].target}`, s.g[g].done ? 'good' : s.g[g].av ? 'warn' : 'mute') })),
     { k: 'prog', label: 'Progress', val: (s) => pc(t(s), tg(s)), html: (s) => `<div style="min-width:90px">${bar(pc(t(s), tg(s)))}</div>` },
@@ -481,7 +483,8 @@ function schoolTable(rows, hq) {
   const filters = [
     ...(hq ? [{ k: 'region', label: 'Region', get: (s) => s.region, options: (r) => [...new Set(r.map((s) => s.region))].sort().map((x) => [x, title(x)]) }] : []),
     { k: 'lga', label: 'LGA', get: (s) => s.lga, options: (r) => [...new Set(r.map((s) => s.lga))].sort().map((x) => [x, title(x)]) },
-    { k: 'type', label: 'Type', get: (s) => s.mne, options: () => [['M&E', 'M&E (team)'], ['No-M&E', 'Test only']] },
+    { k: 'arm', label: 'Group', get: (s) => s.arm, options: () => [['Treatment', 'Treatment'], ['Control', 'Control'], ['Pilot', 'Pilot']] },
+    { k: 'type', label: 'Visit', get: (s) => s.mne, options: () => [['M&E', 'M&E (team visit)'], ['No-M&E', 'Test only (one person)']] },
     { k: 'status', label: 'Status', get: (s) => (s.done ? 'done' : s.started ? 'prog' : 'new'), options: () => [['done', 'Complete'], ['prog', 'In progress'], ['new', 'Not started']] },
   ];
   return dataTable(hq ? 'schools-hq' : 'schools', cols, rows, { filters, sort: 'name', dir: 1, open: (s) => 'school:' + s.id, placeholder: 'Search a school, ward or LGA', limit: 400 });

@@ -258,7 +258,7 @@ export function summarize(Y, { year, bands, today, owners = {}, practice = false
     if (sc.done) nSchoolsDone += 1;
     // team-size rule depends on school type (No-M&E schools are one-person visits)
     if (sc.started && sc.mne === 'M&E' && (sc.maxTeam < 2 || sc.maxTeam > 6))
-      flags.push({ sev: 'warn', type: 'team', school: sc.id, admin: sc.admins[0] || '', date: sc.last, text: `M&E school visited by ${sc.maxTeam} test admin(s)`, hint: 'M&E schools need a team of 2 to 6.' });
+      flags.push({ sev: 'warn', type: 'team', school: sc.id, admin: sc.admins[0] || '', date: sc.last, text: `${sc.arm} school (M&E team visit) visited by ${sc.maxTeam} test admin(s)`, hint: 'M&E team-visit schools need a team of 2 to 6.' });
     for (const g of [1, 2, 3]) {
       const G = sc.g[g];
       if (G.av > G.target && G.target > 0) flags.push({ sev: 'warn', type: 'over', school: sc.id, grade: g, admin: sc.admins[0] || '', date: sc.last, text: `Grade ${g}: ${G.av} tested, target ${G.target}`, hint: 'More pupils than the sample. Check for extras.' });
