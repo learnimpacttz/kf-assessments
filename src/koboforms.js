@@ -20,7 +20,7 @@ export async function koboForm(env, b) {
   if (b.op === 'inspect') { // what a project holds right now: for checks before and after a replacement
     const a = await get(b.asset); const c = a.content || {}; const survey = c.survey || [];
     const f = await (await fetch(`${srv}/api/v2/assets/${b.asset}/files/?format=json`, { headers: H })).json().catch(() => ({}));
-    return { ...brief(a), rows: survey.length, names: survey.map((q) => q.name || q.$autoname).filter(Boolean), cal_status: (survey.find((q) => q.name === 'cal_status') || {}).calculation || null, files: (f.results || []).map((x) => x.metadata?.filename) };
+    return { ...brief(a), links: a.deployment__links || null, rows: survey.length, names: survey.map((q) => q.name || q.$autoname).filter(Boolean), cal_status: (survey.find((q) => q.name === 'cal_status') || {}).calculation || null, files: (f.results || []).map((x) => x.metadata?.filename) };
   }
   if (b.op === 'clone') {
     if (!known.includes(b.source)) throw new Error('Unknown source');

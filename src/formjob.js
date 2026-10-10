@@ -6,7 +6,8 @@ import { SAMPLING_STANDARD } from './data/sampling_standard.js';
 import { loadRecipients, sendMail } from './digest.js';
 
 const KEY = 'v2:formjob';
-const DEFAULT = { armed: true, run_after: '2026-10-16T03:00:00Z', expire_after: '2026-10-18T20:00:00Z', done: null, result: null, expect_current_rows: 86, expect_new_rows: 63, expect_name: 'KF4 Sampling Tool' };
+// expect_current_rows: the pilot form as first deployed (86), or the pilot form with the corrected draw (326)
+const DEFAULT = { armed: true, run_after: '2026-10-16T03:00:00Z', expire_after: '2026-10-18T20:00:00Z', done: null, result: null, expect_current_rows: [86, 326], expect_new_rows: 183, expect_name: 'KF4 Sampling Tool' };
 export const loadFormJob = async (env) => ({ ...DEFAULT, ...((await kv(env).get(KEY)) || {}) });
 export const saveFormJob = (env, st) => kv(env).put(KEY, st);
 
@@ -37,7 +38,8 @@ export async function runFormJob(env, opts = {}) {
     log.push(`before: ${before.name}, ${before.rows} rows, ${before.submissions} submissions, deployed ${before.deployed_version_id}`);
     if (!test && before.name !== st.expect_name) return await fail(`project name is "${before.name}", expected "${st.expect_name}"`);
     if (before.version_id !== before.deployed_version_id) return await fail('the project has an undeployed draft; someone is editing it');
-    if (before.rows !== expectCur) return await fail(`the live form has ${before.rows} rows, not the ${expectCur} of the pilot form; it was changed by hand`);
+    const curOk = [].concat(expectCur).includes(before.rows);
+    if (!curOk) return await fail(`the live form has ${before.rows} rows, not the ${[].concat(expectCur).join(' or ')} of the pilot form; it was changed by hand`);
     const imp = await koboForm(env, { op: 'import', asset, filename: SAMPLING_STANDARD.filename, xlsx_b64: opts.xlsx_b64 || SAMPLING_STANDARD.xlsx_b64 });
     log.push('imported: ' + imp.import);
     const mid = await koboForm(env, { op: 'inspect', asset });
@@ -48,6 +50,7 @@ export async function runFormJob(env, opts = {}) {
     if (expectNew && mid.rows !== expectNew) problems.push(`rows ${mid.rows}, expected ${expectNew}`);
     if (!/TRAIN/.test(mid.cal_status || '')) problems.push('calendar check formula missing');
     if (mid.names.includes('stuid')) problems.push('student-test questions found');
+    if (!mid.names.includes('rnd20') || !mid.names.includes('int20') || mid.names.includes('rnd21')) problems.push('the 20-number draw is missing or wrong');
     for (const f of ['ref_kf4schools.csv', 'ref_calendar.csv', 'logo6.png']) if (!mid.files.includes(f)) problems.push('media file missing: ' + f);
     if (problems.length) return await fail('checks after import failed: ' + problems.join('; '), { draft_version: mid.version_id });
     await koboForm(env, { op: 'deploy', asset });

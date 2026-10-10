@@ -595,7 +595,7 @@ export default {
           const st = await loadFormJob(env);
           if (b.action === 'disarm') { st.armed = false; await saveFormJob(env, st); }
           else if (b.action === 'arm') { st.armed = true; if (st.done === 'failed' || st.done === 'expired') st.done = null; await saveFormJob(env, st); }
-          else if (b.action === 'run') { const o = b.asset ? { asset: b.asset, expectCurrentRows: b.expect_current_rows, expectNewRows: b.expect_new_rows } : { force: true }; return json({ ran: await runFormJob(env, o) }); }
+          else if (b.action === 'run') { const o = b.asset ? { asset: b.asset, expectCurrentRows: b.expect_current_rows ?? undefined, expectNewRows: b.expect_new_rows } : { force: true }; return json({ ran: await runFormJob(env, o) }); }
           else return err('Unknown action');
         }
         const { ...st } = await loadFormJob(env); return json(st);
