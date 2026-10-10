@@ -15,8 +15,8 @@ async function api(path, opts = {}) {
   return data;
 }
 
-// Treatment / Control is what the programme cares about; M&E (team visit) is added as a second detail
-const armLabel = (s) => `${s.arm || ''}${s.mne === 'M&E' ? ' · M&E' : s.mne ? ' · test only' : ''}`;
+// Treatment / Control is what the programme cares about; M&E (baseline school and teacher survey, surprise visits) is added only to the schools that carry it
+const armLabel = (s) => `${s.arm || ''}${s.mne === 'M&E' ? ' · M&E' : ''}`;
 const fmt = (n) => (n == null ? '–' : Number(n).toLocaleString('en-GB'));
 const pc = (a, b) => (b ? Math.round((a / b) * 100) : 0);
 const dayName = (iso) => new Date(iso + 'T00:00:00Z').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' });
@@ -146,7 +146,7 @@ function viewDay() {
   const todays = mine.filter((v) => v.date === today);
   const next = mine.filter((v) => v.date > today).sort((a, b) => (a.date < b.date ? -1 : 1)).slice(0, 4);
   const sch = Object.fromEntries((o.mine.schools || []).map((s) => [s.id, s]));
-  const card = (v) => { const s = sch[v.school]; const g = s?.g; return `<div class="sch"><h4>${esc(v.school_name)}</h4><div class="m">${esc(title(v.lga))} · ${v.mne === 'M&E' ? 'M&amp;E school' : 'test-only school'} · starts ${esc(v.start)}</div>${g ? `<div class="gr">${[1, 2, 3].map((k) => `<div><b>${g[k].av}/${g[k].target}</b><small>Darasa ${k}</small></div>`).join('')}</div>` : ''}${s?.done ? '<div class="note" style="margin-top:8px">Shule imekamilika · School complete</div>' : ''}</div>`; };
+  const card = (v) => { const s = sch[v.school]; const g = s?.g; return `<div class="sch"><h4>${esc(v.school_name)}</h4><div class="m">${esc(title(v.lga))} · ${esc(armLabel(v))} · starts ${esc(v.start)}</div>${g ? `<div class="gr">${[1, 2, 3].map((k) => `<div><b>${g[k].av}/${g[k].target}</b><small>Darasa ${k}</small></div>`).join('')}</div>` : ''}${s?.done ? '<div class="note" style="margin-top:8px">Shule imekamilika · School complete</div>' : ''}</div>`; };
   const mf = o.mine.flags.filter(isOpen).length;
   return `${dataBanner()}<div class="pagehead"><div><h2>Habari, ${esc(me.name.split(' ')[0])}</h2><p>${dayName(today)} · ${esc(title(me.region))}</p></div></div>
   ${mf ? `<div class="banner bad">You have <b>${mf}</b> query(ies) to look at. Open "My queries".</div>` : ''}
@@ -397,7 +397,7 @@ function schoolCard(id) {
   const flags = flagsAll().filter((f) => f.school === id && isOpen(f));
   const rows = [1, 2, 3].map((g) => `<tr><td>Grade ${g}</td><td class="r num">${s.g[g].att ?? '–'}</td><td class="r num">${s.g[g].target}</td><td class="r num">${s.g[g].av}</td><td>${s.g[g].done ? '<span class="pill good">complete</span>' : s.g[g].n ? '<span class="pill warn">in progress</span>' : '<span class="pill mute">not started</span>'}</td></tr>`).join('');
   return `<h2>${esc(s.name)}</h2><p class="m">${s.region ? lk('region', s.region, title(s.region)) + ' · ' : ''}${esc(title(s.lga))} LGA · ${esc(title(s.ward || ''))} ward · ${esc(s.id)}</p>
-  <p style="margin:8px 0">${statusPill(s)} <span class="pill mute">${esc(s.arm)}</span> <span class="pill mute">${s.mne === 'M&E' ? 'M&amp;E (team visit)' : 'Test only (one person)'}</span></p>
+  <p style="margin:8px 0">${statusPill(s)} <span class="pill mute">${esc(s.arm)}</span> ${s.mne === 'M&E' ? '<span class="pill mute">M&amp;E</span>' : ''}</p>
   <div class="grid kpis">${kpi('Visit', s.first ? shortDate(s.first) + (s.last && s.last !== s.first ? ' – ' + shortDate(s.last) : '') : 'not yet')}${kpi('People by name', s.max_team || '–', 'test admins recorded')}${kpi('Phones', s.max_devices || '–', 'different phones that sent tests')}${kpi('Teacher forms', s.teacher_forms)}${kpi('Test admins', s.admins.length)}</div>
   <h3 style="margin:16px 0 4px">Pupils by grade</h3><div class="tbl"><table><thead><tr><th>Grade</th><th class="r">Attended</th><th class="r">Sample</th><th class="r">Tested</th><th>Status</th></tr></thead><tbody>${rows}</tbody></table></div>
   ${s.people && Object.keys(s.people).length ? `<h3 style="margin:16px 0 4px">People at the school, by day</h3><div class="tbl"><table><thead><tr><th>Day</th><th class="r">Names</th><th class="r">Phones</th><th></th></tr></thead><tbody>${Object.entries(s.people).sort().map(([d, [nn, dd]]) => `<tr><td>${shortDate(d)}</td><td class="r num">${nn}</td><td class="r num">${dd || '–'}</td><td>${dd && dd < nn ? chip('fewer phones than names', 'warn') : dd ? chip('matches', 'good') : chip('no phone data', 'mute')}</td></tr>`).join('')}</tbody></table></div><div class="m" style="margin-top:4px">Each person should use their own phone. The sampling form already sends the phone ID; the test form will once the updated form is installed.</div>` : ''}
@@ -488,7 +488,7 @@ function schoolTable(rows, hq) {
     ...(hq ? [{ k: 'region', label: 'Region', get: (s) => s.region, options: (r) => [...new Set(r.map((s) => s.region))].sort().map((x) => [x, title(x)]) }] : []),
     { k: 'lga', label: 'LGA', get: (s) => s.lga, options: (r) => [...new Set(r.map((s) => s.lga))].sort().map((x) => [x, title(x)]) },
     { k: 'arm', label: 'Group', get: (s) => s.arm, options: () => [['Treatment', 'Treatment'], ['Control', 'Control'], ['Pilot', 'Pilot']] },
-    { k: 'type', label: 'Visit', get: (s) => s.mne, options: () => [['M&E', 'M&E (team visit)'], ['No-M&E', 'Test only (one person)']] },
+    { k: 'type', label: 'M&E', get: (s) => s.mne, options: () => [['M&E', 'M&E schools'], ['No-M&E', 'Without M&E']] },
     { k: 'status', label: 'Status', get: (s) => (s.done ? 'done' : s.started ? 'prog' : 'new'), options: () => [['done', 'Complete'], ['prog', 'In progress'], ['new', 'Not started']] },
   ];
   return dataTable(hq ? 'schools-hq' : 'schools', cols, rows, { filters, sort: 'name', dir: 1, open: (s) => 'school:' + s.id, placeholder: 'Search a school, ward or LGA', limit: 400 });
