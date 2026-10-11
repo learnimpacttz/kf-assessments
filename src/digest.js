@@ -187,7 +187,7 @@ export async function maybeRunScheduledDigests(env) {
   const slots = { '04:00': 'morning', '14:30': 'evening', '11:00': 'reminder' }; // 07:00, 17:30 and 14:00 EAT
   const kind = slots[hhmm];
   const today0 = eatToday();
-  if (hhmm >= '04:00' && hhmm < '12:00' && today0 === ONBOARD_DATE) { // any minute from 07:00 to 15:00 EAT, so a missed tick cannot skip it
+  if (hhmm >= '07:00' && hhmm < '12:00' && today0 === ONBOARD_DATE) { // any minute from 10:00 to 15:00 EAT (after the morning training session), so a missed tick cannot skip it
     const done = (await kv(env).get('v2:onboard:sent')) || null;
     if (!done) {
       await kv(env).put('v2:onboard:sent', { at: new Date().toISOString() });
