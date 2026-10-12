@@ -34,18 +34,18 @@ export async function attachDelete(env, who, b) {
   if (!a.uid) return { error: 'Project not found', status: 404 };
   if (String(b.confirm || '').trim() !== a.name) return { error: `Type the project name exactly: ${a.name}` };
   if (b.copy_ok !== true) return { error: 'Confirm that the files were saved and checked first.' };
-  const before = await count(env, asset); const u0 = await usage(env);
-  // delete the files one by one (images only unless told otherwise), so the small audit-log text files stay
-  const onlyImages = b.only !== 'all'; const cap = Number(b.batch_limit) > 0 ? Number(b.batch_limit) : Infinity; let cur = null, todo = [];
-  for (let i = 0; i < 60 && todo.length < cap; i++) { const p = await attachList(env, asset, cur, 100); for (const it of p.items) if (it.aid && (!onlyImages || /^image\//.test(it.mime))) todo.push(it.aid); if (!p.next) break; cur = p.next; }
-  todo = todo.slice(0, cap === Infinity ? undefined : cap);
+  // Cloudflare limits the calls one request may make, so each request deletes a chunk and says how many are left; the page repeats until none are
+  const u0 = await usage(env);
+  const onlyImages = b.only !== 'all'; let cur = null, all = [];
+  for (let i = 0; i < 60; i++) { const p = await attachList(env, asset, cur, 500); for (const it of p.items) if (it.aid && (!onlyImages || /^image\//.test(it.mime))) all.push(it.aid); if (!p.next) break; cur = p.next; }
+  const chunk = Math.min(Number(b.batch_limit) > 0 ? Number(b.batch_limit) : 40, 40); // stays under the 50-call limit even on the free Workers plan const todo = all.slice(0, chunk);
   let deleted = 0; const problems = [];
   for (const aid of todo) { const r = await fetch(`${srv(env)}/api/v2/assets/${asset}/attachments/${aid}/`, { method: 'DELETE', headers: H(env) }); if (r.status === 204 || r.status === 200 || r.status === 404) deleted++; else { problems.push(`${aid}: ${r.status} ${(await r.text()).slice(0, 100)}`); if (problems.length > 3) break; } }
-  const after = await count(env, asset); const u1 = await usage(env);
-  const entry = { at: new Date().toISOString(), kind: 'Files only: ' + a.name, suggested_by: 'Michael Kamukulu (written approval in chat 12 Oct 2026)', initiated_by: who.name, approved_by: who.name, reason: String(b.reason || 'Free KoBo storage; records kept, files saved first').slice(0, 300), ids: [], regions: [], count_before: before.attachments, count_after: after.attachments, storage_before: u0.used, storage_after: u1.used, ok: !problems.length && after.attachments <= before.attachments - deleted + 0 && deleted > 0, failed: problems };
+  const before = { attachments: all.length, submissions: 0 }; const after = { attachments: all.length - deleted }; const u1 = await usage(env); const remaining = all.length - deleted;
+  const entry = { at: new Date().toISOString(), kind: 'Files only: ' + a.name, suggested_by: 'Michael Kamukulu (written approval in chat 12 Oct 2026)', initiated_by: who.name, approved_by: who.name, reason: String(b.reason || 'Free KoBo storage; records kept, files saved first').slice(0, 300), ids: [], regions: [], count_before: before.attachments, count_after: after.attachments, storage_before: u0.used, storage_after: u1.used, ok: !problems.length && deleted > 0, failed: problems };
   const lg = (await kv(env).get(LOG)) || []; lg.unshift(entry); await kv(env).put(LOG, lg.slice(0, 500));
   await tellHQ(env, 'KiuFunza 4 · Automated update · Files deleted from a KoBo project', [`${who.name} deleted the attached files (not the records) in "${a.name}": ${before.attachments} files before, ${after.attachments} after. Storage used: ${u0.used} to ${u1.used} bytes.`]).catch(() => {});
-  return { project: a.name, submissions: before.submissions, files_before: before.attachments, files_after: after.attachments, deleted, storage_before: u0.used, storage_after: u1.used, storage_limit: u1.limit, problems };
+  return { project: a.name, remaining, done: remaining === 0 && !problems.length, files_before: before.attachments, files_after: after.attachments, deleted, storage_before: u0.used, storage_after: u1.used, storage_limit: u1.limit, problems };
 }
 
 // storage overview for the Admin card: account use and the projects that hold the space
