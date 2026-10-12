@@ -5,7 +5,7 @@ import { buildCalendar, markCalendarDirty, syncCalendar, calendarStatus, setCalS
 import { loadFormJob, saveFormJob, runFormJob, maybeRunFormJob } from './formjob.js';
 import { kv } from './store.js';
 import { buildBrief, aiBrief } from './brief.js';
-import { morningDigest, eveningGap, loadRecipients, saveRecipients, runDigests, maybeRunScheduledDigests, sendMail, onboardingEmail, runOnboarding, hqOnboardingEmail, reminderEmail, runReminders } from './digest.js';
+import { emailSchedule, morningDigest, eveningGap, loadRecipients, saveRecipients, runDigests, maybeRunScheduledDigests, sendMail, onboardingEmail, runOnboarding, hqOnboardingEmail, reminderEmail, runReminders } from './digest.js';
 import { loadQueries, decorate, postQuery, flagKey } from './queries.js';
 import { identify, staffCodes, canSeeRegion } from './auth.js';
 import { forecast, atRiskSchools } from './predict.js';
@@ -593,6 +593,7 @@ export default {
         return json(out);
       }
       if (path === '/api/admin/kobo-form' && method === 'POST') { try { return json(await koboForm(env, await request.json())); } catch (e) { return err(String(e.message || e), 502); } }
+      if (path === '/api/admin/email-schedule') return json(await emailSchedule(env));
       if (path === '/api/admin/calsync') {
         if (method === 'POST') {
           const b = await request.json().catch(() => ({}));

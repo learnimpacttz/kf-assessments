@@ -122,7 +122,7 @@ function viewRegion() {
     return `<tr class="click" data-open="school:${esc(s.id)}"><td><b>${esc(s.name)}</b></td><td class="hide-s">${esc(title(s.lga))}</td><td class="hide-s">${esc(armLabel(s))}</td><td class="num hide-s">${s.g[1].av}/${s.g[1].target}</td><td class="num hide-s">${s.g[2].av}/${s.g[2].target}</td><td class="num hide-s">${s.g[3].av}/${s.g[3].target}</td><td>${bar(pc(t, tg))}</td><td>${statusPill(s)}</td></tr>`;
   }).join('');
   const neededPerDay = remaining > 0 ? remaining / Math.max(1, workingLeft(o.today)) : 0;
-  return `${dataBanner()}<div class="pagehead"><div><h2>${esc(title(r.region))} · ${esc(S.who.position || 'Coordinator')}</h2><p>${r.total} schools · target ${tpg} pupils per grade per school</p></div></div>
+  return `${dataBanner()}<div class="pagehead"><div><h2>Habari, ${esc((S.who.name || '').split(' ')[0])}</h2><p>${esc(S.who.role === 'arc' ? 'Assistant Regional Coordinator' : 'Regional Coordinator')} · ${esc(title(r.region))} · ${dayName(o.today)} · ${r.total} schools · target ${tpg} pupils per grade per school</p></div></div>
   <div class="grid kpis">${kpi('Schools complete', `${r.done}<small> / ${r.total}</small>`, pc(r.done, r.total) + '%')}${kpi('Pupils tested', fmt(r.tested), 'of ' + fmt(r.target))}${kpi('Open flags', flags.length, flags.filter((f) => f.sev === 'bad').length + ' need a call', 'allq')}${kpi('Pace', r.pace + ' / day', 'schools per field day, last 5 days')}${kpi('Projected finish', r.projected === 'done' ? 'Done' : r.projected ? shortDate(r.projected) : '–', r.behind ? 'after the 4 Dec close' : 'before the 4 Dec close')}</div>
   ${ownSection()}
   <div class="grid two" style="margin-top:14px"><div class="card"><h3>Schools in ${esc(title(r.region))}</h3><div class="sub">Pupils tested against sample, by grade</div><div class="tbl"><table><thead><tr><th>School</th><th class="hide-s">LGA</th><th class="hide-s">Type</th><th class="hide-s">Gr 1</th><th class="hide-s">Gr 2</th><th class="hide-s">Gr 3</th><th>Progress</th><th>Status</th></tr></thead><tbody>${rows}</tbody></table></div></div>
@@ -319,6 +319,14 @@ function backupDaysCard(a) {
   <div class="card" style="margin-top:14px"><h3>KoBo write access</h3><div class="sub">Needed to mark submissions as approved, not approved or on hold from a query.</div><button class="btn sm sec" data-act="koboCheck">Check access</button>${S.koboWho ? `<p class="m" style="margin-top:8px">${esc(S.koboWho)}</p>` : ''}</div>`;
 }
 const eatTime = (iso) => (iso ? new Date(iso).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Africa/Dar_es_Salaam' }) : '–');
+// ---- what emails go out automatically ----
+const EMAIL_STATUS = { scheduled: 'good', sent: 'good', finished: 'mute', 'sending is off': 'bad', 'no recipients': 'warn' };
+function emailScheduleCard(a) {
+  const E = a.emailSched; if (!E) return '';
+  const when = (t) => (t ? `${dayName(t.slice(0, 10))}, ${t.slice(11)}` : '–');
+  const rows = E.emails.map((x) => `<div class="emrow"><div><b>${esc(x.name)}</b>${x.once ? ' <span class="pill mute">one-off</span>' : ''}<div class="m" style="font-size:12.5px;color:var(--ink3)">${esc(x.contents)}</div></div><div class="emmeta"><div><span>Goes to</span>${esc(x.to)}</div><div><span>When</span>${esc(x.when)}</div><div><span>Last sent</span>${x.last ? dayName(x.last) : 'not yet'}</div><div><span>Next</span>${x.next ? '<b>' + esc(when(x.next)) + '</b>' : 'none'}</div></div><div>${chip(esc(x.status), EMAIL_STATUS[x.status] || 'mute')}</div></div>`).join('');
+  return `<div class="card" style="margin-top:14px"><h3>Automatic emails</h3><div class="sub">Everything the system sends by itself, to whom, and when. Times are East Africa Time. ${E.sending_on ? '<span class="pill good">sending is on</span>' : '<span class="pill bad">sending is OFF: nothing is going out</span>'} Now: ${esc(E.now_eat)}.</div>${rows}</div>`;
+}
 // ---- email recipients as a table ----
 const REC_ROLES = [['hq', 'HQ'], ['rc', 'RC'], ['arc', 'ARC']];
 function recInit(rec) {
@@ -371,10 +379,14 @@ function viewAdmin() {
   return `<div class="pagehead"><div><h2>Admin</h2><p>Readiness, data connections, people, access codes and backups</p></div><button class="btn" data-act="refreshNow">Sync now</button></div>
   ${readinessCard(a)}<div class="card"><h3>Data connections</h3><div class="sub">Student tests, sampling and teacher forms are read from KoBo every 5 minutes in field hours</div><div class="tbl"><table><thead><tr><th>Form</th><th>Status</th><th class="r">Records read</th><th>State</th><th>Last complete</th></tr></thead><tbody>${sync}</tbody></table></div></div>
   ${S.ov.unlisted?.length ? `<div class="banner" style="margin-top:14px"><b>Names in KoBo that are not in the staff roster:</b> ${S.ov.unlisted.map(esc).join(', ')}. Their tests still count, but they have no region or access code.</div>` : ''}
-  <div class="card" style="margin-top:14px"><h3>Email digests</h3><div class="sub">Morning brief 07:00 and evening check 17:30 (East Africa Time). ${a.rec?.sending?.domain_ready && a.rec?.sending?.enabled ? '<span class="pill good">sending is on</span>' : '<span class="pill warn">preview only: no sending domain connected yet</span>'}</div>
+  ${emailScheduleCard(a)}
+  <div class="card" style="margin-top:14px"><h3>Email list</h3><div class="sub">Who is on the lists. Changes apply after you press Save. This does not send anything.</div>
   ${recipientsTable(a)}
-  <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn sm" data-act="saveRec">Save recipients</button><button class="btn sm sec" data-act="prevMail" data-kind="morning" data-region="">Preview national morning</button><button class="btn sm sec" data-act="prevMail" data-kind="morning" data-region="TANGA">Preview Tanga morning</button><button class="btn sm sec" data-act="prevMail" data-kind="evening" data-region="">Preview evening</button><button class="btn sm sec" data-act="prevRem" data-region="TANGA">Preview notice reminder (Tanga)</button></div>
-  ${a.preview ? `<p style="margin:12px 0 4px"><b>${esc(a.preview.subject)}</b></p><iframe sandbox title="Email preview" style="width:100%;height:420px;border:1px solid var(--line);border-radius:8px;background:#fff" srcdoc="${esc(a.preview.html)}"></iframe>` : ''}</div>
+  <div style="margin-top:10px"><button class="btn sm" data-act="saveRec">Save the email list</button></div></div>
+  <div class="card" style="margin-top:14px"><h3>Preview and test</h3><div class="sub"><b>Nothing here is sent to people.</b> A preview only shows what an email would look like today, with today's numbers. To check how it arrives, send a test to your own address.</div>
+  <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn sm sec" data-act="prevMail" data-kind="morning" data-region="">Preview: HQ morning brief</button><button class="btn sm sec" data-act="prevMail" data-kind="morning" data-region="TANGA">Preview: coordinator morning update (Tanga)</button><button class="btn sm sec" data-act="prevMail" data-kind="evening" data-region="">Preview: end-of-day check</button><button class="btn sm sec" data-act="prevRem" data-region="TANGA">Preview: notice reminder (Tanga)</button></div>
+  ${a.preview ? `<div class="banner" style="margin-top:12px;background:var(--warn-bg)"><b>PREVIEW, NOT SENT.</b> Subject: ${esc(a.preview.subject)}</div><iframe sandbox title="Email preview" style="width:100%;height:420px;border:1px solid var(--line);border-radius:8px;background:#fff;margin-top:6px" srcdoc="${esc(a.preview.html)}"></iframe>` : ''}
+  <div class="f" style="margin-top:12px;display:flex;gap:8px;align-items:end;flex-wrap:wrap"><label>Send a test of the HQ morning brief to<input id="testTo" type="email" placeholder="your address" value="${esc(store.get('kf_test_to') || '')}"></label><button class="btn sm" data-act="sendTest">Send test (marked [TEST])</button></div>${S.testMsg ? `<p class="m">${esc(S.testMsg)}</p>` : ''}</div>
   <div class="card" style="margin-top:14px"><h3>Calendar for the KoBo forms</h3><div class="sub">The assessment and sampling forms check each visit against this file. Download it after plans are submitted and after every approved change, then upload it to both forms as <b>ref_calendar.csv</b> (Form, Settings, Media). Without it the check stays off.</div><button class="btn sm" data-act="calCsv">Download ref_calendar.csv</button>${S.calMsg ? `<p class="m" style="margin-top:8px">${esc(S.calMsg)}</p>` : ''}</div>\n  ${autoCards(a)}
   <div class="card" style="margin-top:14px"><h3>Phone alerts</h3><div class="sub">${a.push?.ready ? '<span class="pill good">server ready</span>' : '<span class="pill warn">not set up</span>'} ${a.push ? a.push.devices + ' device(s) subscribed' : ''}${a.push && a.push.devices ? ' (' + Object.entries(a.push.by_role).map(([k, v]) => v + ' ' + k).join(', ') + ')' : ''}. Each person turns alerts on from the header button on their own phone. On iPhone the page must be on the home screen first.</div><button class="btn sm" data-act="pushTest">Send a test alert to HQ devices</button></div>\n  ${rosterCard(a)}${devicesCard(a)}${backupDaysCard(a)}
   <div class="card" style="margin-top:14px"><h3>Access codes</h3><div class="sub">One code per person. Send each person their own code; do not share this list. HQ code stays with you.</div><div class="tbl"><table><thead><tr><th>Region</th><th>Role</th><th>Name</th><th>Code</th></tr></thead><tbody>${codes}</tbody></table></div></div>`;
@@ -1094,8 +1106,8 @@ async function loadAdmin() {
   const [status, codes, rec, ready, roster] = await Promise.all([api('/api/admin/status'), api('/api/admin/codes').catch(() => null), api('/api/admin/recipients').catch(() => null), api('/api/admin/readiness').catch(() => null), api('/api/admin/roster').catch(() => null)]);
   const [devices, backups] = await Promise.all([api('/api/admin/devices').catch(() => null), api('/api/admin/backup?list=1').catch(() => null)]);
   const push = await api('/api/admin/push-status').catch(() => null);
-  const [calsync, formjob] = await Promise.all([api('/api/admin/calsync').catch(() => null), api('/api/admin/formjob').catch(() => null)]);
-  S.recRows = null; S.adm = { status, codes, rec, push, ready, roster, devices, backups, calsync, formjob, preview: S.adm?.preview || null };
+  const [calsync, formjob, emailSched] = await Promise.all([api('/api/admin/calsync').catch(() => null), api('/api/admin/formjob').catch(() => null), api('/api/admin/email-schedule').catch(() => null)]);
+  S.recRows = null; S.adm = { emailSched, status, codes, rec, push, ready, roster, devices, backups, calsync, formjob, preview: S.adm?.preview || null };
 }
 
 if (!window.__newsTimer) window.__newsTimer = setInterval(() => { if (S.who && !document.hidden) loadNews(); }, 90000);
@@ -1123,6 +1135,7 @@ document.addEventListener('click', async (e) => {
     else if (a === 'alerts') await toggleAlerts();
     else if (a === 'exitPreview') await setViewAs('');
     else if (a === 'react') await reactTo(t);
+    else if (a === 'sendTest') { const to = ($('#testTo').value || '').trim(); if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(to)) { S.testMsg = 'Type a valid email address first.'; render(); return; } store.set('kf_test_to', to); try { await api('/api/admin/test-email', { method: 'POST', body: { to } }); S.testMsg = 'A test was sent to ' + to + '. It is marked [TEST] and goes only to that address.'; } catch (e) { S.testMsg = e.message; } render(); }
     else if (a === 'copyNotice') await copyNotice(t);
     else if (a === 'noticeAll') { S.nAll = !S.nAll; render(); }
     else if (/^nw[A-Z]/.test(a)) await newsAction(a, t);

@@ -130,7 +130,9 @@ export async function personalPart(env, sum, rec, today, kind, pc) {
   }
   const bad = own.rows.filter((r) => r.status === 'bad').map((r) => r.label.toLowerCase());
   if (bad.length) lines.push('Behind target: ' + bad.join(', ') + '.');
-  return { html: `<p style="margin:0 0 4px"><b>Your day / Siku yako</b></p>${lines.map((l) => `<p style="margin:3px 0">${esc(l)}</p>`).join('')}<hr style="border:0;border-top:1px solid #eef1f6;margin:12px 0">`, text: 'YOUR DAY\n' + lines.join('\n') };
+  const roleFull = person.role === 'arc' ? 'Assistant Regional Coordinator' : 'Regional Coordinator';
+  const hello = `Habari ${person.name.split(' ')[0]}`;
+  return { html: `<p style="margin:0 0 2px;font-size:16px"><b>${esc(hello)}</b></p><p style="margin:0 0 8px;color:#5a6478">${esc(roleFull)} · ${esc(title(rec.region))}</p><p style="margin:0 0 4px"><b>Your day / Siku yako</b></p>${lines.map((l) => `<p style="margin:3px 0">${esc(l)}</p>`).join('')}<hr style="border:0;border-top:1px solid #eef1f6;margin:12px 0">`, text: `${hello} (${roleFull}, ${title(rec.region)})\nYOUR DAY\n` + lines.join('\n') };
 }
 export async function runDigests(env, kind, { dry = false } = {}) {
   const today = eatToday();
@@ -337,4 +339,32 @@ export async function runReminders(env, { dry = true } = {}) {
     }
   }
   return results;
+}
+
+// ---------- what is scheduled, to whom, and when it last went (for the Admin overview) ----------
+export async function emailSchedule(env) {
+  const rec = await loadRecipients(env);
+  const last = (await kv(env).get('v2:digest:last')) || {};
+  const onb = await kv(env).get('v2:onboard:sent');
+  const mailed = await kv(env).get('v2:backup:mailed');
+  const fj = await kv(env).get('v2:formjob');
+  const now = Date.now(), today = eatToday(), hm = new Date(now + 3 * 3600e3).toISOString().slice(11, 16);
+  const people = (pred) => Object.entries(rec).filter(([, r]) => r.active !== false && pred(r)).map(([e, r]) => ({ name: r.name, from: r.from || null }));
+  const wk = (d) => isWorkingDay(d);
+  const next = (time, on, from, to) => { let d = today; for (let i = 0; i < 400; i++) { if (on(d) && (!from || d >= from) && (!to || d <= to) && (d > today || hm < time)) return `${d} ${time}`; d = addDays(d, 1); } return null; };
+  const hq = people((r) => r.role === 'hq'), co = people((r) => r.role === 'rc' || r.role === 'arc');
+  const earliest = (l) => l.map((x) => x.from).filter(Boolean).sort()[0] || null;
+  const list = (l) => l.slice(0, 3).map((x) => x.name.split(' ')[0]).join(', ') + (l.length > 3 ? ` and ${l.length - 3} more` : '');
+  const bk = Object.values(rec).filter((r) => r.active !== false && (r.backup === 'to' || r.backup === 'cc')).map((r) => r.name);
+  const sendingOn = env.EMAIL_ENABLED === 'true' && Boolean(env.EMAIL_FROM && (env.RESEND_API_KEY || env.EMAIL));
+  const rows = [
+    { id: 'morning_hq', name: 'Morning brief', to: `HQ team (${hq.length}): ${list(hq)}`, when: 'Monday to Friday, 07:00', contents: 'National progress, plan status, calendar changes, checks to look at, today\'s and tomorrow\'s visits.', last: last.morning || null, next: hq.length ? next('07:00', wk, earliest(hq), null) : null, count: hq.length },
+    { id: 'morning_co', name: 'Morning update', to: `Coordinators (${co.length}): RCs and ARCs, each with their own "Habari" and "Your day"`, when: 'Monday to Friday, 07:00, from the day each person starts', contents: 'Their region\'s brief and a personal part: the schools they lead, notices to send, their last field day.', last: last.morning || null, next: co.length ? next('07:00', wk, earliest(co) || '2026-10-16', null) : null, count: co.length },
+    { id: 'evening', name: 'End-of-day check', to: `HQ team and coordinators (${hq.length + co.length})`, when: 'Monday to Friday, 17:30, during field days only (19 Oct to 4 Dec)', contents: 'Schools that started today and are not complete. Not sent when nothing is open.', last: last.evening || null, next: next('17:30', wk, '2026-10-19', '2026-12-04'), count: hq.length + co.length },
+    { id: 'reminder', name: 'Reminders', to: `Coordinators (${co.length}); HQ gets the overdue-plans note`, when: 'Monday to Friday, 14:00, from 16 Oct', contents: 'Plan not submitted, notices due or late, queries waiting more than 2 working days. Not sent when nothing is due.', last: last.reminder || null, next: next('14:00', wk, '2026-10-16', '2026-12-04'), count: co.length },
+    { id: 'backup', name: 'Weekly backup', to: `${bk.length ? bk.join(', ') : 'nobody set'} (backup To / Cc column)`, when: 'Mondays, 07:00', contents: 'The full backup of the dashboard data as an attachment.', last: mailed?.at ? mailed.at.slice(0, 10) : null, next: next('07:00', (d) => new Date(d + 'T00:00:00Z').getUTCDay() === 1, null, null), count: bk.length },
+    { id: 'onboarding', name: 'Access codes', to: `Coordinators (${co.length})`, when: 'Tuesday 13 October, from 10:00 (once)', contents: 'Each coordinator\'s personal code, how to sign in, and what to do first.', last: onb?.at ? onb.at.slice(0, 10) : null, next: onb ? null : (today <= '2026-10-13' ? next('10:00', (d) => d === '2026-10-13', null, null) : null), once: true, count: co.length },
+    { id: 'formjob', name: 'Sampling form replacement result', to: `HQ team (${hq.length})`, when: 'Friday 16 October, after 06:00', contents: 'Whether the standard Sampling form replaced the pilot form, with the rollback version.', last: fj?.result?.at ? fj.result.at.slice(0, 10) : null, next: fj?.done ? null : (fj && fj.armed === false ? null : '2026-10-16 06:00'), once: true, count: hq.length },
+  ];
+  return { sending_on: sendingOn, now_eat: `${today} ${hm}`, emails: rows.map((r) => ({ ...r, status: !r.count ? 'no recipients' : !sendingOn ? 'sending is off' : r.once && r.last ? 'sent' : r.next ? 'scheduled' : 'finished' })) };
 }
