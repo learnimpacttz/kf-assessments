@@ -63,9 +63,10 @@ function queryStats(queries, flags, names, region, today) {
   for (const [key, q] of Object.entries(queries || {})) {
     if (regionOfKey(key) !== region) continue;
     for (const t of q.thread || []) if (names.includes(t.by)) { if (t.resolved) closed += 1; else replies += 1; }
+    for (const h of (q.wf && q.wf.history) || []) if (names.includes(h.by)) { if (h.action === 'submitted' || h.action === 'resubmitted') replies += 1; else if (h.action === 'approved' || h.action === 'edited_approved') closed += 1; }
   }
   const open = (flags || []).filter((f) => !(f.q && f.q.status === 'resolved'));
-  const unanswered = open.filter((f) => !(f.q && f.q.thread && f.q.thread.length));
+  const unanswered = open.filter((f) => !(f.q && ((f.q.thread && f.q.thread.length) || (f.q.wf && f.q.wf.response))));
   return { replies, closed, open: open.length, unanswered: unanswered.length, overdue: overdueQueries(flags, today).length };
 }
 const adminOfStaff = (sum, p) => (sum?.admins || []).find((a) => a.staff_id === p.id) || (sum?.admins || []).find((a) => a.name === p.name) || null;

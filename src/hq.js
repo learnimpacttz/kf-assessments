@@ -10,9 +10,9 @@ import { TARGETS } from './own.js';
 export const LEVELS = { admin: 'Admin', editor: 'Editor', viewer: 'Viewer' };
 const HQKEY = 'v2:hq', SETKEY = 'v2:settings', ACTKEY = 'v2:activity';
 const SEED = [
-  { id: 'h1', name: 'Chogohe Edwin Mundo', email: 'cmundo@learnimpact.or.tz', level: 'admin' },
-  { id: 'h2', name: 'Joram Joas', email: 'jjoas@learnimpact.or.tz', level: 'admin' },
-  { id: 'h3', name: 'Michael Kamukulu', email: 'mkamukulu@learnimpact.org', level: 'admin' },
+  { id: 'h1', name: 'Chogohe Edwin Mundo', email: 'cmundo@learnimpact.or.tz', level: 'admin', review_level: 3 },
+  { id: 'h2', name: 'Joram Joas', email: 'jjoas@learnimpact.or.tz', level: 'admin', review_level: 2 },
+  { id: 'h3', name: 'Michael Kamukulu', email: 'mkamukulu@learnimpact.org', level: 'admin', review_level: 3 },
 ];
 
 let hqCache = null, hqAt = 0;
@@ -37,7 +37,7 @@ export async function hqByCode(env, code) {
 }
 export async function hqList(env) {
   const d = await loadHq(env, true);
-  return { shared_enabled: d.shared_enabled !== false, users: await Promise.all(d.users.map(async (u) => ({ id: u.id, name: u.name, email: u.email || '', level: u.level, active: u.active !== false, code: u.active === false ? null : await codeFor(env, u) }))) };
+  return { shared_enabled: d.shared_enabled !== false, users: await Promise.all(d.users.map(async (u) => ({ id: u.id, name: u.name, email: u.email || '', level: u.level, review_level: u.review_level || 0, active: u.active !== false, code: u.active === false ? null : await codeFor(env, u) }))) };
 }
 const activeAdmins = (d) => d.users.filter((u) => u.active !== false && u.level === 'admin').length;
 export async function hqChange(env, who, b) {
@@ -54,6 +54,8 @@ export async function hqChange(env, who, b) {
     if (b.email != null) u.email = String(b.email).trim().toLowerCase().slice(0, 120);
     if (b.level != null) { if (!LEVELS[b.level]) return { error: 'Choose a level' }; u.level = b.level; }
     if (b.active != null) u.active = Boolean(b.active);
+    if (b.review_level != null) { const rl = Number(b.review_level); if (![0, 2, 3].includes(rl)) return { error: 'Choose a review role' }; u.review_level = rl; }
+    if (u.level === 'viewer') u.review_level = 0; // a Viewer cannot approve anything
     if (activeAdmins(d) === 0 && d.shared_enabled === false) return { error: 'Keep at least one active Admin, or switch the shared code on first' };
     if (me && u.id === me && (u.level !== 'admin' || u.active === false)) return { error: 'You cannot remove your own Admin access. Ask another Admin.' };
   } else if (b.action === 'reissue') {

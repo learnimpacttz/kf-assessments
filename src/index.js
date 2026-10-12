@@ -5,6 +5,7 @@ import { buildCalendar, markCalendarDirty, syncCalendar, calendarStatus, setCalS
 import { loadFormJob, saveFormJob, runFormJob, maybeRunFormJob } from './formjob.js';
 import { kv } from './store.js';
 import { buildBrief, aiBrief } from './brief.js';
+import { ask as askAssistant, draftReportText } from './assistant.js';
 import { TEMPLATES, buildReport, listReports, getReport, saveReport, deleteReport } from './reports.js';
 import { loadHq, hqChange, hqList, hqByCode, codeFor, levelGate, applySettings, settingsView, saveSettings, logActivity, readActivity, activityLabel, BRAND, assistantName } from './hq.js';
 import { emailSchedule, hqPersonalCodeEmail, morningDigest, eveningGap, loadRecipients, saveRecipients, runDigests, maybeRunScheduledDigests, sendMail, onboardingEmail, runOnboarding, hqOnboardingEmail, reminderEmail, runReminders } from './digest.js';
@@ -87,6 +88,19 @@ function regionBundle(sum, region, who, queries = {}) {
 }
 
 export { Store } from './store.js';
+
+// phone alerts for the next person in the chain
+async function notifyQuery(env, n) {
+  const hq = (await loadHq(env)).users.filter((u) => u.active !== false && u.level !== 'viewer');
+  const ids = (min) => new Set(hq.filter((u) => (u.review_level || 0) >= min).map((u) => 'hq:' + u.id));
+  const coord = (w) => (w.role === 'rc' || w.role === 'arc') && w.region === n.region;
+  const reg = n.region ? n.region[0] + n.region.slice(1).toLowerCase() : '';
+  if (n.to_stage === 'team') await pushTo(env, (w) => coord(w) && w.id !== n.author_id, { title: 'A response is waiting for your review', body: `A team member answered a query in ${reg}. Approve, edit or send it back.`, url: '/#allq' });
+  else if (n.to_stage === 'hq1') { const s = ids(2); await pushTo(env, (w) => w.role === 'hq' && s.has(w.id), { title: 'First HQ review waiting', body: `A query response from ${reg} is ready for your review.`, url: '/#allq' }); }
+  else if (n.to_stage === 'final') { const s = ids(3); await pushTo(env, (w) => w.role === 'hq' && s.has(w.id), { title: 'Final approval waiting', body: `A query response from ${reg} is ready for final approval.`, url: '/#allq' }); }
+  else if (n.to_stage === 'rework') await pushTo(env, (w) => w.id === n.responder_id || coord(w), { title: 'Response sent back', body: `${n.reviewer || 'A reviewer'} sent a query response back for rework. Open it to see why.`, url: '/#queries' });
+  else if (n.to_stage === 'approved') await pushTo(env, (w) => w.id === n.responder_id || coord(w), { title: 'Response approved', body: 'A query response went through every review and is approved.', url: '/#queries' });
+}
 
 export default {
   // every write is noted in the activity log (who, what, when) after it succeeds
@@ -205,6 +219,17 @@ export default {
         await kv(env).put('v2:kobolog', log.slice(-200));
         return json({ ok: true, updated: ids.length, status: b.status });
       }
+      // ---------- the assistant: HQ only (all levels), read-only ----------
+      if (path === '/api/assistant' && method === 'POST') {
+        if (who.role !== 'hq') return err('The assistant is for the HQ team for now', 403);
+        const b = await request.json().catch(() => ({}));
+        const ld = await loadSummary(env, null); const plans = Object.fromEntries(await Promise.all(REGIONS.map(async (r) => [r, await getPlan(env, r)])));
+        try { const r = await askAssistant(env, who, b.messages, { sum: ld.sum, year: ld.year, rehearsal: ld.rehearsal, queries: await loadQueries(env), plans, today: eatToday() }); if (r.error) return err(r.error, 422); await logActivity(env, who, 'Asked the assistant', String((b.messages || []).slice(-1)[0]?.content || '').slice(0, 120)); return json(r); } catch (e) { return err(String(e.message || e), 502); }
+      }
+      if (path === '/api/assistant/draft' && method === 'POST') {
+        if (who.role !== 'hq') return err('The assistant is for the HQ team for now', 403);
+        try { const r = await draftReportText(env, who, await request.json().catch(() => ({}))); return r.error ? err(r.error, 422) : json(r); } catch (e) { return err(String(e.message || e), 502); }
+      }
       // ---------- reports: HQ (all levels) and RCs for their own region; not ARCs or volunteers ----------
       if (path.startsWith('/api/reports')) {
         if (!(who.role === 'hq' || who.role === 'rc')) return err('Reports are for HQ and Regional Coordinators', 403);
@@ -242,6 +267,7 @@ export default {
         if (!sch || (!sch.practice && !canSeeRegion(who, sch.region))) return err('Not your region', 403); // practice schools are open to everyone
         const r = await postQuery(env, who, body);
         if (r.error) return err(r.error, r.status || 400);
+        if (r.notify) { const job = notifyQuery(env, r.notify).catch(() => {}); if (ctx && ctx.waitUntil) ctx.waitUntil(job); else await job; }
         return json({ q: r.q });
       }
 

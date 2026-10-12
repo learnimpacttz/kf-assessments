@@ -61,14 +61,58 @@ function barChart(series, { need, label = 'tests' } = {}) {
 
 const isOpen = (f) => !f.q || f.q.status !== 'resolved';
 const fmtAt = (iso) => new Date(iso).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
-function flagList(all, { limit = 8, names = true } = {}) {
-  const flags = all.filter(isOpen);
+// ---- the approval chain on a query: response, team review, first HQ review, final approval ----
+const STAGE_IX = { open: 0, rework: 0, team: 1, hq1: 2, final: 3, approved: 4 };
+const STAGE_TXT = { open: 'Waiting for the response', rework: 'Sent back for rework', team: 'Team review (RC or ARC)', hq1: 'First HQ review', final: 'Final approval', approved: 'Approved and closed' };
+const ACT_TXT = { submitted: 'wrote the response', resubmitted: 'sent the response again', approved: 'approved', edited_approved: 'edited and approved', rejected: 'sent it back', skipped: 'skipped', closed: 'closed it' };
+const wfOf = (f) => (f.q && f.q.wf) || { stage: 'open', history: [] };
+function qAbility(f) {
+  const w = wfOf(f), me = S.who || {}, st = w.stage || 'open', H = w.history || []; const out = { respond: false, review: false };
+  if (S.viewAs || !me.role) return out;
+  if (st === 'open' || st === 'rework') out.respond = me.role === 'volunteer' ? Boolean(f.admin) && f.admin === me.name : me.role === 'rc' || me.role === 'arc';
+  else if (st === 'team') out.review = (me.role === 'rc' || me.role === 'arc') && !(w.response && w.response.by_id === me.id);
+  else if (st === 'hq1') out.review = me.role === 'hq' && (me.review_level || 0) >= 2;
+  else if (st === 'final') out.review = me.role === 'hq' && (me.review_level || 0) >= 3 && !H.some((h) => h.level === 'hq1' && h.action !== 'rejected' && h.by_id === me.hq_id);
+  return out;
+}
+function chainHtml(f) {
+  const w = wfOf(f), st = w.stage || 'open', H = w.history || [], ix = STAGE_IX[st];
+  const lastOf = (lvl) => [...H].reverse().find((h) => h.level === lvl && h.action !== 'skipped');
+  const rej = st === 'rework' ? [...H].reverse().find((h) => h.action === 'rejected') : null;
+  const steps = [['responder', 'Response'], ['team', 'Team review'], ['hq1', 'First HQ review'], ['final', 'Final approval']].map(([k, label], i) => {
+    let cls = 'pending', sub = '';
+    if (k === 'responder') { if (w.response && ix > 0) { cls = 'done'; sub = `${esc(w.response.by.split(' ')[0])} · ${fmtAt(w.response.at)}`; } else if (st === 'rework') { cls = 'cur'; sub = 'rework needed'; } else { cls = 'cur'; sub = 'waiting'; } }
+    else if (rej && rej.level === k) { cls = 'bad'; sub = `sent back by ${esc(rej.by.split(' ')[0])}`; }
+    else if (k === 'team' && H.some((h) => h.level === 'team' && h.action === 'skipped')) { cls = 'skip'; sub = 'not needed'; }
+    else if (ix > i) { const h = lastOf(k); cls = 'done'; sub = h ? `${esc(h.by.split(' ')[0])} · ${fmtAt(h.at)}${h.action === 'edited_approved' ? ' · edited' : ''}` : ''; }
+    else if (ix === i && st !== 'approved') { cls = 'cur'; sub = 'waiting'; }
+    return `<div class="cs ${cls}"><b>${label}</b><small>${sub}</small></div>`;
+  }).join('<i>›</i>');
+  const resp = w.response ? `<div class="resp"><b>Response</b> by ${esc(w.response.by)}${w.response.on_behalf_of ? ' for ' + esc(w.response.on_behalf_of) : ''} · ${fmtAt(w.response.at)}${w.response.edited_by ? ` · <span class="pill warn">edited by ${esc(w.response.edited_by)}</span>` : ''}<br>${esc(w.response.text)}</div>` : '';
+  const back = st === 'rework' && w.rework_note ? `<div class="resp bad"><b>Sent back:</b> ${esc(w.rework_note)}</div>` : '';
+  const hist = H.length ? `<details class="fd"><summary>History (${H.length})</summary>${H.map((h) => `<div class="hrow"><b>${esc(h.by)}</b> <span class="m">${esc(h.role || '')} · ${fmtAt(h.at)}</span> ${esc(ACT_TXT[h.action] || h.action)}${h.on_behalf_of ? ' for ' + esc(h.on_behalf_of) : ''}${h.text ? `<div class="m">${esc(h.text)}</div>` : ''}${h.before ? `<div class="m">Was: ${esc(h.before)}</div>` : ''}</div>`).join('')}${S.who && S.who.role === 'hq' && hqLevel() === 'admin' && st !== 'approved' ? `<button class="btn sm ghost" data-act="qClose" data-k="${esc(f.qk)}">Close without the chain (Admin)</button>` : ''}</details>` : '';
+  return `<div class="chain" title="${esc(STAGE_TXT[st])}">${steps}</div><div class="m" style="margin:4px 0"><b>${esc(STAGE_TXT[st])}</b></div>${resp}${back}${hist}`;
+}
+function qActions(f) {
+  const a = qAbility(f); if (!f.qk || (!a.respond && !a.review)) return '';
+  const k = esc(f.qk), w = wfOf(f);
+  if (S.qOpen === f.qk) {
+    const mode = S.qMode || 'respond'; const pre = mode === 'edit' ? esc(w.response?.text || '') : mode === 'respond' && w.stage === 'rework' ? esc(w.response?.text || '') : '';
+    const ph = mode === 'reject' ? 'Why are you sending it back? What should change?' : mode === 'edit' ? 'The corrected response' : 'What happened, and what was done? A sentence or two is enough.';
+    const go = { respond: 'Submit for review', edit: 'Save and approve', reject: 'Send back' }[mode];
+    return `<div class="qbox"><textarea id="qText" placeholder="${ph}">${pre}</textarea><div style="display:flex;gap:6px;margin-top:6px"><button class="btn sm" data-act="qSubmit" data-k="${k}" data-m="${mode}">${go}</button><button class="btn sm sec" data-act="qOpen" data-k="">Cancel</button></div></div>`;
+  }
+  if (a.respond) return `<button class="btn sm" data-act="qOpen" data-k="${k}" data-m="respond" style="margin-top:6px">${w.stage === 'rework' ? 'Rewrite the response' : 'Write the response'}</button>`;
+  return `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px"><button class="btn sm" data-act="qApprove" data-k="${k}">Approve</button><button class="btn sm sec" data-act="qOpen" data-k="${k}" data-m="edit">Edit and approve</button><button class="btn sm ghost" data-act="qOpen" data-k="${k}" data-m="reject">Send back</button></div>`;
+}
+function flagList(all, { limit = 8, names = true, closed = false } = {}) {
+  const flags = closed ? all.slice() : all.filter(isOpen);
   if (!flags.length) return '<div class="empty">No open flags. Nothing needs a call right now.</div>';
   const canResolve = S.who && S.who.role !== 'volunteer';
   const one = (f) => {
     const thread = f.q && f.q.thread.length ? `<div class="thread">${f.q.thread.map((m) => `<div><b>${esc(m.by)}</b> <span>${fmtAt(m.at)}</span><br>${esc(m.text)}</div>`).join('')}</div>` : '';
-    const box = S.qOpen === f.qk ? `<div class="qbox"><textarea id="qText" placeholder="Your reply, in a sentence or two"></textarea><div style="display:flex;gap:6px;margin-top:6px"><button class="btn sm" data-act="qSend" data-k="${esc(f.qk)}">Send</button>${canResolve ? `<button class="btn sm sec" data-act="qResolve" data-k="${esc(f.qk)}">Mark resolved</button>` : ''}<button class="btn sm sec" data-act="qOpen" data-k="">Cancel</button></div></div>` : `<button class="btn sm sec" data-act="qOpen" data-k="${esc(f.qk)}" style="margin-top:6px">${f.q && f.q.thread.length ? 'Reply' : 'Reply or explain'}</button>`;
-    return `<div class="flag"><i class="st ${f.sev}"></i><div style="min-width:0;flex:1"><b>${esc(f.school_name || f.school)} · ${esc(FLAG_LABEL[f.type] || f.type)}</b><span>${esc(f.region ? title(f.region) + ' · ' : '')}${esc(f.lga ? title(f.lga) + ' · ' : '')}${f.grade ? 'Grade ' + f.grade + ' · ' : ''}${esc(f.text)}${names && f.admin ? ' · ' + esc(f.admin) : ''}${f.date ? ' · ' + shortDate(f.date) : ''}</span><span>${esc(f.hint || '')}</span>${thread}<details class="fd"><summary>Details to find the records</summary>${flagDetail(f)}</details>${f.qk ? box : ''}</div></div>`;
+    const box = qActions(f);
+    return `<div class="flag"><i class="st ${f.sev}"></i><div style="min-width:0;flex:1"><b>${esc(f.school_name || f.school)} · ${esc(FLAG_LABEL[f.type] || f.type)}</b><span>${esc(f.region ? title(f.region) + ' · ' : '')}${esc(f.lga ? title(f.lga) + ' · ' : '')}${f.grade ? 'Grade ' + f.grade + ' · ' : ''}${esc(f.text)}${names && f.admin ? ' · ' + esc(f.admin) : ''}${f.date ? ' · ' + shortDate(f.date) : ''}</span><span>${esc(f.hint || '')}</span>${thread}<details class="fd"><summary>Details to find the records</summary>${flagDetail(f)}</details>${f.qk ? chainHtml(f) : ''}${f.qk ? box : ''}</div></div>`;
   };
   return flags.slice(0, limit).map(one).join('') + (flags.length > limit ? `<div class="note">+ ${flags.length - limit} more in the data explorer.</div>` : '');
 }
@@ -161,7 +205,7 @@ function viewWork() {
 function schoolName(id) { const s = (S.ov.mine?.schools || []).find((x) => x.id === id); return s ? s.name : id; }
 function viewQueries() {
   const f = S.ov.mine.flags;
-  return `<div class="pagehead"><div><h2>My queries</h2><p>Automatic checks on your records. Talk to your RC about anything here.</p></div></div><div class="card">${flagList(f.map((x) => ({ ...x, school_name: schoolName(x.school) })), { limit: 50, names: false })}</div>`;
+  return `<div class="pagehead"><div><h2>My queries</h2><p>Automatic checks on your records. Write a short, honest response to each one. Your RC or ARC reviews it, then HQ reviews and approves it. You see every step here, and the history stays.</p></div></div><div class="card">${flagList(f.map((x) => ({ ...x, school_name: schoolName(x.school) })), { limit: 50, names: false, closed: true })}</div>`;
 }
 function viewStats() {
   const me = S.ov.mine.me, b = S.ov.bands;
@@ -324,9 +368,9 @@ const EMAIL_STATUS = { scheduled: 'good', sent: 'good', finished: 'mute', 'sendi
 function hqTeamCard(a) {
   const H = a.hqUsers; if (!H) return '';
   const me = S.who.hq_id;
-  const rows = H.users.map((u) => `<tr class="${u.active ? '' : 'paused'}"><td><input data-hq="${u.id}" data-f="name" value="${esc(u.name)}"></td><td><input data-hq="${u.id}" data-f="email" type="email" value="${esc(u.email)}" placeholder="email"></td><td><select data-hq="${u.id}" data-f="level">${Object.entries(LEVEL_TXT).map(([k, t]) => `<option value="${k}" ${u.level === k ? 'selected' : ''}>${t}</option>`).join('')}</select></td><td class="num"><b>${u.code ? esc(u.code) : '–'}</b>${me === u.id ? ' <span class="pill mute">you</span>' : ''}</td><td class="c"><input type="checkbox" data-hq="${u.id}" data-f="active" ${u.active ? 'checked' : ''}></td><td style="white-space:nowrap"><button class="btn sm ghost" data-act="hqReissue" data-id="${u.id}">New code</button> <button class="btn sm ghost" data-act="hqEmail" data-id="${u.id}">Email code</button></td></tr>`).join('');
-  return `<div class="card" style="margin-top:14px"><h3>HQ team and access levels</h3><div class="sub"><b>Admin</b> does everything. <b>Editor</b> reads everything and writes messages and reports and replies to queries. <b>Viewer</b> reads and downloads only. Each person has their own code, and every change is recorded under their name.</div>
-  <div class="tbl rectbl"><table class="dt"><thead><tr><th>Name</th><th>Email</th><th>Level</th><th>Code</th><th class="c">On</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
+  const rows = H.users.map((u) => `<tr class="${u.active ? '' : 'paused'}"><td><input data-hq="${u.id}" data-f="name" value="${esc(u.name)}"></td><td><input data-hq="${u.id}" data-f="email" type="email" value="${esc(u.email)}" placeholder="email"></td><td><select data-hq="${u.id}" data-f="level">${Object.entries(LEVEL_TXT).map(([k, t]) => `<option value="${k}" ${u.level === k ? 'selected' : ''}>${t}</option>`).join('')}</select></td><td><select data-hq="${u.id}" data-f="review_level" ${u.level === 'viewer' ? 'disabled' : ''}><option value="0" ${!u.review_level ? 'selected' : ''}>No</option><option value="2" ${u.review_level === 2 ? 'selected' : ''}>First review</option><option value="3" ${u.review_level === 3 ? 'selected' : ''}>Final approval</option></select></td><td class="num"><b>${u.code ? esc(u.code) : '–'}</b>${me === u.id ? ' <span class="pill mute">you</span>' : ''}</td><td class="c"><input type="checkbox" data-hq="${u.id}" data-f="active" ${u.active ? 'checked' : ''}></td><td style="white-space:nowrap"><button class="btn sm ghost" data-act="hqReissue" data-id="${u.id}">New code</button> <button class="btn sm ghost" data-act="hqEmail" data-id="${u.id}">Email code</button></td></tr>`).join('');
+  return `<div class="card" style="margin-top:14px"><h3>HQ team and access levels</h3><div class="sub"><b>Admin</b> does everything. <b>Editor</b> reads everything and writes messages and reports and replies to queries. <b>Viewer</b> reads and downloads only. Each person has their own code, and every change is recorded under their name. <b>Query review</b> sets who reviews responses to queries: First review is the first HQ step, Final approval the last. The same person cannot do both steps on one query, and the shared code cannot approve.</div>
+  <div class="tbl rectbl"><table class="dt"><thead><tr><th>Name</th><th>Email</th><th>Level</th><th title="Who reviews query responses">Query review</th><th>Code</th><th class="c">On</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
   <div class="f" style="margin-top:10px;display:flex;gap:8px;align-items:end;flex-wrap:wrap"><label>Add a person<input id="hqName" placeholder="Name"></label><label>Email<input id="hqEmail" type="email" placeholder="name@example.org"></label><label>Level<select id="hqLevel"><option value="viewer">Viewer</option><option value="editor">Editor</option><option value="admin">Admin</option></select></label><button class="btn sm" data-act="hqAdd">Add</button></div>
   <div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--line)"><b>The shared HQ code</b> ${H.shared_enabled ? '<span class="pill warn">still works (Admin level)</span>' : '<span class="pill good">switched off</span>'}<div class="m" style="margin:4px 0 8px">Once everyone in HQ has signed in with their personal code, switch the shared code off so that nobody can use it any more.</div>${H.shared_enabled ? `<button class="btn sm ghost" data-act="hqShared" data-on="">${me ? 'Switch the shared code off' : 'Sign in with your personal code to switch it off'}</button>` : '<button class="btn sm ghost" data-act="hqShared" data-on="1">Switch it back on</button>'}</div>${S.hqMsg ? `<p class="m" style="margin-top:8px">${esc(S.hqMsg)}</p>` : ''}</div>`;
 }
@@ -806,10 +850,11 @@ function viewAllQueries() {
   const hq = S.who.role === 'hq';
   const all = flagsAll();
   const F = (S.qf ||= { q: '', type: '', sev: '', region: '', st: 'open' });
-  const list = all.filter((f) => (F.st === 'all' || (F.st === 'resolved' ? !isOpen(f) : isOpen(f))) && (!F.type || f.type === F.type) && (!F.sev || f.sev === F.sev) && (!F.region || f.region === F.region) && (!F.q || [f.school_name, f.school, f.admin, f.lga, f.ward, f.text].join(' ').toLowerCase().includes(F.q.toLowerCase())));
+  const needsMe = (f) => { const a = qAbility(f); return a.respond || a.review; }; const inReview = (f) => ['team', 'hq1', 'final'].includes(wfOf(f).stage);
+  const list = all.filter((f) => (F.st === 'all' || (F.st === 'resolved' ? !isOpen(f) : F.st === 'mine' ? isOpen(f) && needsMe(f) : F.st === 'review' ? isOpen(f) && inReview(f) : isOpen(f))) && (!F.type || f.type === F.type) && (!F.sev || f.sev === F.sev) && (!F.region || f.region === F.region) && (!F.q || [f.school_name, f.school, f.admin, f.lga, f.ward, f.text].join(' ').toLowerCase().includes(F.q.toLowerCase())));
   const types = [...new Set(all.map((f) => f.type))];
   const sel = (key, label, opts) => `<select data-qf="${key}" aria-label="${label}"><option value="">${label}: all</option>${opts.map(([v, t]) => `<option value="${esc(v)}" ${F[key] === v ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select>`;
-  return `${dataBanner()}<div class="pagehead"><div><h2>Queries</h2><p>Automatic checks on submitted tests. Open a query for the exact region, school, pupils and times so the person involved can find the records.</p></div></div><div class="card"><div class="toolbar"><input data-qf="q" type="search" placeholder="Search school, person, LGA" value="${esc(F.q)}">${sel('type', 'Check', types.map((t) => [t, FLAG_LABEL[t] || t]))}${sel('sev', 'Severity', [['bad', 'Serious'], ['warn', 'Review']])}${hq ? sel('region', 'Region', S.cfg.regions.map((r) => [r, title(r)])) : ''}<select data-qf="st"><option value="open" ${F.st === 'open' ? 'selected' : ''}>Open</option><option value="resolved" ${F.st === 'resolved' ? 'selected' : ''}>Resolved</option><option value="all" ${F.st === 'all' ? 'selected' : ''}>All</option></select><span class="count">${list.length} shown</span></div>${flagListFull(list, 60)}</div>`;
+  return `${dataBanner()}<div class="pagehead"><div><h2>Queries</h2><p>Automatic checks on submitted tests. Open a query for the exact region, school, pupils and times so the person involved can find the records.</p></div></div><div class="card"><div class="toolbar"><input data-qf="q" type="search" placeholder="Search school, person, LGA" value="${esc(F.q)}">${sel('type', 'Check', types.map((t) => [t, FLAG_LABEL[t] || t]))}${sel('sev', 'Severity', [['bad', 'Serious'], ['warn', 'Review']])}${hq ? sel('region', 'Region', S.cfg.regions.map((r) => [r, title(r)])) : ''}<select data-qf="st"><option value="open" ${F.st === 'open' ? 'selected' : ''}>Open</option><option value="mine" ${F.st === 'mine' ? 'selected' : ''}>Needs my action</option><option value="review" ${F.st === 'review' ? 'selected' : ''}>In review</option><option value="resolved" ${F.st === 'resolved' ? 'selected' : ''}>Approved and closed</option><option value="all" ${F.st === 'all' ? 'selected' : ''}>All</option></select><span class="count">${list.length} shown</span></div>${flagListFull(list, 60)}</div>`;
 }
 function flagListFull(list, limit) {
   const open = list.filter(() => true);
@@ -1295,8 +1340,18 @@ document.addEventListener('click', async (e) => {
       try { await api('/api/plan?region=' + S.planRegion, { method: 'POST', body: { action: a === 'submitPlan' ? 'submit' : 'draft', visits, day_notes: S.dayNotes || {} } }); if (a === 'submitPlan') { S.draft = null; S.dayNotes = null; } await loadPlan(); render(); }
       catch (er) { const b = $('#plErr'); b.hidden = false; b.innerHTML = esc(er.message) + (er.data?.errors ? '<ul>' + er.data.errors.slice(0, 8).map((x) => '<li>' + esc(x) + '</li>').join('') + '</ul>' : ''); }
     }
-    else if (a === 'qOpen') { S.qOpen = t.dataset.k || null; render(); $('#qText')?.focus(); }
-    else if (a === 'qSend' || a === 'qResolve') { const text = ($('#qText') || {}).value || ''; await api('/api/query', { method: 'POST', body: { key: t.dataset.k, text, action: a === 'qResolve' ? 'resolve' : 'reply' } }); S.qOpen = null; await loadData(); render(); }
+    else if (a === 'qOpen') { S.qOpen = t.dataset.k || null; S.qMode = t.dataset.m || 'respond'; render(); $('#qText')?.focus(); }
+    else if (a === 'qSubmit' || a === 'qApprove' || a === 'qClose') {
+      const m = t.dataset.m; const text = ($('#qText') || {}).value || '';
+      let body = { key: t.dataset.k };
+      if (a === 'qApprove') { if (!confirm('Approve this response and pass it on?')) return; body = { ...body, action: 'review', decision: 'approve' }; }
+      else if (a === 'qClose') { const why = prompt('Why is this being closed without the review chain? (recorded in the history)'); if (!why) return; body = { ...body, action: 'resolve', text: why }; }
+      else if (m === 'respond') body = { ...body, action: 'respond', text };
+      else if (m === 'edit') body = { ...body, action: 'review', decision: 'edit', text };
+      else body = { ...body, action: 'review', decision: 'reject', note: text };
+      try { await api('/api/query', { method: 'POST', body }); S.qOpen = null; await loadData(); } catch (e) { alert(e.message); }
+      render();
+    }
     else if (a === 'saveRec') { const bad = S.recRows.find((r) => r.email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(r.email.trim())); if (bad) { alert('This email address is not valid: ' + bad.email); return; } const rows = S.recRows.filter((r) => r.email.trim()).map((r) => ({ email: r.email.trim(), name: r.name.trim(), role: r.role, region: r.role === 'hq' ? '' : r.region, copy: r.copy, paused: !r.active, from: r.from, backup: r.backup })); const lost = S.recRows.filter((r) => r.email.trim() && r.role !== 'hq' && !r.region); if (lost.length && !confirm(lost.length + ' RC/ARC row(s) have no region and will get no regional emails. Save anyway?')) return; await api('/api/admin/recipients', { method: 'POST', body: { rows } }); S.recRows = null; await loadAdmin(); render(); }
     else if (a === 'recAdd') { S.recRows.unshift({ email: '', name: '', role: 'rc', region: '', copy: false, backup: '', from: '', active: true }); S.recDirty = true; render(); const f = document.querySelector('[data-rr="0"][data-f="name"]'); if (f) { f.scrollIntoView({ block: 'center' }); f.focus(); } }
     else if (a === 'recDel') { const i = Number(t.dataset.i); const r = S.recRows[i]; if (r && (!r.email || confirm('Remove ' + (r.name || r.email) + ' from the email list? (Save to apply.)'))) { S.recRows.splice(i, 1); S.recDirty = true; render(); } }

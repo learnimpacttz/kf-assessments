@@ -47,8 +47,8 @@ export async function identify(request, env) {
   const code = (request.headers.get('x-access-code') || '').trim();
   if (!code) return null;
   let hqWho = null;
-  if (env.HQ_SECRET && safeEqual(code, env.HQ_SECRET) && (await loadHq(env)).shared_enabled !== false) hqWho = { role: 'hq', level: 'admin', name: 'HQ (shared code)', region: null, id: 0, hq_id: null };
-  else { const u = await hqByCode(env, code); if (u) hqWho = { role: 'hq', level: u.level, name: u.name, region: null, id: 'hq:' + u.id, hq_id: u.id }; }
+  if (env.HQ_SECRET && safeEqual(code, env.HQ_SECRET) && (await loadHq(env)).shared_enabled !== false) hqWho = { role: 'hq', level: 'admin', name: 'HQ (shared code)', region: null, id: 0, hq_id: null, review_level: 0 }; // the shared code cannot approve: approvals need a named person
+  else { const u = await hqByCode(env, code); if (u) hqWho = { role: 'hq', level: u.level, name: u.name, region: null, id: 'hq:' + u.id, hq_id: u.id, review_level: u.level === 'viewer' ? 0 : (u.review_level || 0) }; }
   if (hqWho) {
     // HQ can preview the app as any person (training and support). The preview is read-only: see index.js.
     const as = /^staff:(\d+)$/.exec(request.headers.get('x-view-as') || '');

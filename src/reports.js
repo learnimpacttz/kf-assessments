@@ -2,7 +2,7 @@
 // Pupil names, teacher names, phone numbers and bank details are never part of any report.
 import { REGIONS, SCHOOL_BY_ID, PARTNERS, workingDaysBetween } from './config.js';
 import { withNotices } from './plan.js';
-import { decorate, overdueQueries } from './queries.js';
+import { decorate, overdueQueries, STAGES } from './queries.js';
 import { ownWork } from './own.js';
 import { STAFF } from './config.js';
 import { kv } from './store.js';
@@ -62,16 +62,16 @@ export function buildReport(id, ctx, params = {}, scope = null) {
     const n = rows.reduce((a, x) => a + x.n, 0), same = rows.reduce((a, x) => a + x.same, 0);
     kpis = [{ label: 'Records', value: n }, { label: 'Sent the same day', value: n ? Math.round((100 * same) / n) + '%' : '–' }];
   } else if (id === 'queries') {
-    columns = [C('region', 'Region'), C('school', 'School'), C('grade', 'Grade'), C('person', 'Person'), C('check', 'Check'), C('severity', 'Severity'), C('date', 'Visit day'), C('detail', 'What was found'), C('status', 'Status'), C('replies', 'Replies', 'num'), C('age', 'Working days old', 'num'), C('overdue', 'Overdue')];
+    columns = [C('region', 'Region'), C('school', 'School'), C('grade', 'Grade'), C('person', 'Person'), C('check', 'Check'), C('severity', 'Severity'), C('date', 'Visit day'), C('detail', 'What was found'), C('status', 'Status'), C('response', 'Response'), C('replies', 'Responses submitted', 'num'), C('age', 'Working days old', 'num'), C('overdue', 'Overdue')];
     const flags = decorate(sum.flags.filter((f) => regs.includes(SCHOOL_BY_ID[f.school]?.region)), queries);
     const od = new Set(overdueQueries(flags, today).map((f) => f.qk));
     for (const f of flags) {
       if (params.from && (f.date || '') < params.from) continue; if (params.to && (f.date || '') > params.to) continue;
-      const q = f.q; const status = q && q.status === 'resolved' ? 'Closed' : q && q.thread && q.thread.length ? 'Replied' : 'Open';
-      rows.push({ region: title(SCHOOL_BY_ID[f.school]?.region), school: String(SCHOOL_BY_ID[f.school]?.name || f.school).trim(), grade: f.grade || '', person: f.admin || '', check: CHECKS[f.type] || f.type, severity: f.sev === 'bad' ? 'Serious' : 'Look', date: f.date || '', detail: f.text || '', status, replies: q && q.thread ? q.thread.filter((x) => !x.resolved).length : 0, age: f.date ? Math.max(0, workingDaysBetween(f.date, today)) : null, overdue: od.has(f.qk) ? 'Yes' : 'No' });
+      const q = f.q; const stage = q && q.wf ? q.wf.stage : null; const status = stage ? STAGES[stage] : q && q.status === 'resolved' ? 'Closed' : q && q.thread && q.thread.length ? 'Commented' : 'Waiting for the response';
+      rows.push({ region: title(SCHOOL_BY_ID[f.school]?.region), school: String(SCHOOL_BY_ID[f.school]?.name || f.school).trim(), grade: f.grade || '', person: f.admin || '', check: CHECKS[f.type] || f.type, severity: f.sev === 'bad' ? 'Serious' : 'Look', date: f.date || '', detail: f.text || '', status, response: q && q.wf && q.wf.response ? q.wf.response.text : '', replies: q && q.wf && q.wf.history ? q.wf.history.filter((h) => h.action === 'submitted' || h.action === 'resubmitted').length : 0, age: f.date ? Math.max(0, workingDaysBetween(f.date, today)) : null, overdue: od.has(f.qk) ? 'Yes' : 'No' });
     }
     rows.sort((x, y) => (y.overdue === 'Yes') - (x.overdue === 'Yes') || (y.age ?? 0) - (x.age ?? 0));
-    kpis = [{ label: 'Checks raised', value: rows.length }, { label: 'Open', value: rows.filter((x) => x.status === 'Open').length }, { label: 'Overdue', value: rows.filter((x) => x.overdue === 'Yes').length }];
+    kpis = [{ label: 'Checks raised', value: rows.length }, { label: 'Approved', value: rows.filter((x) => x.status === STAGES.approved).length }, { label: 'Overdue', value: rows.filter((x) => x.overdue === 'Yes').length }];
   } else if (id === 'notices_plan') {
     columns = [C('region', 'Region'), C('school', 'School'), C('date', 'Visit day'), C('start', 'Start'), C('lead', 'Lead'), C('aek_due', 'Ward officer due'), C('aek', 'Ward officer'), C('ht_due', 'Head teacher due'), C('ht', 'Head teacher'), C('team', 'Team told'), C('outcome', 'What happened'), C('changed', 'Changed')];
     const dates = Object.fromEntries(Object.values(sum.schools).map((s) => [s.id, s.dates || []]));
