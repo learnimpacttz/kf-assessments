@@ -146,7 +146,7 @@ export function withNotices(plan, today, schoolVisits) {
       let outcome = null;
       if (v.date <= today) outcome = dates.includes(v.date) ? 'visited' : dates.length ? 'visited_other_day' : v.date < today ? 'missed' : 'today';
       return {
-        ...v, lead_name: leadOfVisit(v, plan.region), school_name: SCHOOL_BY_ID[v.school]?.name, lga: SCHOOL_BY_ID[v.school]?.lga, mne: SCHOOL_BY_ID[v.school]?.mne,
+        ...v, lead_name: leadOfVisit(v, plan.region), ward: SCHOOL_BY_ID[v.school]?.ward, school_name: SCHOOL_BY_ID[v.school]?.name, lga: SCHOOL_BY_ID[v.school]?.lga, mne: SCHOOL_BY_ID[v.school]?.mne,
         aek_due: aekDue, ht_due: htDue,
         aek_state: state(v.notices?.aek, aekDue), ht_state: state(v.notices?.ht, htDue), team_state: state(v.notices?.team, htDue),
         outcome,
