@@ -450,6 +450,12 @@ export default {
         await kv(env).put(`v2:arch:${b.year}`, meta);
         return json({ archived: meta });
       }
+      if (path === '/api/admin/calendar-csv' && url.searchParams.get('which') === 'last') {
+        // the copy the system last put on the phones by itself, kept as a backup
+        const last = await kv(env).get('v2:calsync:csv');
+        if (!last) return err('Nothing has been uploaded automatically yet', 404);
+        return new Response(last, { headers: { 'content-type': 'text/csv; charset=utf-8', 'content-disposition': 'attachment; filename="ref_calendar.csv"', 'cache-control': 'no-store' } });
+      }
       if (path === '/api/admin/calendar-csv') {
         // Reference file for the KoBo forms (upload as media named ref_calendar.csv). One row per planned school.
         const built = await buildCalendar(env);
