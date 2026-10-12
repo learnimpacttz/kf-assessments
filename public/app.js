@@ -1136,7 +1136,7 @@ function doSearch(q) {
 
 function applyBrand() {
   const b = S.cfg?.brand; if (!b) return;
-  const el = document.querySelector('header .brand'); if (el) el.innerHTML = `<b>${esc(b.platform)}</b><span>${esc(b.programme)}${b.tagline ? ' · ' + esc(b.tagline) : ''}</span>`;
+  const el = document.querySelector('header .brand'); if (el) { el.innerHTML = `<b>${esc(b.platform)}</b><span>${esc(b.programme || '')}</span>`; el.title = [b.programme, b.tagline].filter(Boolean).join(' · '); }
   document.title = b.platform + (b.programme ? ' · ' + b.programme : '');
 }
 // ---------- shell ----------
@@ -1146,6 +1146,7 @@ const TABS = {
   rc: [['region', 'Region'], ['news', 'News'], ['plan', 'Plan & calendar'], ['team', 'My team'], ['allq', 'Queries'], ['phones', 'Phones'], ['compare', 'Compare'], ['reports', 'Reports'], ['clean', 'Data cleaning'], ['explore', 'Data explorer'], ['practice', 'Practice'], ['help', 'Help']],
   hq: [['today', 'Today'], ['hq', 'HQ'], ['news', 'News'], ['messages', 'Write and schedule'], ['clean', 'Data cleaning'], ['regions', 'Regions & plans'], ['plan', 'Plan & calendar'], ['people', 'People'], ['allq', 'Queries'], ['phones', 'Phones'], ['compare', 'Compare'], ['reports', 'Reports'], ['explore', 'Data explorer'], ['admin', 'Admin'], ['help', 'Help'], ['practice', 'Practice']],
 };
+const GROUPS = { rc: [['Home', ['region', 'news']], ['Plan', ['plan', 'team']], ['Checks', ['allq', 'clean', 'phones', 'compare', 'explore']], ['Reports', ['reports']], ['More', ['practice', 'help']]], volunteer: [['Today', ['day', 'news']], ['My work', ['work', 'queries', 'stats']], ['Team', ['phones', 'compare']], ['More', ['practice', 'help']]] };
 const HQ_GROUPS = [['Today', ['today']], ['Field', ['hq', 'regions', 'plan', 'people']], ['Checks', ['allq', 'clean', 'phones', 'compare', 'explore']], ['Messages', ['news', 'messages']], ['Reports', ['reports']], ['Admin', ['admin']], ['Help', ['help']]];
 const REPORTS_READY = true;
 const LEVEL_TXT = { admin: 'Admin', editor: 'Editor', viewer: 'Viewer' };
@@ -1174,28 +1175,44 @@ function enhanceCollapsible() {
     d.addEventListener('toggle', () => store.set(key, d.open ? 'o' : 'c'));
     card.replaceWith(d);
   });
+  const ds = [...document.querySelectorAll('#app details.colcard')]; const head = document.querySelector('#app .pagehead');
+  if (head && ds.length > 3 && !document.querySelector('#app .jump')) { const j = document.createElement('div'); j.className = 'jump'; ds.forEach((d, i) => { const t = d.querySelector('summary').textContent.trim(); const b = document.createElement('button'); b.textContent = t.length > 22 ? t.slice(0, 21) + '…' : t; b.onclick = () => { d.open = true; d.scrollIntoView({ behavior: 'smooth', block: 'start' }); }; j.appendChild(b); }); head.after(j); }
+}
+const BELL = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>';
+function whoHtml() {
+  if (!S.who) return '<button class="ghost" data-act="showLogin">Sign in</button>';
+  const w = S.who; const ini = String(w.name || '?').replace(/\(.*?\)/g, '').trim().split(/\s+/).map((x) => x[0]).slice(0, 2).join('').toUpperCase() || '?';
+  const sub = [w.position, w.region ? title(w.region) : '', w.role === 'hq' ? LEVEL_TXT[hqLevel()] : ''].filter(Boolean).join(' · ');
+  const bell = pushSupported() ? `<button class="ico ${S.alertsOn ? 'on' : ''}" id="alertsBtn" data-act="alerts" title="${esc(alertsLabel())}" aria-label="${esc(alertsLabel())}">${BELL}</button>` : '';
+  const back = S.viewAs ? '<button class="ghost" data-act="exitPreview">Back to HQ</button>' : '';
+  return `${back}${bell}<div class="umw"><button class="uav" data-act="umenu" aria-haspopup="true" aria-label="Account menu">${esc(ini)}</button><div class="um" id="um" hidden>
+  <div class="who2"><b>${esc(w.name)}</b><span>${esc(sub)}</span></div>
+  ${viewAsControl() ? `<div class="row"><label>View the app as</label>${viewAsControl()}</div>` : ''}
+  <button class="mbtn" data-act="alerts">${esc(alertsLabel())}</button>
+  <button class="mbtn out" data-act="logout">Sign out</button></div></div>`;
 }
 function render() {
   const tabs = TABS[roleKey()].filter(([k]) => tabAllowed(k));
   if (!tabs.find((t) => t[0] === S.tab)) S.tab = tabs[0][0];
   const badge = (k) => (k === 'news' && S.tab !== 'news' && unreadNews().length ? ` <span class="nbadge">${unreadNews().length}</span>` : '');
   let n2 = $('#nav2'); if (!n2) { n2 = document.createElement('nav'); n2.id = 'nav2'; n2.setAttribute('role', 'tablist'); $('#nav').after(n2); }
-  if (roleKey() === 'hq') {
+  const GRP = roleKey() === 'hq' ? HQ_GROUPS : GROUPS[roleKey()];
+  if (GRP) {
     const ok = new Set(tabs.map((t) => t[0])), lab = Object.fromEntries(tabs);
-    const groups = HQ_GROUPS.map(([g, ks]) => [g, ks.filter((k) => ok.has(k))]).filter(([, ks]) => ks.length);
+    const groups = GRP.map(([g, ks]) => [g, ks.filter((k) => ok.has(k))]).filter(([, ks]) => ks.length);
     const cur = groups.find(([, ks]) => ks.includes(S.tab)) || groups[0];
     S.grpLast ||= {};
     $('#nav').innerHTML = groups.map(([g, ks]) => `<button role="tab" aria-selected="${g === cur[0]}" data-tab="${S.grpLast[g] && ks.includes(S.grpLast[g]) ? S.grpLast[g] : ks[0]}">${g}${ks.includes('news') ? badge('news') : ''}</button>`).join('');
     S.grpLast[cur[0]] = S.tab;
     n2.innerHTML = cur[1].length > 1 ? cur[1].map((k) => `<button role="tab" aria-selected="${k === S.tab}" data-tab="${k}">${lab[k]}</button>`).join('') : ''; n2.hidden = cur[1].length < 2;
   } else { $('#nav').innerHTML = tabs.map(([k, t]) => `<button role="tab" aria-selected="${k === S.tab}" data-tab="${k}">${t}${badge(k)}</button>`).join(''); n2.innerHTML = ''; n2.hidden = true; }
-  $('#who').innerHTML = S.viewAs ? `${viewAsControl()}<button class="ghost" data-act="exitPreview">Back to HQ</button>` : S.who ? `${viewAsControl()}<span>${esc(S.who.name)}${S.who.position ? ' · ' + esc(S.who.position) : ''}${S.who.role === 'hq' ? ' · ' + LEVEL_TXT[hqLevel()] : ''}</span><button class="ghost" data-act="alerts" id="alertsBtn">${alertsLabel()}</button><button class="ghost" data-act="logout">Sign out</button>` : '<button class="ghost" data-act="showLogin">Sign in</button>';
+  $('#who').innerHTML = whoHtml(); $('#gsb').hidden = !S.who;
   const pd = S.ov && S.ov.plan_due;
   let planBanner = '';
   if (pd && !pd.locked && !S.viewAs) {
     const left = Math.round((Date.parse(pd.deadline) - Date.parse(new Date(Date.now() + 3 * 3600e3).toISOString().slice(0, 10))) / 86400000);
     const msg = left > 0 ? `Submit your whole-field plan by ${dayName(pd.deadline)} (${left} day${left > 1 ? 's' : ''} left).` : left === 0 ? 'Your whole-field plan is due TODAY.' : `Your whole-field plan is overdue (it was due ${dayName(pd.deadline)}).`;
-    planBanner = `<div class="banner ${left <= 0 ? 'bad' : ''}"><b>Plan not submitted.</b> ${msg} The notices to ward officers and head teachers depend on it. <a href="#plan" data-tab="plan"><b>Open Plan &amp; calendar</b></a></div>`;
+    planBanner = `<div class="banner ${left <= 0 ? 'bad' : ''}"><b>Plan not submitted.</b> ${left > 0 ? `Due ${dayName(pd.deadline)} (${left} day${left > 1 ? 's' : ''} left).` : left === 0 ? 'Due TODAY.' : 'Overdue.'} Notices to schools depend on it. <a href="#plan" data-tab="plan"><b>Open Plan &amp; calendar</b></a></div>`;
   }
   const un = S.tab !== 'news' && S.who && !S.viewAs ? unreadNews()[0] : null;
   const newsBanner = un ? `<div class="banner" style="background:var(--surface2)"><b>News:</b> ${esc(un.title)} <a href="#news" data-tab="news"><b>Read</b></a></div>` : '';
@@ -1561,7 +1578,7 @@ function alertsLabel() {
 }
 const keyBytes = (b64) => { const p = '='.repeat((4 - (b64.length % 4)) % 4); const raw = atob((b64 + p).replace(/-/g, '+').replace(/_/g, '/')); return Uint8Array.from([...raw].map((c) => c.charCodeAt(0))); };
 async function checkAlerts() {
-  try { if (!pushSupported()) return; const reg = await navigator.serviceWorker.ready; S.alertsOn = Boolean(await reg.pushManager.getSubscription()) && Notification.permission === 'granted'; const b = document.getElementById('alertsBtn'); if (b) b.textContent = alertsLabel(); } catch {}
+  try { if (!pushSupported()) return; const reg = await navigator.serviceWorker.ready; S.alertsOn = Boolean(await reg.pushManager.getSubscription()) && Notification.permission === 'granted'; const b = document.getElementById('alertsBtn'); if (b) { b.classList.toggle('on', S.alertsOn); b.title = alertsLabel(); } } catch {}
 }
 async function toggleAlerts() {
   if (!pushSupported()) { alert('Alerts need a newer browser. On iPhone, first add this page to the home screen (Share, then Add to Home Screen), then open it from there.'); return; }
@@ -1647,14 +1664,16 @@ async function loadPlan(region) {
   S.planErr = null;
   try { S.plan = await api('/api/plan?region=' + r); } catch (e) { S.plan = null; S.planErr = e.message; }
 }
+// Admin opens at once with the two things that matter first (status and readiness); every other card fills in as its data arrives, all at the same time.
+let adminTimer = null;
+const adminPaint = () => { clearTimeout(adminTimer); adminTimer = setTimeout(() => { if (S.tab === 'admin' && !document.activeElement?.closest?.('#app input, #app textarea, #app select')) render(); }, 250); };
 async function loadAdmin() {
-  const [status, codes, rec, ready, roster] = await Promise.all([api('/api/admin/status'), api('/api/admin/codes').catch(() => null), api('/api/admin/recipients').catch(() => null), api('/api/admin/readiness').catch(() => null), api('/api/admin/roster').catch(() => null)]);
-  const [devices, backups] = await Promise.all([api('/api/admin/devices').catch(() => null), api('/api/admin/backup?list=1').catch(() => null)]);
-  const push = await api('/api/admin/push-status').catch(() => null);
-  const [calsync, formjob, emailSched, hqUsers, settings, activity] = await Promise.all([api('/api/admin/calsync').catch(() => null), api('/api/admin/formjob').catch(() => null), api('/api/admin/email-schedule').catch(() => null), api('/api/admin/hq-users').catch(() => null), api('/api/admin/settings').catch(() => null), api('/api/admin/activity').catch(() => null)]);
-  api('/api/admin/storage').then((r) => { S.storage = r; if (S.tab === 'admin') render(); }).catch(() => {});
-  api('/api/admin/forms').then((r) => { S.forms = r; if (S.tab === 'admin') render(); }).catch(() => {});
-  S.recRows = null; S.adm = { hqUsers, settings, activity, emailSched, status, codes, rec, push, ready, roster, devices, backups, calsync, formjob, preview: S.adm?.preview || null };
+  const [status, ready] = await Promise.all([api('/api/admin/status'), api('/api/admin/readiness').catch(() => null)]);
+  S.recRows = null; S.adm = { status, ready, preview: S.adm?.preview || null };
+  const set = (k, path) => api(path).then((v) => { if (!S.adm) return; S.adm[k] = v; if (k === 'rec') S.recRows = null; adminPaint(); }).catch(() => { adminPaint(); });
+  for (const [k, path] of [['hqUsers', '/api/admin/hq-users'], ['settings', '/api/admin/settings'], ['emailSched', '/api/admin/email-schedule'], ['rec', '/api/admin/recipients'], ['push', '/api/admin/push-status'], ['calsync', '/api/admin/calsync'], ['formjob', '/api/admin/formjob'], ['codes', '/api/admin/codes'], ['roster', '/api/admin/roster'], ['devices', '/api/admin/devices'], ['backups', '/api/admin/backup?list=1'], ['activity', '/api/admin/activity']]) set(k, path);
+  api('/api/admin/storage').then((r) => { S.storage = r; adminPaint(); }).catch(() => {});
+  api('/api/admin/forms').then((r) => { S.forms = r; adminPaint(); }).catch(() => {});
 }
 
 if (!window.__newsTimer) window.__newsTimer = setInterval(() => { if (S.who && !document.hidden) loadNews(); }, 90000);
@@ -1667,6 +1686,7 @@ async function go() {
 }
 
 document.addEventListener('click', async (e) => {
+  if (!e.target.closest('.umw')) { const m = document.getElementById('um'); if (m && !m.hidden) m.hidden = true; }
   const dl = e.target.closest('[data-dl]'); if (dl) { e.preventDefault(); try { const res = await fetch('/api/deletions/copy?id=' + dl.dataset.dl, { headers: { 'x-access-code': S.code } }); if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Not allowed'); const a = document.createElement('a'); a.href = URL.createObjectURL(await res.blob()); a.download = 'deleted-records-' + dl.dataset.dl + '.json.gz'; a.click(); } catch (er) { alert(er.message); } return; }
   const ex = e.target.closest('[data-ex]'); if (ex) { await loadExplore(ex.dataset.ex); return; }
   const op = e.target.closest('[data-open]');
@@ -1681,6 +1701,8 @@ document.addEventListener('click', async (e) => {
     if (a === 'login') { const c = $('#code').value.trim().toUpperCase(); if (!c) return; S.code = c; try { const r = await api('/api/login'); S.who = r.who; store.set('kf_code', c); S.tab = null; await go(); } catch { S.code = null; loginScreen('That code was not recognised.'); } }
     else if (a === 'logout') { S.code = null; S.who = null; S.ov = null; S.plan = null; S.draft = null; store.set('kf_code', null); try { localStorage.removeItem('kf_snap'); } catch {} S.tab = null; loginScreen(); }
     else if (a === 'showLogin') loginScreen();
+    else if (a === 'umenu') { const m = document.getElementById('um'); if (m) m.hidden = !m.hidden; }
+    else if (a === 'searchToggle') { const g = document.getElementById('gswrap'); g.classList.toggle('open'); if (g.classList.contains('open')) document.getElementById('gs').focus(); }
     else if (a === 'alerts') await toggleAlerts();
     else if (a === 'exitPreview') await setViewAs('');
     else if (a === 'hqAdd') { const name = $('#hqName').value.trim(); if (!name) { S.hqMsg = 'Write the name first.'; render(); return; } try { await api('/api/admin/hq-users', { method: 'POST', body: { action: 'add', name, email: $('#hqEmail').value, level: $('#hqLevel').value } }); S.hqMsg = name + ' was added. Their code is in the table: send it to them (Email code).'; await loadAdmin(); } catch (e) { S.hqMsg = e.message; } render(); }
