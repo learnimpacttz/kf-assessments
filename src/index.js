@@ -2,6 +2,7 @@ import { koboForm } from './koboforms.js';
 import { listNews, manageNews, react as reactNews, saveNews, deleteNews, pinNews, publish as publishNews, runDueNews, checkMilestones, polish as polishNews } from './news.js';
 import { ownWork, teamBlock, coordinatorOverview } from './own.js';
 import { buildCalendar, markCalendarDirty, syncCalendar, calendarStatus, setCalSync, loadCalSync } from './calendar.js';
+import { formsView, formsRehearse, formsDeploy, formsRollback } from './formsadmin.js';
 import { loadFormJob, saveFormJob, runFormJob, maybeRunFormJob } from './formjob.js';
 import { kv } from './store.js';
 import { buildBrief, aiBrief } from './brief.js';
@@ -679,6 +680,12 @@ export default {
           else return err('Unknown action');
         }
         return json(await calendarStatus(env));
+      }
+      if (path === '/api/admin/forms') {
+        try {
+          if (method === 'POST') { const b = await request.json().catch(() => ({})); if (b.action === 'rehearse') return json(await formsRehearse(env, who, b)); if (b.action === 'deploy') { const r = await formsDeploy(env, who, b); await logActivity(env, who, 'Deployed a form: ' + r.label, b.filename || ''); return json(r); } if (b.action === 'rollback') { const r = await formsRollback(env, who, b); await logActivity(env, who, 'Rolled back a form: ' + r.label, ''); return json(r); } return err('Unknown action'); }
+          return json(await formsView(env));
+        } catch (e) { return err(String(e.message || e), 422); }
       }
       if (path === '/api/admin/formjob') {
         if (method === 'POST') {

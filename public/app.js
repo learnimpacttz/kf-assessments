@@ -460,7 +460,7 @@ function viewAdmin() {
   return `<div class="pagehead"><div><h2>Admin</h2><p>Readiness, data connections, people, access codes and backups</p></div><button class="btn" data-act="refreshNow">Sync now</button></div>
   ${readinessCard(a)}<div class="card"><h3>Data connections</h3><div class="sub">Student tests, sampling and teacher forms are read from KoBo every 5 minutes in field hours</div><div class="tbl"><table><thead><tr><th>Form</th><th>Status</th><th class="r">Records read</th><th>State</th><th>Last complete</th></tr></thead><tbody>${sync}</tbody></table></div></div>
   ${S.ov.unlisted?.length ? `<div class="banner" style="margin-top:14px"><b>Names in KoBo that are not in the staff roster:</b> ${S.ov.unlisted.map(esc).join(', ')}. Their tests still count, but they have no region or access code.</div>` : ''}
-  ${hqTeamCard(a)}${settingsCard(a)}${emailScheduleCard(a)}
+  ${hqTeamCard(a)}${settingsCard(a)}${formsCard()}${emailScheduleCard(a)}
   <div class="card" style="margin-top:14px"><h3>Email list</h3><div class="sub">Who is on the lists. Changes apply after you press Save. This does not send anything.</div>
   ${recipientsTable(a)}
   <div style="margin-top:10px"><button class="btn sm" data-act="saveRec">Save the email list</button></div></div>
@@ -1142,10 +1142,11 @@ function applyBrand() {
 // ---------- shell ----------
 const TABS = {
   public: [['progress', 'Progress'], ['compare', 'Compare']],
-  volunteer: [['day', 'My day'], ['news', 'News'], ['work', 'My work'], ['queries', 'My queries'], ['stats', 'My stats'], ['phones', 'Phones'], ['compare', 'Compare'], ['practice', 'Practice']],
-  rc: [['region', 'Region'], ['news', 'News'], ['plan', 'Plan & calendar'], ['team', 'My team'], ['allq', 'Queries'], ['phones', 'Phones'], ['compare', 'Compare'], ['reports', 'Reports'], ['explore', 'Data explorer'], ['practice', 'Practice']],
-  hq: [['hq', 'HQ'], ['news', 'News'], ['regions', 'Regions & plans'], ['plan', 'Plan & calendar'], ['people', 'People'], ['allq', 'Queries'], ['phones', 'Phones'], ['compare', 'Compare'], ['reports', 'Reports'], ['explore', 'Data explorer'], ['admin', 'Admin'], ['practice', 'Practice']],
+  volunteer: [['day', 'My day'], ['news', 'News'], ['work', 'My work'], ['queries', 'My queries'], ['stats', 'My stats'], ['phones', 'Phones'], ['compare', 'Compare'], ['practice', 'Practice'], ['help', 'Help']],
+  rc: [['region', 'Region'], ['news', 'News'], ['plan', 'Plan & calendar'], ['team', 'My team'], ['allq', 'Queries'], ['phones', 'Phones'], ['compare', 'Compare'], ['reports', 'Reports'], ['explore', 'Data explorer'], ['practice', 'Practice'], ['help', 'Help']],
+  hq: [['today', 'Today'], ['hq', 'HQ'], ['news', 'News'], ['regions', 'Regions & plans'], ['plan', 'Plan & calendar'], ['people', 'People'], ['allq', 'Queries'], ['phones', 'Phones'], ['compare', 'Compare'], ['reports', 'Reports'], ['explore', 'Data explorer'], ['admin', 'Admin'], ['help', 'Help'], ['practice', 'Practice']],
 };
+const HQ_GROUPS = [['Today', ['today']], ['Field', ['hq', 'regions', 'plan', 'people']], ['Checks', ['allq', 'phones', 'compare', 'explore']], ['News', ['news']], ['Reports', ['reports']], ['Admin', ['admin']], ['Help', ['help']]];
 const REPORTS_READY = true;
 const LEVEL_TXT = { admin: 'Admin', editor: 'Editor', viewer: 'Viewer' };
 const hqLevel = () => (S.who?.role === 'hq' ? S.who.level || 'admin' : null);
@@ -1156,7 +1157,7 @@ function tabAllowed(k) {
   return true;
 }
 const roleKey = () => (!S.who ? 'public' : S.who.role === 'arc' ? 'rc' : S.who.role);
-const VIEWS = { progress: viewProgress, compare: viewCompare, day: viewDay, work: viewWork, queries: viewQueries, stats: viewStats, region: viewRegion, plan: viewPlan, team: viewTeam, explore: viewExplore, hq: viewHQ, regions: viewRegionsHQ, people: viewPeopleHQ, admin: viewAdmin, allq: viewAllQueries, phones: viewPhones, practice: viewPractice, news: viewNews, reports: viewReports };
+const VIEWS = { progress: viewProgress, compare: viewCompare, day: viewDay, work: viewWork, queries: viewQueries, stats: viewStats, region: viewRegion, plan: viewPlan, team: viewTeam, explore: viewExplore, hq: viewHQ, regions: viewRegionsHQ, people: viewPeopleHQ, admin: viewAdmin, allq: viewAllQueries, phones: viewPhones, practice: viewPractice, news: viewNews, reports: viewReports, today: viewToday, help: viewHelp };
 
 // Admin is long: each card folds away so you can jump to what you need. The first card stays open; your choices are remembered.
 function enhanceCollapsible() {
@@ -1176,7 +1177,17 @@ function enhanceCollapsible() {
 function render() {
   const tabs = TABS[roleKey()].filter(([k]) => tabAllowed(k));
   if (!tabs.find((t) => t[0] === S.tab)) S.tab = tabs[0][0];
-  $('#nav').innerHTML = tabs.map(([k, t]) => `<button role="tab" aria-selected="${k === S.tab}" data-tab="${k}">${t}${k === 'news' && S.tab !== 'news' && unreadNews().length ? ` <span class="nbadge">${unreadNews().length}</span>` : ''}</button>`).join('');
+  const badge = (k) => (k === 'news' && S.tab !== 'news' && unreadNews().length ? ` <span class="nbadge">${unreadNews().length}</span>` : '');
+  let n2 = $('#nav2'); if (!n2) { n2 = document.createElement('nav'); n2.id = 'nav2'; n2.setAttribute('role', 'tablist'); $('#nav').after(n2); }
+  if (roleKey() === 'hq') {
+    const ok = new Set(tabs.map((t) => t[0])), lab = Object.fromEntries(tabs);
+    const groups = HQ_GROUPS.map(([g, ks]) => [g, ks.filter((k) => ok.has(k))]).filter(([, ks]) => ks.length);
+    const cur = groups.find(([, ks]) => ks.includes(S.tab)) || groups[0];
+    S.grpLast ||= {};
+    $('#nav').innerHTML = groups.map(([g, ks]) => `<button role="tab" aria-selected="${g === cur[0]}" data-tab="${S.grpLast[g] && ks.includes(S.grpLast[g]) ? S.grpLast[g] : ks[0]}">${g}${ks.includes('news') ? badge('news') : ''}</button>`).join('');
+    S.grpLast[cur[0]] = S.tab;
+    n2.innerHTML = cur[1].length > 1 ? cur[1].map((k) => `<button role="tab" aria-selected="${k === S.tab}" data-tab="${k}">${lab[k]}</button>`).join('') : ''; n2.hidden = cur[1].length < 2;
+  } else { $('#nav').innerHTML = tabs.map(([k, t]) => `<button role="tab" aria-selected="${k === S.tab}" data-tab="${k}">${t}${badge(k)}</button>`).join(''); n2.innerHTML = ''; n2.hidden = true; }
   $('#who').innerHTML = S.viewAs ? `${viewAsControl()}<button class="ghost" data-act="exitPreview">Back to HQ</button>` : S.who ? `${viewAsControl()}<span>${esc(S.who.name)}${S.who.position ? ' · ' + esc(S.who.position) : ''}${S.who.role === 'hq' ? ' · ' + LEVEL_TXT[hqLevel()] : ''}</span><button class="ghost" data-act="alerts" id="alertsBtn">${alertsLabel()}</button><button class="ghost" data-act="logout">Sign out</button>` : '<button class="ghost" data-act="showLogin">Sign in</button>';
   const pd = S.ov && S.ov.plan_due;
   let planBanner = '';
@@ -1190,6 +1201,147 @@ function render() {
   $('#app').innerHTML = previewBanner() + planBanner + newsBanner + VIEWS[S.tab]();
   $('#gswrap').hidden = !S.who;
   enhanceCollapsible();
+  aiRender();
+}
+
+// ---------- Today (HQ start page) ----------
+function viewToday() {
+  const o = S.ov; if (!o || o.status === 'waiting') return `${dataBanner()}<div class="pagehead"><div><h2>Today</h2><p>What needs you today</p></div></div>${waiting()}`;
+  const flags = o.flags || [];
+  const mine = flags.filter((f) => f.qk && qAbility(f).review);
+  const waitingResp = flags.filter((f) => f.qk && ['open', 'rework'].includes(wfOf(f).stage || 'open') && isOpen(f));
+  const inReview = flags.filter((f) => f.qk && ['team', 'hq1', 'final'].includes(wfOf(f).stage));
+  const noPlan = o.regions.filter((r) => (o.plans[r.region] || {}).status !== 'locked');
+  const bad = flags.filter((f) => isOpen(f) && f.sev === 'bad' && !f.qk).length;
+  const nextNews = (S.newsAdmin?.items || []).filter((i) => i.publish_at && !i.published_at && Date.parse(i.publish_at) > Date.now()).sort((a, b) => Date.parse(a.publish_at) - Date.parse(b.publish_at))[0];
+  const item = (cls, title0, text, tab, btn) => `<div class="tdrow"><i class="st ${cls}"></i><div style="flex:1;min-width:0"><b>${title0}</b><span>${text}</span></div>${tab ? (tab === 'allq' && btn === 'Open queries' ? `<button class="btn sm sec" data-act="goMineQ">${btn}</button>` : `<button class="btn sm sec" data-tab="${tab}">${btn}</button>`) : ''}</div>`;
+  const rows = [
+    item(mine.length ? 'bad' : 'good', mine.length ? `${mine.length} query response${mine.length > 1 ? 's' : ''} waiting for your review` : 'No query waiting for your review', 'Responses reach you after the team review. Approve, send back, or edit and approve.', 'allq', 'Open queries'),
+    item(waitingResp.length ? 'warn' : 'good', `${waitingResp.length} quer${waitingResp.length === 1 ? 'y' : 'ies'} waiting for a response, ${inReview.length} in review`, 'Responses come first from the test admin, or from the RC or ARC.', 'allq', 'See all'),
+    item(noPlan.length ? 'warn' : 'good', noPlan.length ? `${noPlan.length} region${noPlan.length > 1 ? 's' : ''} without a submitted plan` : 'All regions have submitted their plan', noPlan.length ? noPlan.map((r) => esc(title(r.region))).join(', ') + '. The plan deadline is Fri 16 Oct. Notices and the calendar file depend on it.' : 'The calendar file can now be switched on in Admin.', 'regions', 'Regions and plans'),
+    item(bad ? 'bad' : 'good', bad ? `${bad} serious check${bad > 1 ? 's' : ''} open` : 'No serious check open', 'Data and phone checks that need an explanation.', 'hq', 'HQ overview'),
+    nextNews ? item('', 'Next scheduled message', `${esc(nextNews.title)} · ${eatTime(nextNews.publish_at)}`, 'news', 'News') : '',
+  ].join('');
+  const quick = [['reports', 'Reports and downloads'], ['phones', 'Phones today'], ['explore', 'Data explorer'], ['help', 'Help and guides']].filter(([k]) => tabAllowed(k)).map(([k, t]) => `<button class="btn sm sec" data-tab="${k}">${t}</button>`).join(' ');
+  const g = o.national;
+  return `${dataBanner()}<div class="pagehead"><div><h2>Today</h2><p>${esc(dayName(new Date(Date.now() + 3 * 3600e3).toISOString().slice(0, 10)))} · what needs you, in order</p></div></div>
+  <div class="grid kpis">${kpi('Schools complete', `${fmt(g.done)}<small> / ${fmt(g.schools)}</small>`, pc(g.done, g.schools) + '%', 'regions')}${kpi('Pupils tested', fmt(g.tested), 'of ' + fmt(g.target), 'compare')}${kpi('For your review', fmt(mine.length), 'queries', 'allq')}${kpi('Plans missing', fmt(noPlan.length), 'of ' + o.regions.length + ' regions', 'regions')}</div>
+  <div class="card" style="margin-top:14px"><h3>Needs you</h3><div class="sub">Green means nothing to do. Open an item to act on it.</div>${rows}</div>
+  <div class="card" style="margin-top:14px"><h3>Go to</h3><div style="display:flex;gap:8px;flex-wrap:wrap">${quick}</div>${S.cfg?.brand?.assistant ? `<p class="m" style="margin-top:10px">Not sure where to look? Press <b>Ask assistant</b> (gold button, bottom right) and ask in plain words.</p>` : ''}</div>`;
+}
+
+// ---------- Help ----------
+const HELP = {
+  common: [
+    ['What is this?', 'One place for the field work: who is where, which schools are done, what needs a reply, and what is next. It reads the KoBo forms every few minutes. It never shows pupil names.'],
+    ['How do I sign in?', 'Use the code you were sent. It is yours alone. Do not share it. If it does not work, ask your RC or HQ for a new one.'],
+    ['How do I get alerts on my phone?', 'Press <b>Turn on alerts</b> at the top and allow notifications. On an iPhone, first use Share, then Add to Home Screen, and open the app from there.'],
+    ['What do the colours mean?', 'Green is fine. Amber means look at it. Red means it needs an answer soon. A check is a question, not a charge: it asks for a short explanation.'],
+    ['What does Treatment, Control and M&E mean?', 'Treatment and Control are the two study groups of schools. M&E is an extra label on some schools that also have monitoring visits or surveys.'],
+  ],
+  volunteer: [
+    ['My day', 'Shows the school you are at today, the sampling status and your own test times. Check it in the morning.'],
+    ['Sending your records', 'Turn on auto send in KoBo Collect so records go out the same day. Sent late (2 or more days after the visit) is a check.'],
+    ['My queries: how to respond', 'When a check is raised on your records, press <b>Write the response</b> and say in a sentence or two what happened and what was done. Your RC or ARC reviews it, then HQ reviews and approves it. You can see every step and the history. If it is sent back, read the reason and write it again.'],
+    ['Phones', 'Each phone should belong to one person. Do not lend yours. If you must, tell your RC and write it in your response.'],
+    ['Practice', 'Use the TRAINING schools to practise. They do not count in the real numbers.'],
+  ],
+  rc: [
+    ['Plan and calendar', 'Plan the whole field work before 16 Oct: 2 schools a day is the standard. One or three schools in a day needs a reason. After you submit, a change needs a reason and shows in the history.'],
+    ['Notices to schools', 'Ward officers get 5 working days notice and head teachers 3. The tracker has ready messages: copy, send by SMS or WhatsApp, then press Mark sent.'],
+    ['Queries: reviewing your team', 'Test admin responses reach you first. Read each, check it makes sense, then <b>Approve</b> (goes to HQ), <b>Edit and approve</b>, or <b>Send back</b> with a reason. Your own queries you answer yourself and they go to HQ. A response is overdue after 2 working days; you get a reminder every day.'],
+    ['Your own work', 'Your targets: visits, notices on time, plan changes made early, same-day sending, quality, queries answered. They are the same for RC and ARC.'],
+    ['Reports', 'RCs can build, edit and download reports for their region (Excel, Word, PDF, CSV).'],
+  ],
+  hq: [
+    ['Today', 'Your start page: queries waiting for your review, plans missing, serious checks and the next scheduled message.'],
+    ['Query review (the chain)', 'Test admin writes the response; RC or ARC reviews; the first HQ reviewer (Joram) reviews; the final approver (Mundo) approves. Each step can approve, send back with a reason, or edit and approve. Nothing is deleted: the full history stays. Set who reviews in Admin, HQ team, Query review.'],
+    ['News', 'Write a message, polish it with AI, then send now or schedule it. Messages go as phone alerts too.'],
+    ['Reports', 'Pick a template, build it, edit the text, then download as Excel, Word, PDF or CSV. Choose several formats to get a zip.'],
+    ['The assistant', 'Press the button at the bottom right. Ask about progress, regions, plans, queries. It only reads; it can suggest a News draft or open a screen, but you decide.'],
+    ['Admin: people and levels', 'Admin can do everything. Editors write messages and reports and reply to queries. Viewers read and download. Each person has a personal code; switch the shared code off once everyone has theirs.'],
+    ['Admin: forms', 'Admin, Forms: choose the XLSX, press Rehearse (it tests on a throwaway copy and rolls back), then Deploy by typing the project name. Roll back is one button. Submissions are never touched.'],
+    ['Admin: calendar file', 'When all 11 plans are in, switch on the automatic calendar update. A manual download and upload stay as backup.'],
+    ['Activity log', 'Every change by an HQ person is logged with who and when. Look in Admin.'],
+  ],
+};
+function viewHelp() {
+  const role = roleKey(); const mk = (list) => list.map(([q, a]) => `<details class="fd helpq"><summary><b>${q}</b></summary><div class="phbox">${a}</div></details>`).join('');
+  const mine = HELP[role] || [];
+  return `<div class="pagehead"><div><h2>Help</h2><p>Short answers in plain words. Open any question.</p></div></div>
+  ${mine.length ? `<div class="card"><h3>For your role</h3>${mk(mine)}</div>` : ''}<div class="card" style="margin-top:14px"><h3>For everyone</h3>${mk(HELP.common)}</div>
+  <div class="card" style="margin-top:14px"><h3>Still stuck?</h3><div class="sub">Tell your Regional Coordinator. RCs tell HQ.</div></div>`;
+}
+
+// ---------- the assistant (HQ) ----------
+const AI_SUGGEST = ['Which regions are behind and why?', 'What needs my review today?', 'Which regions have not submitted their plan?', 'Draft a good-luck message for the first field day', 'Summarise this week for Mundo and Joram'];
+function aiName() { return (S.cfg?.brand?.assistant || 'Assistant'); }
+function aiRender() {
+  let el = document.getElementById('ai'); const on = S.who && S.who.role === 'hq' && !S.viewAs;
+  if (!on) { if (el) el.remove(); return; }
+  if (!el) { el = document.createElement('div'); el.id = 'ai'; document.body.appendChild(el); }
+  const A = (S.ai ||= { open: false, msgs: [], busy: false });
+  const msgs = A.msgs.map((m, i) => `<div class="aim ${m.role}"><div>${esc(m.content).replace(/\n/g, '<br>')}</div>${(m.actions || []).map((x, j) => x.type === 'news_draft' ? (canWrite() ? `<button class="btn sm" data-act="aiDraft" data-i="${i}" data-j="${j}">Save as News draft: ${esc(x.title)}</button>` : `<span class="m">Draft: ${esc(x.title)} (needs an Editor to save)</span>`) : x.type === 'open' ? `<button class="btn sm sec" data-act="aiOpen" data-go="${esc(x.tab)}">${esc(x.label || 'Open')}</button>` : '').join('')}</div>`).join('');
+  el.innerHTML = A.open ? `<div class="aipanel" role="dialog" aria-label="${esc(aiName())}"><div class="aihead"><b>${esc(aiName())}</b><span><button class="btn sm ghost" data-act="aiNew">New chat</button> <button class="btn sm ghost" data-act="aiClose" aria-label="Close">✕</button></span></div>
+  <div class="aibody" id="aibody">${msgs || `<div class="m">Ask about progress, regions, plans or queries. I read the live numbers and never change anything. I never see pupil or teacher names.</div><div class="aisug">${AI_SUGGEST.map((q) => `<button class="chipbtn" data-act="aiAsk" data-q="${esc(q)}">${esc(q)}</button>`).join('')}</div>`}${A.busy ? '<div class="aim assistant"><div>Thinking…</div></div>' : ''}</div>
+  <div class="aiin"><textarea id="aiText" rows="2" placeholder="Ask in plain words" ${A.busy ? 'disabled' : ''}></textarea><button class="btn" data-act="aiSend" ${A.busy ? 'disabled' : ''}>Send</button></div></div>` : `<button class="aibtn" data-act="aiOpen2" aria-label="Ask ${esc(aiName())}">Ask assistant</button>`;
+  const b = document.getElementById('aibody'); if (b) b.scrollTop = b.scrollHeight;
+}
+async function aiAction(a, t) {
+  const A = (S.ai ||= { open: false, msgs: [], busy: false });
+  if (a === 'aiOpen2') { A.open = true; aiRender(); const x = document.getElementById('aiText'); x && x.focus(); return; }
+  if (a === 'aiClose') { A.open = false; aiRender(); return; }
+  if (a === 'aiNew') { A.msgs = []; aiRender(); return; }
+  if (a === 'aiOpen') { S.tab = t.dataset.go; A.open = false; render(); return; }
+  if (a === 'aiDraft') { const x = A.msgs[+t.dataset.i].actions[+t.dataset.j]; try { await api('/api/admin/news', { method: 'POST', body: { action: 'save', title: x.title, body: x.body, kind: x.kind, to: x.to } }); A.msgs.push({ role: 'assistant', content: 'Saved as a draft in News. Open News to polish and send it. Nothing was sent.' }); } catch (e) { A.msgs.push({ role: 'assistant', content: e.message }); } aiRender(); return; }
+  if (a === 'aiAsk' || a === 'aiSend') {
+    const q = a === 'aiAsk' ? t.dataset.q : (document.getElementById('aiText').value || '').trim(); if (!q || A.busy) return;
+    A.msgs.push({ role: 'user', content: q }); A.busy = true; aiRender();
+    try { const r = await api('/api/assistant', { method: 'POST', body: { messages: A.msgs.map((m) => ({ role: m.role, content: m.content })) } }); A.msgs.push({ role: 'assistant', content: r.text, actions: r.actions || [] }); }
+    catch (e) { A.msgs.push({ role: 'assistant', content: e.message || 'That did not work. Try again.' }); }
+    A.busy = false; aiRender();
+  }
+}
+
+// ---------- Admin: Forms ----------
+function formsCard() {
+  const F = S.forms; if (!F) return '';
+  S.formRes ||= {}; S.formMsg ||= {}; S.formFile ||= {};
+  const cards = F.forms.map((f) => {
+    if (f.error) return `<div class="orow"><b>${esc(f.label)}</b> <span class="pill bad">${esc(f.error)}</span></div>`;
+    const res = S.formRes[f.asset] || f.rehearsal; const file = S.formFile[f.asset];
+    const okReh = res && res.ok && file && res.hash === file.hash;
+    const last = (F.history || []).find((h) => h.asset === f.asset && h.ok && h.previous_version && h.file !== 'ROLLBACK') || (F.history || []).find((h) => h.asset === f.asset && h.ok && h.previous_version);
+    const probs = res ? `${res.ok ? '<div class="banner" style="background:var(--good-bg,#e8f5ec)"><b>Rehearsal passed</b> for ' + esc(res.file || '') + ' (' + esc(new Date(res.at).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' })) + ')</div>' : `<div class="banner bad"><b>Rehearsal found problems.</b></div>`}${(res.problems || []).map((x) => `<p class="m" style="color:var(--bad)">• ${esc(x)}</p>`).join('')}${(res.notes || []).map((x) => `<p class="m">• ${esc(x)}</p>`).join('')}<p class="m">Rows: live ${res.rows_live ?? '–'}, new ${res.rows_new ?? '–'}. ${(res.log || []).map(esc).join(' ')}</p>` : '';
+    return `<div class="formbox"><h4 style="margin:0 0 4px">${esc(f.label)} <span class="pill mute">${esc(f.name || '')}</span></h4><div class="sub">${f.rows} rows · ${fmt(f.submissions)} submissions · deployed ${f.date_deployed ? new Date(f.date_deployed).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' }) : '–'}${f.draft ? ' · <b>has an undeployed draft</b>' : ''}</div>
+    <div class="f" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><input type="file" accept=".xlsx" data-ffile="${esc(f.asset)}">${file ? `<span class="m">${esc(file.name)}</span>` : ''}<button class="btn sm sec" data-act="fmRehearse" data-asset="${esc(f.asset)}">1. Rehearse on a throwaway copy</button></div>
+    ${S.formMsg[f.asset] ? `<p class="m">${esc(S.formMsg[f.asset])}</p>` : ''}${probs}
+    ${okReh ? `<div class="f" style="margin-top:8px"><label>2. To deploy to the LIVE project, type its name: <b>${esc(f.name)}</b><input id="fmc-${esc(f.asset)}" placeholder="${esc(f.name)}"></label><button class="btn sm" data-act="fmDeploy" data-asset="${esc(f.asset)}">Deploy to the live project</button></div>` : '<p class="m">Deploying unlocks after a passing rehearsal of the same file.</p>'}
+    ${last ? `<div style="margin-top:8px"><button class="btn sm ghost" data-act="fmRollback" data-asset="${esc(f.asset)}">Roll back to the earlier version</button> <span class="m">earlier version from ${esc(new Date(last.at).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' }))}</span></div>` : ''}</div>`;
+  }).join('');
+  const hist = (F.history || []).slice(0, 8).map((h) => `<tr><td>${esc(new Date(h.at).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' }))}</td><td>${esc(h.label)}</td><td>${esc(h.file || '')}</td><td>${esc(h.by)}</td><td>${h.ok ? '<span class="pill good">done</span>' : '<span class="pill bad">stopped</span>'}</td></tr>`).join('');
+  return `<div class="card" style="margin-top:14px"><h3>Forms in KoBo</h3><div class="sub">Replace a form without leaving the dashboard. The file is first tried on a throwaway copy (import, deploy, roll back, delete). Only then can you deploy it to the live project, by typing the project name. Submissions are never touched, and a roll back puts the earlier version back.</div>${cards}${hist ? `<h4 style="margin:14px 0 4px">Recent form changes</h4><div class="tbl"><table><thead><tr><th>When</th><th>Form</th><th>File</th><th>By</th><th></th></tr></thead><tbody>${hist}</tbody></table></div>` : ''}</div>`;
+}
+async function formsAction(a, t) {
+  const asset = t.dataset.asset; S.formMsg ||= {}; S.formRes ||= {}; S.formFile ||= {};
+  try {
+    if (a === 'fmRehearse') {
+      const F = S.formFile[asset]; if (!F) { S.formMsg[asset] = 'Choose the XLSX file first.'; render(); return; }
+      S.formMsg[asset] = 'Rehearsing on a throwaway copy. This takes about a minute…'; render();
+      const r = await api('/api/admin/forms', { method: 'POST', body: { action: 'rehearse', asset, filename: F.name, xlsx_b64: F.b64 } }); S.formRes[asset] = r; S.formMsg[asset] = r.ok ? 'Rehearsal passed.' : 'Rehearsal found problems. Fix the file and rehearse again.';
+    } else if (a === 'fmDeploy') {
+      const F = S.formFile[asset]; const typed = (document.getElementById('fmc-' + asset)?.value || '').trim();
+      if (!confirm('Deploy this file to the LIVE project now? Phones pick it up the next time they refresh forms. Submissions are not touched.')) return;
+      S.formMsg[asset] = 'Deploying…'; render();
+      const r = await api('/api/admin/forms', { method: 'POST', body: { action: 'deploy', asset, filename: F.name, xlsx_b64: F.b64, confirm: typed } }); S.formMsg[asset] = `Deployed. ${r.rows} rows, ${fmt(r.submissions)} submissions kept. Earlier version id kept for roll back.`; S.formRes[asset] = null; S.formFile[asset] = null;
+    } else if (a === 'fmRollback') {
+      const typed = prompt('To roll back, type the project name exactly:'); if (!typed) return;
+      S.formMsg[asset] = 'Rolling back…'; render();
+      const r = await api('/api/admin/forms', { method: 'POST', body: { action: 'rollback', asset, confirm: typed } }); S.formMsg[asset] = `Rolled back. ${r.rows} rows, ${fmt(r.submissions)} submissions kept.`;
+    }
+  } catch (e) { S.formMsg[asset] = e.message; }
+  try { S.forms = await api('/api/admin/forms'); } catch { /* keep the old list */ }
+  render();
 }
 
 // ---------- phone alerts ----------
@@ -1292,6 +1444,7 @@ async function loadAdmin() {
   const [devices, backups] = await Promise.all([api('/api/admin/devices').catch(() => null), api('/api/admin/backup?list=1').catch(() => null)]);
   const push = await api('/api/admin/push-status').catch(() => null);
   const [calsync, formjob, emailSched, hqUsers, settings, activity] = await Promise.all([api('/api/admin/calsync').catch(() => null), api('/api/admin/formjob').catch(() => null), api('/api/admin/email-schedule').catch(() => null), api('/api/admin/hq-users').catch(() => null), api('/api/admin/settings').catch(() => null), api('/api/admin/activity').catch(() => null)]);
+  api('/api/admin/forms').then((r) => { S.forms = r; if (S.tab === 'admin') render(); }).catch(() => {});
   S.recRows = null; S.adm = { hqUsers, settings, activity, emailSched, status, codes, rec, push, ready, roster, devices, backups, calsync, formjob, preview: S.adm?.preview || null };
 }
 
@@ -1326,6 +1479,9 @@ document.addEventListener('click', async (e) => {
     else if (a === 'hqShared') { const on = Boolean(t.dataset.on); if (!on && !confirm('Switch the shared HQ code off? Everyone in HQ must then use their personal code.')) return; try { await api('/api/admin/hq-users', { method: 'POST', body: { action: 'shared', enabled: on } }); S.hqMsg = on ? 'The shared code is on again.' : 'The shared code is off.'; await loadAdmin(); } catch (e) { S.hqMsg = e.message; } render(); }
     else if (a === 'stSave') { const g = (id) => document.getElementById(id).value; const targets = {}; document.querySelectorAll('[data-tg]').forEach((i) => { (targets[i.dataset.tg] ||= {})[i.dataset.f] = Number(i.value); }); try { await api('/api/admin/settings', { method: 'POST', body: { brand: { platform: g('stPlatform'), programme: g('stProgramme'), tagline: g('stTagline'), assistant: g('stAssistant') }, targets } }); S.cfg = await api('/api/config'); applyBrand(); S.stMsg = 'Saved. The new name shows everywhere.'; await loadAdmin(); } catch (e) { S.stMsg = e.message; } render(); }
     else if (/^rep[A-Z]/.test(a)) await repAction(a, t);
+    else if (a === 'goMineQ') { S.qf = { q: '', type: '', sev: '', region: '', st: 'mine' }; S.tab = 'allq'; render(); }
+    else if (/^ai[A-Z]/.test(a)) await aiAction(a, t);
+    else if (/^fm[A-Z]/.test(a)) await formsAction(a, t);
     else if (a === 'react') await reactTo(t);
     else if (a === 'sendTest') { const to = ($('#testTo').value || '').trim(); if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(to)) { S.testMsg = 'Type a valid email address first.'; render(); return; } store.set('kf_test_to', to); try { await api('/api/admin/test-email', { method: 'POST', body: { to } }); S.testMsg = 'A test was sent to ' + to + '. It is marked [TEST] and goes only to that address.'; } catch (e) { S.testMsg = e.message; } render(); }
     else if (a === 'copyNotice') await copyNotice(t);
@@ -1431,6 +1587,7 @@ document.addEventListener('change', async (e) => {
     try { const f = e.target.files[0]; let text; if (/\.gz$/i.test(f.name)) text = await new Response(f.stream().pipeThrough(new DecompressionStream('gzip'))).text(); else text = await f.text(); S.restoreData = JSON.parse(text); if (S.restoreData.format !== 'kf4-backup-1') throw new Error('not a backup'); } catch { S.restoreData = null; S.backupMsg = 'That file is not a KiuFunza backup.'; }
     render(); return;
   }
+  if (e.target.dataset?.ffile && e.target.files[0]) { const f = e.target.files[0]; const buf = new Uint8Array(await f.arrayBuffer()); let bin = ''; for (let i = 0; i < buf.length; i += 8192) bin += String.fromCharCode(...buf.subarray(i, i + 8192)); const b64 = btoa(bin); const h = [...new Uint8Array(await crypto.subtle.digest('SHA-256', buf))].map((x) => x.toString(16).padStart(2, '0')).join('').slice(0, 16); (S.formFile ||= {})[e.target.dataset.ffile] = { name: f.name, b64, hash: h }; (S.formMsg ||= {})[e.target.dataset.ffile] = ''; render(); return; }
   const tf = e.target.dataset?.tf; if (tf) { const [id, k] = tf.split(':'); S.tbl[id].f[k] = e.target.value; render(); return; }
   const qf = e.target.dataset?.qf; if (qf) { S.qf[qf] = e.target.value; render(); return; }
   if (e.target.id === 'viewAsSel') { await setViewAs(e.target.value); return; }

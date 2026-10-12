@@ -11,7 +11,7 @@ const DEFAULT = { armed: true, run_after: '2026-10-16T03:00:00Z', expire_after: 
 export const loadFormJob = async (env) => ({ ...DEFAULT, ...((await kv(env).get(KEY)) || {}) });
 export const saveFormJob = (env, st) => kv(env).put(KEY, st);
 
-async function tellHQ(env, subject, lines) {
+export async function tellHQ(env, subject, lines) {
   const html = `<div style="font-family:system-ui,Segoe UI,Roboto,sans-serif;max-width:620px;color:#354062"><p><b>AUTOMATED UPDATE</b></p>${lines.map((l) => `<p style="margin:6px 0">${l.replace(/&/g, '&amp;').replace(/</g, '&lt;')}</p>`).join('')}<p style="font-size:12px;color:#5a6478">Sent automatically by the LearnImpact KiuFunza field dashboard.</p></div>`;
   const rec = await loadRecipients(env); const out = [];
   for (const [email, r] of Object.entries(rec)) {

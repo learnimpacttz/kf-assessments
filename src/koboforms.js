@@ -72,9 +72,16 @@ export async function koboForm(env, b) {
   }
   if (b.op === 'deploy') {
     const a = await guard(b.asset);
-    const body = JSON.stringify({ active: true, version_id: a.version_id });
+    const body = JSON.stringify({ active: true, version_id: b.version_id || a.version_id });
     const r = await fetch(`${srv}/api/v2/assets/${a.uid}/deployment/`, { method: a.has_deployment ? 'PATCH' : 'POST', headers: { ...H, ...J }, body });
-    const t = await r.json().catch(() => ({})); if (!r.ok) throw new Error(`KoBo ${r.status} deploying: ${JSON.stringify(t).slice(0, 400)}`);
+    const t = await r.json().catch(() => ({}));
+    if (!r.ok && b.version_id) { // KoBo only deploys the latest draft: restore the earlier version's content as a new draft, then deploy that
+      const vr = await fetch(`${srv}/api/v2/assets/${a.uid}/versions/${b.version_id}/?format=json`, { headers: H }); const v = await vr.json().catch(() => ({})); if (!vr.ok || !v.content) throw new Error(`KoBo ${r.status} deploying and the old version could not be read`);
+      const pr = await fetch(`${srv}/api/v2/assets/${a.uid}/`, { method: 'PATCH', headers: { ...H, ...J }, body: JSON.stringify({ content: v.content }) }); if (!pr.ok) throw new Error(`KoBo ${pr.status} restoring the old version`);
+      const cur = await get(a.uid); const r2 = await fetch(`${srv}/api/v2/assets/${a.uid}/deployment/`, { method: 'PATCH', headers: { ...H, ...J }, body: JSON.stringify({ active: true, version_id: cur.version_id }) }); if (!r2.ok) throw new Error(`KoBo ${r2.status} deploying the restored version`);
+      return { ...brief(await get(a.uid)), restored_from: b.version_id };
+    }
+    if (!r.ok) throw new Error(`KoBo ${r.status} deploying: ${JSON.stringify(t).slice(0, 400)}`);
     return brief(await get(a.uid));
   }
   if (b.op === 'media') {
