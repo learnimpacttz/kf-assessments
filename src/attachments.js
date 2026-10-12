@@ -38,7 +38,8 @@ export async function attachDelete(env, who, b) {
   const u0 = await usage(env);
   const onlyImages = b.only !== 'all'; let cur = null, all = [];
   for (let i = 0; i < 60; i++) { const p = await attachList(env, asset, cur, 500); for (const it of p.items) if (it.aid && (!onlyImages || /^image\//.test(it.mime))) all.push(it.aid); if (!p.next) break; cur = p.next; }
-  const chunk = Math.min(Number(b.batch_limit) > 0 ? Number(b.batch_limit) : 40, 40); // stays under the 50-call limit even on the free Workers plan const todo = all.slice(0, chunk);
+  // 40 per request stays under the 50-call limit even on the free Workers plan
+  const chunk = Math.min(Number(b.batch_limit) > 0 ? Number(b.batch_limit) : 40, 40); const todo = all.slice(0, chunk);
   let deleted = 0; const problems = [];
   for (const aid of todo) { const r = await fetch(`${srv(env)}/api/v2/assets/${asset}/attachments/${aid}/`, { method: 'DELETE', headers: H(env) }); if (r.status === 204 || r.status === 200 || r.status === 404) deleted++; else { problems.push(`${aid}: ${r.status} ${(await r.text()).slice(0, 100)}`); if (problems.length > 3) break; } }
   const before = { attachments: all.length, submissions: 0 }; const after = { attachments: all.length - deleted }; const u1 = await usage(env); const remaining = all.length - deleted;
