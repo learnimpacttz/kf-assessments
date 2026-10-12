@@ -888,6 +888,95 @@ function viewPractice() {
 }
 
 
+// ---------- Reports: build from live numbers, edit, download ----------
+const REP_PARAMS = { period: ['from', 'to'] };
+async function openReports() {
+  try {
+    const [t, l] = await Promise.all([api('/api/reports/templates'), api('/api/reports')]);
+    const keep = S.rep || {}; S.rep = { ...keep, templates: t.templates, scope: t.scope, saved: l.reports, formats: keep.formats || { xlsx: true, docx: false, pdf: false, csv: false }, msg: keep.msg || '' };
+  } catch (e) { S.rep = { error: e.message }; }
+  render();
+}
+const repCanSave = () => !(S.who.role === 'hq' && hqLevel() === 'viewer');
+function repSync() { // read what is typed on the screen into the state, before anything re-renders
+  const g = (id) => document.getElementById(id); const R = S.rep; if (!R || !R.edit || !g('repTitle')) return;
+  R.edit.title = g('repTitle').value; R.edit.headline = g('repHead').value; R.edit.notes = g('repNotes').value;
+  const P = R.params || {}; for (const k of ['region', 'from', 'to', 'date']) { const el = g('rp_' + k); if (el) P[k] = el.value; }
+}
+async function repPick(id) {
+  const R = S.rep; const t = R.templates.find((x) => x.id === id); if (!t) return;
+  R.tpl = t; R.id = null; R.frozen = false; R.params = { region: R.scope || '' }; R.edit = { title: t.title, headline: '', notes: '', hidden: [], filter: '', sort: null }; R.msg = '';
+  await repBuild();
+}
+async function repBuild() {
+  const R = S.rep; R.busy = true; render();
+  try { R.built = await api('/api/reports/preview', { method: 'POST', body: { template: R.tpl.id, params: R.params } }); R.frozen = false; if (!R.id) R.edit.title = R.tpl.title + (R.params.region ? ' · ' + title(R.params.region) : '') + (R.built.params?.date ? ' · ' + R.built.params.date : ''); } catch (e) { R.msg = e.message; }
+  R.busy = false; render();
+}
+async function repOpenSaved(id) {
+  const R = S.rep; try { const it = await api('/api/reports/item?id=' + encodeURIComponent(id)); R.tpl = R.templates.find((x) => x.id === it.template) || { id: it.template, title: it.title, desc: '', params: [] }; R.id = it.id; R.frozen = true; R.params = it.params || {}; R.built = { columns: it.snapshot.columns, rows: it.snapshot.rows, kpis: it.snapshot.kpis, generated_at: it.snapshot.generated_at, data_as_of: it.snapshot.data_as_of, params: it.params }; const hidden = it.columns ? it.snapshot.columns.map((c) => c.k).filter((k) => !it.columns.includes(k)) : []; R.edit = { title: it.title, headline: it.headline || '', notes: it.notes || '', hidden, filter: it.filter || '', sort: it.sort || null }; R.msg = 'Showing the saved copy from ' + eatTime(it.snapshot.generated_at) + '. Press "Update with today\'s numbers" for fresh figures.'; } catch (e) { R.msg = e.message; }
+  render();
+}
+function repData() { // what the person sees, and exactly what the files contain
+  const R = S.rep, B = R.built, E = R.edit; const hid = new Set(E.hidden || []);
+  const columns = B.columns.filter((c) => !hid.has(c.k)); let rows = B.rows.slice(); const q = (E.filter || '').trim().toLowerCase();
+  if (q) rows = rows.filter((r) => columns.some((c) => String(r[c.k] ?? '').toLowerCase().includes(q)));
+  if (E.sort) { const { k, dir } = E.sort; rows.sort((a, b) => { const x = a[k], y = b[k]; if (x == null || x === '') return 1; if (y == null || y === '') return -1; return (typeof x === 'number' && typeof y === 'number' ? x - y : String(x).localeCompare(String(y))) * dir; }); }
+  const P = R.params || {}; const bits = [R.tpl.title, P.region ? title(P.region) : (R.scope ? title(R.scope) : 'All regions'), B.params?.date ? 'Day ' + B.params.date : '', P.from || P.to ? `${P.from || '…'} to ${P.to || '…'}` : ''].filter(Boolean);
+  const b = S.cfg?.brand || {};
+  return { title: E.title || R.tpl.title, subtitle: `${bits.join(' · ')} · Generated ${eatTime(B.generated_at)} by ${S.who.name} · Data as of ${eatTime(B.data_as_of)}${B.rehearsal ? ' (rehearsal data)' : ''}`, kpis: B.kpis, headline: E.headline, notes: E.notes, footer: `${b.platform || ''} · ${b.programme || ''}`, columns, rows };
+}
+function repTable() {
+  const R = S.rep, E = R.edit; const d = repData(); const max = 150;
+  const head = d.columns.map((c) => `<th class="${c.type === 'num' || c.type === 'pct' ? 'r' : ''}" data-rs="${esc(c.k)}" style="cursor:pointer" title="Sort">${esc(c.label)}${E.sort && E.sort.k === c.k ? (E.sort.dir > 0 ? ' ▲' : ' ▼') : ''}</th>`).join('');
+  const body = d.rows.slice(0, max).map((r) => `<tr>${d.columns.map((c) => `<td class="${c.type === 'num' || c.type === 'pct' ? 'r num' : ''}">${esc(c.type === 'pct' && typeof r[c.k] === 'number' ? r[c.k] + '%' : r[c.k] ?? '')}</td>`).join('')}</tr>`).join('');
+  return `<div class="tbl rectbl" style="max-height:480px"><table class="dt"><thead><tr>${head}</tr></thead><tbody>${body || `<tr><td colspan="${d.columns.length}" class="empty">Nothing matches.</td></tr>`}</tbody></table></div><div class="m" style="margin-top:4px">${d.rows.length > max ? `Showing ${max} of ${d.rows.length} rows here. The downloaded files contain all ${d.rows.length}.` : `${d.rows.length} row${d.rows.length === 1 ? '' : 's'}.`}</div>`;
+}
+function viewReports() {
+  const R = S.rep; if (!R) return '<div class="empty">Loading…</div>'; if (R.error) return `<div class="banner bad">${esc(R.error)}</div>`; if (!R.templates) return '<div class="empty">Loading…</div>';
+  const tpls = R.templates.map((t) => `<button class="repbtn ${R.tpl && R.tpl.id === t.id ? 'on' : ''}" data-act="repPick" data-id="${t.id}"><b>${esc(t.title)}</b><span>${esc(t.desc)}</span></button>`).join('');
+  const saved = (R.saved || []).map((x) => `<div class="repsaved ${R.id === x.id ? 'on' : ''}"><a href="#reports" data-act="repOpen" data-id="${esc(x.id)}"><b>${esc(x.title)}</b></a><span class="m">${esc(x.owner || '')} · ${eatTime(x.updated_at)} · ${x.rows} rows</span>${repCanSave() ? `<button class="btn sm ghost" data-act="repDelete" data-id="${esc(x.id)}">Delete</button>` : ''}</div>`).join('') || '<div class="m">No saved reports yet.</div>';
+  const left = `<div><div class="card"><h3>Choose a report</h3><div class="sub">The numbers always come from the live data, so a report can never disagree with the dashboard.</div>${tpls}</div><div class="card" style="margin-top:14px"><h3>Saved reports</h3>${saved}</div></div>`;
+  let right = '<div class="card"><div class="empty">Choose a report on the left.</div></div>';
+  if (R.tpl && R.built) {
+    const E = R.edit, P = R.params || {}, B = R.built; const hq = S.who.role === 'hq';
+    const params = `<div class="f" style="display:flex;gap:10px;flex-wrap:wrap;align-items:end">${R.tpl.params.includes('region') ? (hq ? `<label>Region<select id="rp_region"><option value="">All regions</option>${S.cfg.regions.map((g) => `<option value="${g}" ${P.region === g ? 'selected' : ''}>${esc(title(g))}</option>`).join('')}</select></label>` : `<label>Region<input value="${esc(title(R.scope))}" disabled></label>`) : ''}${R.tpl.params.includes('period') ? `<label>From<input id="rp_from" type="date" value="${esc(P.from || '')}"></label><label>To<input id="rp_to" type="date" value="${esc(P.to || '')}"></label>` : ''}${R.tpl.params.includes('date') ? `<label>Day<input id="rp_date" type="date" value="${esc(P.date || B.params?.date || '')}"></label>` : ''}<button class="btn sm sec" data-act="repUpdate">${R.frozen ? "Update with today's numbers" : 'Update'}</button></div>`;
+    const chips = B.columns.map((c) => `<label class="cchip ${(E.hidden || []).includes(c.k) ? '' : 'on'}"><input type="checkbox" data-rc="${esc(c.k)}" ${(E.hidden || []).includes(c.k) ? '' : 'checked'}> ${esc(c.label)}</label>`).join('');
+    const fm = Object.entries(KFExport.FORMATS).map(([k, v]) => `<label class="cb"><input type="checkbox" data-rf="${k}" ${R.formats[k] ? 'checked' : ''}> ${esc(v[0])}</label>`).join('');
+    right = `<div class="card"><h3>${esc(R.tpl.title)}</h3><div class="sub">${esc(R.tpl.desc)}${R.frozen ? ' <span class="pill warn">saved copy</span>' : ''}</div>
+    <div class="f"><label style="grid-column:1/-1">Title<input id="repTitle" maxlength="120" value="${esc(E.title)}"></label></div>${params}
+    ${B.rehearsal ? '<div class="banner" style="margin-top:8px">These are rehearsal numbers from an earlier year, until 2026 data arrives.</div>' : ''}
+    <div class="grid kpis" style="margin-top:10px">${(B.kpis || []).map((k) => kpi(esc(k.label), esc(String(k.value)))).join('')}</div>
+    <div class="f"><label style="grid-column:1/-1">Headline (your words, shown above the table)<textarea id="repHead" rows="2" maxlength="1500" placeholder="For example: Eight of ten regions are on plan; Singida and Kigoma need help.">${esc(E.headline)}</textarea></label><label style="grid-column:1/-1">Notes (shown under the table)<textarea id="repNotes" rows="3" maxlength="4000">${esc(E.notes)}</textarea></label></div>
+    <details style="margin:8px 0"><summary><b>Columns</b> <span class="m">tick what to show</span></summary><div class="cchips">${chips}</div></details>
+    <div class="recbar"><input id="repFilter" placeholder="Filter the rows (type any word)" value="${esc(E.filter || '')}" autocomplete="off"></div>
+    <div id="repTable">${repTable()}</div>
+    <div style="margin-top:12px;display:flex;gap:14px;flex-wrap:wrap;align-items:center"><b>Download</b> ${fm}<button class="btn sm" data-act="repDownload">Download</button>${repCanSave() ? '<button class="btn sm sec" data-act="repSave">Save report</button>' : ''}${hq && hqLevel() !== 'viewer' ? '<button class="btn sm ghost" data-act="repNews">Post the headline to News (draft)</button>' : ''}</div>
+    <div class="m" style="margin-top:6px">Pick one or more formats. With more than one you get a single .zip file. Word and Excel open for editing offline.</div>${R.msg ? `<p class="m" style="margin-top:8px"><b>${esc(R.msg)}</b></p>` : ''}${R.busy ? '<div class="m">Working…</div>' : ''}</div>`;
+  }
+  return `<div class="pagehead"><div><h2>Reports</h2><p>Build a report from the live numbers, edit the title, columns and your own words, then download it as Excel, Word, PDF or CSV.${S.who.role === 'rc' ? ' You see your own region.' : ''}</p></div></div><div class="grid two repgrid">${left}${right}</div>`;
+}
+async function repAction(a, t) {
+  const R = S.rep; if (a !== 'repOpen' && a !== 'repPick') repSync();
+  if (a === 'repPick') { await repPick(t.dataset.id); return; }
+  if (a === 'repOpen') { await repOpenSaved(t.dataset.id); return; }
+  if (a === 'repUpdate') { await repBuild(); return; }
+  if (a === 'repDelete') { if (confirm('Delete this saved report?')) { try { await api('/api/reports/delete', { method: 'POST', body: { id: t.dataset.id } }); if (R.id === t.dataset.id) { R.id = null; } R.saved = (await api('/api/reports')).reports; } catch (e) { R.msg = e.message; } render(); } return; }
+  if (a === 'repSave') {
+    const E = R.edit; try { const r = await api('/api/reports/save', { method: 'POST', body: { id: R.id, template: R.tpl.id, title: E.title, params: R.params, headline: E.headline, notes: E.notes, columns: R.built.columns.map((c) => c.k).filter((k) => !(E.hidden || []).includes(k)), filter: E.filter, sort: E.sort } }); R.id = r.id; R.frozen = false; R.msg = 'Saved. The saved copy keeps today\'s numbers.'; R.saved = (await api('/api/reports')).reports; } catch (e) { R.msg = e.message; }
+    render(); return;
+  }
+  if (a === 'repDownload') {
+    const fmts = Object.keys(R.formats).filter((k) => R.formats[k]); if (!fmts.length) { R.msg = 'Tick at least one format.'; render(); return; }
+    try { const files = KFExport.make(repData(), fmts); for (const f of files) { const url = URL.createObjectURL(new Blob([f.data], { type: f.mime })); const link = document.createElement('a'); link.href = url; link.download = f.name; document.body.appendChild(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(url), 4000); } R.msg = files.length ? 'Downloaded ' + files.map((f) => f.name).join(', ') + '.' : ''; } catch (e) { R.msg = 'Could not make the file: ' + e.message; }
+    render(); return;
+  }
+  if (a === 'repNews') {
+    const E = R.edit; if (!E.headline.trim()) { R.msg = 'Write a headline first.'; render(); return; }
+    try { await api('/api/admin/news', { method: 'POST', body: { action: 'save', title: E.title, body: E.headline + (E.notes ? '\n\n' + E.notes : ''), kind: 'update', to: 'all' } }); R.msg = 'Saved as a draft in News. Open News to read it and send it.'; } catch (e) { R.msg = e.message; }
+    render();
+  }
+}
 // ---------- News and announcements ----------
 const newsSeen = () => store.get('kf_news_seen') || '';
 const unreadNews = () => (S.news?.items || []).filter((i) => i.sent_at > newsSeen());
@@ -998,7 +1087,7 @@ const TABS = {
   rc: [['region', 'Region'], ['news', 'News'], ['plan', 'Plan & calendar'], ['team', 'My team'], ['allq', 'Queries'], ['phones', 'Phones'], ['compare', 'Compare'], ['reports', 'Reports'], ['explore', 'Data explorer'], ['practice', 'Practice']],
   hq: [['hq', 'HQ'], ['news', 'News'], ['regions', 'Regions & plans'], ['plan', 'Plan & calendar'], ['people', 'People'], ['allq', 'Queries'], ['phones', 'Phones'], ['compare', 'Compare'], ['reports', 'Reports'], ['explore', 'Data explorer'], ['admin', 'Admin'], ['practice', 'Practice']],
 };
-const REPORTS_READY = false; // switched on when the Reports screen is built
+const REPORTS_READY = true;
 const LEVEL_TXT = { admin: 'Admin', editor: 'Editor', viewer: 'Viewer' };
 const hqLevel = () => (S.who?.role === 'hq' ? S.who.level || 'admin' : null);
 const canWrite = () => !S.who || S.who.role !== 'hq' || hqLevel() !== 'viewer'; // editors and admins write messages and reports
@@ -1008,7 +1097,7 @@ function tabAllowed(k) {
   return true;
 }
 const roleKey = () => (!S.who ? 'public' : S.who.role === 'arc' ? 'rc' : S.who.role);
-const VIEWS = { progress: viewProgress, compare: viewCompare, day: viewDay, work: viewWork, queries: viewQueries, stats: viewStats, region: viewRegion, plan: viewPlan, team: viewTeam, explore: viewExplore, hq: viewHQ, regions: viewRegionsHQ, people: viewPeopleHQ, admin: viewAdmin, allq: viewAllQueries, phones: viewPhones, practice: viewPractice, news: viewNews };
+const VIEWS = { progress: viewProgress, compare: viewCompare, day: viewDay, work: viewWork, queries: viewQueries, stats: viewStats, region: viewRegion, plan: viewPlan, team: viewTeam, explore: viewExplore, hq: viewHQ, regions: viewRegionsHQ, people: viewPeopleHQ, admin: viewAdmin, allq: viewAllQueries, phones: viewPhones, practice: viewPractice, news: viewNews, reports: viewReports };
 
 // Admin is long: each card folds away so you can jump to what you need. The first card stays open; your choices are remembered.
 function enhanceCollapsible() {
@@ -1153,17 +1242,18 @@ async function go() {
   if (exm) { S.tab = 'explore'; S.exTab = exm[1]; }
   else if (!S.tab && location.hash && !location.hash.includes(':')) S.tab = location.hash.slice(1);
   if (S.who && !S.ov && !S.viewAs) { const snap = loadSnapshot(); if (snap) { S.ov = snap.ov; S.pub = snap.ov; S.cmp = snap.cmp; S.pred = snap.pred; S.brief = snap.brief; S.stale = snap.t; render(); } }
-  try { await loadData(); S.stale = null; render(); ensureSchools(); if (S.tab === 'explore' && ['teach', 'school', 'linked'].includes(S.exTab)) loadExplore(S.exTab); if (S.tab === 'phones' && !S.ph) loadPhones().then(render); if (S.tab === 'practice' && !S.pr) loadPractice().then(render); loadNews().then(() => { if (S.tab === 'news') openNews().then(render); }); if (location.hash.includes(':')) { try { openDetail(decodeURIComponent(location.hash.slice(1))); } catch {} } } catch (e) { if (e.status === 401 && S.code) { S.code = null; S.who = null; store.set('kf_code', null); loginScreen('Your code was not recognised. Try again.'); } else $('#app').innerHTML = `<div class="banner bad">${esc(e.message)}</div>`; }
+  try { await loadData(); S.stale = null; render(); ensureSchools(); if (S.tab === 'explore' && ['teach', 'school', 'linked'].includes(S.exTab)) loadExplore(S.exTab); if (S.tab === 'phones' && !S.ph) loadPhones().then(render); if (S.tab === 'practice' && !S.pr) loadPractice().then(render); if (S.tab === 'reports' && !S.rep) openReports(); loadNews().then(() => { if (S.tab === 'news') openNews().then(render); }); if (location.hash.includes(':')) { try { openDetail(decodeURIComponent(location.hash.slice(1))); } catch {} } } catch (e) { if (e.status === 401 && S.code) { S.code = null; S.who = null; store.set('kf_code', null); loginScreen('Your code was not recognised. Try again.'); } else $('#app').innerHTML = `<div class="banner bad">${esc(e.message)}</div>`; }
 }
 
 document.addEventListener('click', async (e) => {
   const ex = e.target.closest('[data-ex]'); if (ex) { await loadExplore(ex.dataset.ex); return; }
   const op = e.target.closest('[data-open]');
   if (op && !e.target.closest('summary,button,select,input,textarea')) { e.preventDefault(); $('#gsr') && ($('#gsr').hidden = true); openDetail(op.dataset.open); return; }
+  const rs = e.target.closest('[data-rs]'); if (rs && S.rep?.edit) { repSync(); const E = S.rep.edit; E.sort = E.sort && E.sort.k === rs.dataset.rs ? { k: rs.dataset.rs, dir: -E.sort.dir } : { k: rs.dataset.rs, dir: 1 }; const el = document.getElementById('repTable'); if (el) el.innerHTML = repTable(); return; }
   const th = e.target.closest('[data-ts]');
   if (th) { const [id, k] = th.dataset.ts.split(':'); const T = S.tbl[id]; if (T.sort === k) T.dir = -T.dir; else { T.sort = k; T.dir = 1; } render(); return; }
   const t = e.target.closest('[data-tab],[data-act]'); if (!t) return;
-  if (t.dataset.tab) { S.tab = t.dataset.tab; S.selVisit = null; if (S.tab === 'plan') { await loadPlan(); } if (S.tab === 'phones') { S.ph = null; render(); await loadPhones(); } if (S.tab === 'practice') { S.pr = null; render(); await loadPractice(); } if (S.tab === 'news') { await openNews(); } if (S.tab === 'admin') await loadAdmin(); render(); return; }
+  if (t.dataset.tab) { S.tab = t.dataset.tab; S.selVisit = null; if (S.tab === 'plan') { await loadPlan(); } if (S.tab === 'phones') { S.ph = null; render(); await loadPhones(); } if (S.tab === 'practice') { S.pr = null; render(); await loadPractice(); } if (S.tab === 'news') { await openNews(); } if (S.tab === 'reports') { render(); await openReports(); } if (S.tab === 'admin') await loadAdmin(); render(); return; }
   const a = t.dataset.act;
   try {
     if (a === 'login') { const c = $('#code').value.trim().toUpperCase(); if (!c) return; S.code = c; try { const r = await api('/api/login'); S.who = r.who; store.set('kf_code', c); S.tab = null; await go(); } catch { S.code = null; loginScreen('That code was not recognised.'); } }
@@ -1176,6 +1266,7 @@ document.addEventListener('click', async (e) => {
     else if (a === 'hqEmail') { try { const r = await api('/api/admin/hq-users', { method: 'POST', body: { action: 'email', id: t.dataset.id } }); S.hqMsg = 'The code was emailed to ' + r.sent_to + '.'; } catch (e) { S.hqMsg = e.message; } render(); }
     else if (a === 'hqShared') { const on = Boolean(t.dataset.on); if (!on && !confirm('Switch the shared HQ code off? Everyone in HQ must then use their personal code.')) return; try { await api('/api/admin/hq-users', { method: 'POST', body: { action: 'shared', enabled: on } }); S.hqMsg = on ? 'The shared code is on again.' : 'The shared code is off.'; await loadAdmin(); } catch (e) { S.hqMsg = e.message; } render(); }
     else if (a === 'stSave') { const g = (id) => document.getElementById(id).value; const targets = {}; document.querySelectorAll('[data-tg]').forEach((i) => { (targets[i.dataset.tg] ||= {})[i.dataset.f] = Number(i.value); }); try { await api('/api/admin/settings', { method: 'POST', body: { brand: { platform: g('stPlatform'), programme: g('stProgramme'), tagline: g('stTagline'), assistant: g('stAssistant') }, targets } }); S.cfg = await api('/api/config'); applyBrand(); S.stMsg = 'Saved. The new name shows everywhere.'; await loadAdmin(); } catch (e) { S.stMsg = e.message; } render(); }
+    else if (/^rep[A-Z]/.test(a)) await repAction(a, t);
     else if (a === 'react') await reactTo(t);
     else if (a === 'sendTest') { const to = ($('#testTo').value || '').trim(); if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(to)) { S.testMsg = 'Type a valid email address first.'; render(); return; } store.set('kf_test_to', to); try { await api('/api/admin/test-email', { method: 'POST', body: { to } }); S.testMsg = 'A test was sent to ' + to + '. It is marked [TEST] and goes only to that address.'; } catch (e) { S.testMsg = e.message; } render(); }
     else if (a === 'copyNotice') await copyNotice(t);
@@ -1259,6 +1350,8 @@ async function downloadFile(path, name) {
   link.href = url; link.download = name; document.body.appendChild(link); link.click(); link.remove(); URL.revokeObjectURL(url);
 }
 document.addEventListener('change', async (e) => {
+  if (e.target.dataset?.rc !== undefined && S.rep?.edit) { const k = e.target.dataset.rc; const H = new Set(S.rep.edit.hidden || []); if (e.target.checked) H.delete(k); else H.add(k); S.rep.edit.hidden = [...H]; repSync(); render(); return; }
+  if (e.target.dataset?.rf !== undefined && S.rep) { S.rep.formats[e.target.dataset.rf] = e.target.checked; return; }
   if (e.target.dataset?.hq) { const f = e.target.dataset.f; const body = { action: 'update', id: e.target.dataset.hq, [f]: e.target.type === 'checkbox' ? e.target.checked : e.target.value }; try { await api('/api/admin/hq-users', { method: 'POST', body }); S.hqMsg = 'Saved.'; } catch (err) { S.hqMsg = err.message; } await loadAdmin(); render(); return; }
   if (e.target.dataset?.rr !== undefined && S.recRows) { const r = S.recRows[Number(e.target.dataset.rr)]; const f = e.target.dataset.f; if (r) { r[f] = e.target.type === 'checkbox' ? e.target.checked : e.target.value; if (f === 'role' && r.role === 'hq') r.region = ''; S.recDirty = true; if (f === 'active' || f === 'role') render(); else { const tr = e.target.closest('tr'); if (tr) tr.dataset.q = (r.name + ' ' + r.email + ' ' + r.role + ' ' + r.region).toLowerCase(); } } return; }
   if (e.target.id === 'phDate') { S.phDate = e.target.value; S.ph = null; render(); await loadPhones(); render(); return; }
@@ -1277,6 +1370,7 @@ document.addEventListener('change', async (e) => {
   else if (e.target.id === 'exLga') { S.explore.lga = e.target.value; render(); }
 });
 document.addEventListener('input', (e) => {
+  if (e.target.id === 'repFilter' && S.rep?.edit) { S.rep.edit.filter = e.target.value; const el = document.getElementById('repTable'); if (el) el.innerHTML = repTable(); return; }
   if (e.target.id === 'actQ') { const q = e.target.value.trim().toLowerCase(); document.querySelectorAll('tr[data-q]').forEach((tr) => { tr.hidden = Boolean(q) && !tr.dataset.q.includes(q); }); return; }
   if (e.target.id === 'recQ') { const q = e.target.value.trim().toLowerCase(); document.querySelectorAll('tr[data-ri]').forEach((tr) => { tr.hidden = Boolean(q) && !tr.dataset.q.includes(q); }); return; }
   if (e.target.dataset?.rr !== undefined && S.recRows && e.target.type !== 'checkbox') { const r = S.recRows[Number(e.target.dataset.rr)]; if (r) { r[e.target.dataset.f] = e.target.value; S.recDirty = true; } return; }

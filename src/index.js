@@ -5,6 +5,7 @@ import { buildCalendar, markCalendarDirty, syncCalendar, calendarStatus, setCalS
 import { loadFormJob, saveFormJob, runFormJob, maybeRunFormJob } from './formjob.js';
 import { kv } from './store.js';
 import { buildBrief, aiBrief } from './brief.js';
+import { TEMPLATES, buildReport, listReports, getReport, saveReport, deleteReport } from './reports.js';
 import { loadHq, hqChange, hqList, hqByCode, codeFor, levelGate, applySettings, settingsView, saveSettings, logActivity, readActivity, activityLabel, BRAND, assistantName } from './hq.js';
 import { emailSchedule, hqPersonalCodeEmail, morningDigest, eveningGap, loadRecipients, saveRecipients, runDigests, maybeRunScheduledDigests, sendMail, onboardingEmail, runOnboarding, hqOnboardingEmail, reminderEmail, runReminders } from './digest.js';
 import { loadQueries, decorate, postQuery, flagKey } from './queries.js';
@@ -203,6 +204,19 @@ export default {
         log.push({ at: new Date().toISOString(), by: who.name, status: b.status, ids, year });
         await kv(env).put('v2:kobolog', log.slice(-200));
         return json({ ok: true, updated: ids.length, status: b.status });
+      }
+      // ---------- reports: HQ (all levels) and RCs for their own region; not ARCs or volunteers ----------
+      if (path.startsWith('/api/reports')) {
+        if (!(who.role === 'hq' || who.role === 'rc')) return err('Reports are for HQ and Regional Coordinators', 403);
+        const scope = who.role === 'rc' ? who.region : null;
+        const ctxFor = async (params) => { const ld = await loadSummary(env, params.year || null); const plans = Object.fromEntries(await Promise.all(REGIONS.map(async (r) => [r, await getPlan(env, r)]))); return { sum: ld.sum, year: ld.year, rehearsal: ld.rehearsal, queries: await loadQueries(env), plans, today: eatToday() }; };
+        if (path === '/api/reports/templates') return json({ templates: TEMPLATES.filter((t) => who.role === 'hq' || t.who === 'both'), scope });
+        if (path === '/api/reports' && method === 'GET') return json({ reports: await listReports(env, who) });
+        if (path === '/api/reports/item') { const r = await getReport(env, who, url.searchParams.get('id') || ''); return r ? json(r) : err('Not found', 404); }
+        const b = method === 'POST' ? await request.json().catch(() => ({})) : {};
+        if (path === '/api/reports/preview' && method === 'POST') { const t = TEMPLATES.find((x) => x.id === b.template); if (!t || (who.role !== 'hq' && t.who !== 'both')) return err('Choose a report', 422); return json(buildReport(b.template, await ctxFor(b.params || {}), b.params || {}, scope)); }
+        if (path === '/api/reports/save' && method === 'POST') { const t = TEMPLATES.find((x) => x.id === b.template); if (!t || (who.role !== 'hq' && t.who !== 'both')) return err('Choose a report', 422); const built = buildReport(b.template, await ctxFor(b.params || {}), b.params || {}, scope); const r = await saveReport(env, who, b, built); return r.error ? err(r.error, r.status || 422) : json(r); }
+        if (path === '/api/reports/delete' && method === 'POST') { const r = await deleteReport(env, who, b.id); return r.error ? err(r.error, r.status || 422) : json(r); }
       }
       if (path === '/api/news' && method === 'GET') return json(await listNews(env, who));
       if (path === '/api/news/react' && method === 'POST') { const b = await request.json().catch(() => ({})); const r = await reactNews(env, who, b.id, b.emoji); return r.error ? err(r.error, r.status || 400) : json(r); }
