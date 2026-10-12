@@ -1143,10 +1143,10 @@ function applyBrand() {
 const TABS = {
   public: [['progress', 'Progress'], ['compare', 'Compare']],
   volunteer: [['day', 'My day'], ['news', 'News'], ['work', 'My work'], ['queries', 'My queries'], ['stats', 'My stats'], ['phones', 'Phones'], ['compare', 'Compare'], ['practice', 'Practice'], ['help', 'Help']],
-  rc: [['region', 'Region'], ['news', 'News'], ['plan', 'Plan & calendar'], ['team', 'My team'], ['allq', 'Queries'], ['phones', 'Phones'], ['compare', 'Compare'], ['reports', 'Reports'], ['explore', 'Data explorer'], ['practice', 'Practice'], ['help', 'Help']],
-  hq: [['today', 'Today'], ['hq', 'HQ'], ['news', 'News'], ['messages', 'Write and schedule'], ['regions', 'Regions & plans'], ['plan', 'Plan & calendar'], ['people', 'People'], ['allq', 'Queries'], ['phones', 'Phones'], ['compare', 'Compare'], ['reports', 'Reports'], ['explore', 'Data explorer'], ['admin', 'Admin'], ['help', 'Help'], ['practice', 'Practice']],
+  rc: [['region', 'Region'], ['news', 'News'], ['plan', 'Plan & calendar'], ['team', 'My team'], ['allq', 'Queries'], ['phones', 'Phones'], ['compare', 'Compare'], ['reports', 'Reports'], ['clean', 'Data cleaning'], ['explore', 'Data explorer'], ['practice', 'Practice'], ['help', 'Help']],
+  hq: [['today', 'Today'], ['hq', 'HQ'], ['news', 'News'], ['messages', 'Write and schedule'], ['clean', 'Data cleaning'], ['regions', 'Regions & plans'], ['plan', 'Plan & calendar'], ['people', 'People'], ['allq', 'Queries'], ['phones', 'Phones'], ['compare', 'Compare'], ['reports', 'Reports'], ['explore', 'Data explorer'], ['admin', 'Admin'], ['help', 'Help'], ['practice', 'Practice']],
 };
-const HQ_GROUPS = [['Today', ['today']], ['Field', ['hq', 'regions', 'plan', 'people']], ['Checks', ['allq', 'phones', 'compare', 'explore']], ['Messages', ['news', 'messages']], ['Reports', ['reports']], ['Admin', ['admin']], ['Help', ['help']]];
+const HQ_GROUPS = [['Today', ['today']], ['Field', ['hq', 'regions', 'plan', 'people']], ['Checks', ['allq', 'clean', 'phones', 'compare', 'explore']], ['Messages', ['news', 'messages']], ['Reports', ['reports']], ['Admin', ['admin']], ['Help', ['help']]];
 const REPORTS_READY = true;
 const LEVEL_TXT = { admin: 'Admin', editor: 'Editor', viewer: 'Viewer' };
 const hqLevel = () => (S.who?.role === 'hq' ? S.who.level || 'admin' : null);
@@ -1158,7 +1158,7 @@ function tabAllowed(k) {
   return true;
 }
 const roleKey = () => (!S.who ? 'public' : S.who.role === 'arc' ? 'rc' : S.who.role);
-const VIEWS = { progress: viewProgress, compare: viewCompare, day: viewDay, work: viewWork, queries: viewQueries, stats: viewStats, region: viewRegion, plan: viewPlan, team: viewTeam, explore: viewExplore, hq: viewHQ, regions: viewRegionsHQ, people: viewPeopleHQ, admin: viewAdmin, allq: viewAllQueries, phones: viewPhones, practice: viewPractice, news: viewNews, messages: viewMessages, reports: viewReports, today: viewToday, help: viewHelp };
+const VIEWS = { progress: viewProgress, compare: viewCompare, day: viewDay, work: viewWork, queries: viewQueries, stats: viewStats, region: viewRegion, plan: viewPlan, team: viewTeam, explore: viewExplore, hq: viewHQ, regions: viewRegionsHQ, people: viewPeopleHQ, admin: viewAdmin, allq: viewAllQueries, phones: viewPhones, practice: viewPractice, news: viewNews, messages: viewMessages, reports: viewReports, clean: viewClean, today: viewToday, help: viewHelp };
 
 // Admin is long: each card folds away so you can jump to what you need. The first card stays open; your choices are remembered.
 function enhanceCollapsible() {
@@ -1448,6 +1448,81 @@ async function msAction(a, t) {
   render();
 }
 
+// ---------- Data cleaning: suggest, review and carry out deletions through the approval chain ----------
+const DEL_STEPS = [['suggested', 'Suggested'], ['initiated', 'Initiated by Joram'], ['deleted', 'Decided by Mundo']];
+const DEL_IX = { suggested: 0, initiated: 1, rework: 0, deleted: 2, rejected: 2, withdrawn: 0 };
+async function loadClean() { try { S.cl = { ...(S.cl || {}), data: await api('/api/deletions'), err: null }; } catch (e) { S.cl = { ...(S.cl || {}), err: e.message }; } if (S.who?.role === 'hq' && !S.allSchools) ensureSchools(); }
+const meId = () => String(S.who?.id ?? S.who?.hq_id ?? '');
+const myLvl = () => (S.who?.role === 'hq' ? S.who.review_level || 0 : 0);
+function delAbility(r) {
+  const me = meId(), lv = myLvl(), open = ['suggested', 'initiated', 'rework'].includes(r.stage); const o = { initiate: false, del: false, back: false, resub: false, withdraw: false };
+  if (!open || S.viewAs) return o;
+  if (r.stage === 'suggested') { o.initiate = lv >= 2 && r.by_id !== me; o.back = lv >= 2; }
+  if (r.stage === 'initiated') { o.del = lv >= 3 && r.initiated_by !== me; o.back = lv >= 3; }
+  if (r.stage === 'rework') o.resub = r.by_id === me;
+  o.withdraw = r.by_id === me;
+  return o;
+}
+function delChain(r) {
+  const ix = DEL_IX[r.stage] ?? 0; const bad = ['rejected', 'withdrawn'].includes(r.stage);
+  return `<div class="chain">${DEL_STEPS.map(([k, t], i) => { const done = r.stage === 'deleted' ? true : i < ix; const cur = !done && i === ix && !bad; return `<div class="cs ${done ? 'done' : cur ? 'cur' : 'pending'}"><b>${t}</b><span>${done || cur ? '' : 'later'}${i === 0 ? ' ' + esc(r.by.split(' ')[0]) : ''}</span></div>${i < 2 ? '<i>›</i>' : ''}`; }).join('')}</div><div class="m"><b>${esc(r.stage_label)}</b>${bad ? '' : ''}</div>`;
+}
+function delCard(r) {
+  const a = delAbility(r); const cl = S.cl; const open = cl.open === r.id; const tx = `dtx-${r.id}`;
+  const items = r.items.map((i) => `<tr>${a.initiate || a.resub ? `<td><input type="checkbox" data-drm="${r.id}" value="${i.id}" title="Tick to REMOVE this record from the request"></td>` : ''}<td class="num">${i.id}</td><td>${esc(i.school_name || i.school)}</td><td>${esc(i.grade)}</td><td>${esc(i.date)}</td><td>${esc(i.enumerator)}</td><td class="num">${esc(i.stuid || i.att || '')}</td><td>${esc(i.at || '')}</td></tr>`).join('');
+  const hist = r.history.map((h) => `<div style="padding:6px 0;border-top:1px solid var(--line,#e3e7ee)"><b>${esc(h.by)}</b> <span class="m">${esc(h.role)} · ${fmtAt(h.at)}</span><br>${esc(h.action)}${h.text ? ': ' + esc(h.text) : ''}</div>`).join('');
+  const actions = !open ? '' : `<div class="qbox" style="margin-top:8px"><textarea id="${tx}" placeholder="${a.del ? 'Optional note' : a.resub ? 'The reason, written again' : 'A note or the reason (needed to send back or reject)'}"></textarea><div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">
+  ${a.initiate ? `<button class="btn sm" data-act="dlAct" data-op="initiate" data-id="${r.id}">Initiate (send to Mundo)</button>` : ''}
+  ${a.del ? `<label class="m">Type ${r.ids.length} to confirm <input id="dcf-${r.id}" style="width:60px"></label><button class="btn sm" style="background:var(--bad,#b8432a);color:#fff" data-act="dlAct" data-op="delete" data-id="${r.id}">Delete from KoBo</button>` : ''}
+  ${a.resub ? `<button class="btn sm" data-act="dlAct" data-op="resubmit" data-id="${r.id}">Resubmit</button>` : ''}
+  ${a.back ? `<button class="btn sm sec" data-act="dlAct" data-op="send_back" data-id="${r.id}">Send back</button><button class="btn sm ghost" data-act="dlAct" data-op="reject" data-id="${r.id}">Reject</button>` : ''}
+  <button class="btn sm ghost" data-act="dlAct" data-op="comment" data-id="${r.id}">Add a note</button>${a.withdraw ? `<button class="btn sm ghost" data-act="dlAct" data-op="withdraw" data-id="${r.id}">Withdraw</button>` : ''}</div></div>`;
+  return `<div class="card" style="margin-top:12px;border-left:4px solid ${r.stage === 'deleted' ? 'var(--ink3,#888)' : 'var(--gold)'}"><h3 style="display:flex;justify-content:space-between;gap:8px"><span>${r.ids.length} record${r.ids.length > 1 ? 's' : ''} · ${esc(r.kind === 'sampling' ? 'Sampling' : 'Students assessment')} · ${esc((r.regions || []).map(title).join(', '))}</span><button class="btn sm ghost" data-act="dlOpen" data-id="${open ? '' : r.id}">${open ? 'Close' : 'Open'}</button></h3>
+  <div class="sub">Suggested by ${esc(r.by)} (${esc(r.by_role)}) · ${fmtAt(r.created_at)}</div>${delChain(r)}<p style="margin:8px 0"><b>Reason.</b> ${esc(r.reason)}${r.link ? ` <span class="m">Link: ${esc(r.link)}</span>` : ''}</p>
+  ${open ? `<details class="fd" open><summary>Records (${r.ids.length})</summary><div class="tbl"><table><thead><tr>${a.initiate || a.resub ? '<th>Remove</th>' : ''}<th>Id</th><th>School</th><th>Grade</th><th>Date</th><th>Enumerator</th><th>Pupil ID</th><th>Time</th></tr></thead><tbody>${items}</tbody></table></div></details><details class="fd" open><summary>History (${r.history.length})</summary>${hist}</details>${r.deleted ? `<p class="m">KoBo count ${r.deleted.before} to ${r.deleted.after}. ${S.who?.role === 'hq' && myLvl() >= 2 ? `<a href="/api/deletions/copy?id=${r.id}" data-dl="${r.id}">Download the saved copy</a>` : ''}</p>` : ''}${actions}` : ''}</div>`;
+}
+function viewClean() {
+  const C = S.cl; if (!C) return '<div class="empty">Loading…</div>'; if (C.err) return `<div class="banner bad">${esc(C.err)}</div>`; if (!C.data) return '<div class="empty">Loading…</div>';
+  const d = C.data; const mine = d.requests.filter((r) => { const a = delAbility(r); return a.initiate || a.del || a.resub; }); const rest = d.requests.filter((r) => !mine.includes(r));
+  const head = `<div class="pagehead"><div><h2>Data cleaning</h2><p>Duplicates and test records are removed only through this chain: a team member or Mundo suggests, Joram reviews and initiates, Mundo approves and deletes. A full copy is saved first, and every step stays in the history.</p></div></div>${d.rebuilding ? '<div class="banner"><b>Dashboard totals are being rebuilt</b> after a deletion. The numbers update when it finishes.</div>' : ''}`;
+  const hqLog = d.log.length ? `<div class="card" style="margin-top:14px"><h3>Deletion log</h3><div class="tbl dt-wrap"><table class="dt"><thead><tr><th>When</th><th>Project</th><th class="r">Records</th><th>Suggested</th><th>Initiated</th><th>Deleted by</th><th class="r">KoBo count</th></tr></thead><tbody>${d.log.map((l) => `<tr><td>${esc(eatTime(l.at))}</td><td>${esc(l.kind)}</td><td class="r num">${l.ids.length}</td><td>${esc(l.suggested_by)}</td><td>${esc(l.initiated_by)}</td><td>${esc(l.approved_by)}</td><td class="r num">${l.count_before} to ${l.count_after} ${l.ok ? '' : '<span class="pill bad">check</span>'}</td></tr>`).join('')}</tbody></table></div></div>` : '';
+  return head + (d.me.can_suggest ? delNew() : '') + (mine.length ? `<h3 style="margin:16px 0 0">Needs you (${mine.length})</h3>${mine.map(delCard).join('')}` : '') + `<h3 style="margin:16px 0 0">${mine.length ? 'Other requests' : 'Requests'} (${rest.length})</h3>${rest.map(delCard).join('') || '<div class="empty">No requests yet.</div>'}` + hqLog;
+}
+function delNew() {
+  const C = S.cl; const f = C.form || (C.form = { kind: 'students', school: '', date: '', grade: '', stuid: '', dups: true }); const F = C.found;
+  const schools = schoolsAll().filter((s) => !String(s.id).startsWith('TRAIN') || true);
+  const rows = F ? F.records.map((r) => `<tr><td><input type="checkbox" data-dsel="${r.id}" ${C.sel?.includes(r.id) ? 'checked' : ''} ${r.pending ? 'disabled' : ''}></td><td class="num">${r.id}</td><td>${esc(r.grade)}</td><td>${esc(r.date)}</td><td>${esc(r.enumerator)}</td><td class="num">${esc(r.stuid || r.att || '')}</td><td>${esc(r.at)}</td><td>${r.pending ? chip('in a request', 'warn') : ''}</td></tr>`).join('') : '';
+  return `<div class="card" style="margin-top:14px"><h3>Suggest a deletion</h3><div class="sub">Find the records, tick the ones to delete, and say why.</div>
+  <div class="mf"><label>Project<select id="dfKind"><option value="students" ${f.kind === 'students' ? 'selected' : ''}>Students assessment</option><option value="sampling" ${f.kind === 'sampling' ? 'selected' : ''}>Sampling</option></select></label></div>
+  <div class="mf"><label>School<input id="dfSchool" list="dfSchools" value="${esc(f.school)}" placeholder="Type the school name or code"></label><datalist id="dfSchools">${schools.map((s) => `<option value="${esc(s.id)}">${esc(s.name)}</option>`).join('')}</datalist></div>
+  <div class="mf" style="display:flex;gap:10px;flex-wrap:wrap"><label>Date<input type="date" id="dfDate" value="${esc(f.date)}"></label><label>Grade<select id="dfGrade"><option value="">All</option>${[1, 2, 3].map((g) => `<option ${f.grade == g ? 'selected' : ''}>${g}</option>`).join('')}</select></label><label>Pupil ID contains<input id="dfStu" value="${esc(f.stuid)}"></label></div>
+  <label class="cb"><input type="checkbox" id="dfDups" ${f.dups ? 'checked' : ''}> Show only records that look like duplicates (same pupil ID in the same grade; or two sampling forms for one grade)</label>
+  <p><button class="btn" data-act="dlFind">Find records</button> ${C.msg ? `<span class="m">${esc(C.msg)}</span>` : ''}</p>
+  ${F ? `<div class="m">${F.total} record${F.total === 1 ? '' : 's'} found${F.total > F.records.length ? ' (showing the first ' + F.records.length + ')' : ''}. Ticked: <b>${(C.sel || []).length}</b>.</div><div class="tbl"><table><thead><tr><th></th><th>Id</th><th>Grade</th><th>Date</th><th>Enumerator</th><th>Pupil ID</th><th>Time</th><th></th></tr></thead><tbody>${rows || '<tr><td colspan="8" class="empty">Nothing found.</td></tr>'}</tbody></table></div>
+  <div class="mf"><label>Why should these be deleted?<textarea id="dfReason" rows="3" placeholder="For example: the same pupil was tested twice on 20 Oct; the second record is a repeat entry.">${esc(C.reasonDraft || '')}</textarea></label></div><button class="btn" data-act="dlSuggest" ${(C.sel || []).length ? '' : 'disabled'}>Suggest deleting ${(C.sel || []).length} record${(C.sel || []).length === 1 ? '' : 's'}</button>` : ''}</div>`;
+}
+async function cleanAction(a, t) {
+  const C = (S.cl ||= {});
+  try {
+    if (a === 'dlOpen') { C.open = t.dataset.id || null; }
+    else if (a === 'dlFind') {
+      const g = (id) => document.getElementById(id); const f = C.form = { kind: g('dfKind').value, school: g('dfSchool').value.trim(), date: g('dfDate').value, grade: g('dfGrade').value, stuid: g('dfStu').value.trim(), dups: g('dfDups').checked };
+      C.msg = 'Searching…'; render(); const q = new URLSearchParams({ kind: f.kind, school: f.school, ...(f.date ? { date: f.date } : {}), ...(f.grade ? { grade: f.grade } : {}), ...(f.stuid ? { stuid: f.stuid } : {}), ...(f.dups ? { dups: '1' } : {}) });
+      C.found = await api('/api/deletions/find?' + q); C.sel = []; C.msg = '';
+    } else if (a === 'dlSuggest') {
+      const reason = (document.getElementById('dfReason').value || '').trim(); if (reason.length < 15) { C.msg = 'Write the reason clearly (a sentence).'; render(); return; }
+      if (!confirm(`Suggest deleting ${C.sel.length} record(s)? Nothing is deleted yet. Joram reviews, then Mundo decides.`)) return;
+      await api('/api/deletions', { method: 'POST', body: { action: 'suggest', kind: C.found.kind, ids: C.sel, reason } }); C.found = null; C.sel = []; C.reasonDraft = ''; C.msg = 'Sent to Joram.';
+    } else if (a === 'dlAct') {
+      const id = t.dataset.id, op = t.dataset.op; const text = (document.getElementById('dtx-' + id)?.value || '').trim(); const remove = [...document.querySelectorAll(`[data-drm="${id}"]:checked`)].map((x) => Number(x.value));
+      if (op === 'delete') { const n = document.getElementById('dcf-' + id)?.value; if (!confirm('Delete these records from KoBo now? A full copy is saved first. This cannot be undone from KoBo.')) return; const r = await api('/api/deletions', { method: 'POST', body: { action: 'delete', id, confirm: Number(n) } }); C.msg = `Deleted ${r.deleted} record(s). KoBo count ${r.before} to ${r.after}.`; }
+      else { await api('/api/deletions', { method: 'POST', body: { action: op, id, text, remove } }); C.msg = ''; }
+    }
+    if (a !== 'dlOpen' && a !== 'dlFind') await loadClean();
+  } catch (e) { C.msg = e.message; }
+  render();
+}
+
 // ---------- phone alerts ----------
 const pushSupported = () => 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
 function alertsLabel() {
@@ -1562,6 +1637,7 @@ async function go() {
 }
 
 document.addEventListener('click', async (e) => {
+  const dl = e.target.closest('[data-dl]'); if (dl) { e.preventDefault(); try { const res = await fetch('/api/deletions/copy?id=' + dl.dataset.dl, { headers: { 'x-access-code': S.code } }); if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Not allowed'); const a = document.createElement('a'); a.href = URL.createObjectURL(await res.blob()); a.download = 'deleted-records-' + dl.dataset.dl + '.json.gz'; a.click(); } catch (er) { alert(er.message); } return; }
   const ex = e.target.closest('[data-ex]'); if (ex) { await loadExplore(ex.dataset.ex); return; }
   const op = e.target.closest('[data-open]');
   if (op && !e.target.closest('summary,button,select,input,textarea')) { e.preventDefault(); $('#gsr') && ($('#gsr').hidden = true); openDetail(op.dataset.open); return; }
@@ -1569,7 +1645,7 @@ document.addEventListener('click', async (e) => {
   const th = e.target.closest('[data-ts]');
   if (th) { const [id, k] = th.dataset.ts.split(':'); const T = S.tbl[id]; if (T.sort === k) T.dir = -T.dir; else { T.sort = k; T.dir = 1; } render(); return; }
   const t = e.target.closest('[data-tab],[data-act]'); if (!t) return;
-  if (t.dataset.tab) { S.tab = t.dataset.tab; S.selVisit = null; if (S.tab === 'messages') { render(); await loadMsgs(); } if (S.tab === 'plan') { await loadPlan(); } if (S.tab === 'phones') { S.ph = null; render(); await loadPhones(); } if (S.tab === 'practice') { S.pr = null; render(); await loadPractice(); } if (S.tab === 'news') { await openNews(); } if (S.tab === 'reports') { render(); await openReports(); } if (S.tab === 'admin') await loadAdmin(); render(); return; }
+  if (t.dataset.tab) { S.tab = t.dataset.tab; S.selVisit = null; if (S.tab === 'messages') { render(); await loadMsgs(); } if (S.tab === 'clean') { render(); await loadClean(); } if (S.tab === 'plan') { await loadPlan(); } if (S.tab === 'phones') { S.ph = null; render(); await loadPhones(); } if (S.tab === 'practice') { S.pr = null; render(); await loadPractice(); } if (S.tab === 'news') { await openNews(); } if (S.tab === 'reports') { render(); await openReports(); } if (S.tab === 'admin') await loadAdmin(); render(); return; }
   const a = t.dataset.act;
   try {
     if (a === 'login') { const c = $('#code').value.trim().toUpperCase(); if (!c) return; S.code = c; try { const r = await api('/api/login'); S.who = r.who; store.set('kf_code', c); S.tab = null; await go(); } catch { S.code = null; loginScreen('That code was not recognised.'); } }
@@ -1584,6 +1660,7 @@ document.addEventListener('click', async (e) => {
     else if (a === 'stSave') { const g = (id) => document.getElementById(id).value; const targets = {}; document.querySelectorAll('[data-tg]').forEach((i) => { (targets[i.dataset.tg] ||= {})[i.dataset.f] = Number(i.value); }); try { await api('/api/admin/settings', { method: 'POST', body: { brand: { platform: g('stPlatform'), programme: g('stProgramme'), tagline: g('stTagline'), assistant: g('stAssistant') }, targets } }); S.cfg = await api('/api/config'); applyBrand(); S.stMsg = 'Saved. The new name shows everywhere.'; await loadAdmin(); } catch (e) { S.stMsg = e.message; } render(); }
     else if (/^rep[A-Z]/.test(a)) await repAction(a, t);
     else if (a === 'goMineQ') { S.qf = { q: '', type: '', sev: '', region: '', st: 'mine' }; S.tab = 'allq'; render(); }
+    else if (/^dl[A-Z]/.test(a)) await cleanAction(a, t);
     else if (/^ms[A-Z]/.test(a)) await msAction(a, t);
     else if (/^ai[A-Z]/.test(a)) await aiAction(a, t);
     else if (/^fm[A-Z]/.test(a)) await formsAction(a, t);
@@ -1696,6 +1773,7 @@ document.addEventListener('change', async (e) => {
   if (e.target.id === 'mcTpl' && e.target.value) { const tp = S.msg.data.templates.find((x) => x.id === e.target.value); msRead(); S.msg.draft.subject = tp.subject; S.msg.draft.body = tp.body; render(); return; }
   if (e.target.name === 'mcWhen') { msRead(); render(); return; }
   if (e.target.dataset?.mreg || e.target.dataset?.mpe || e.target.id?.startsWith('mcR-')) { msRead(); render(); return; }
+  if (e.target.dataset?.dsel) { const id = Number(e.target.dataset.dsel); const C = S.cl; const g0 = (i) => document.getElementById(i); if (g0('dfSchool')) C.form = { kind: g0('dfKind').value, school: g0('dfSchool').value.trim(), date: g0('dfDate').value, grade: g0('dfGrade').value, stuid: g0('dfStu').value.trim(), dups: g0('dfDups').checked }; const rs0 = g0('dfReason'); if (rs0) C.reasonDraft = rs0.value; C.sel = (C.sel || []).filter((x) => x !== id); if (e.target.checked) C.sel.push(id); render(); return; }
   const tf = e.target.dataset?.tf; if (tf) { const [id, k] = tf.split(':'); S.tbl[id].f[k] = e.target.value; render(); return; }
   const qf = e.target.dataset?.qf; if (qf) { S.qf[qf] = e.target.value; render(); return; }
   if (e.target.id === 'viewAsSel') { await setViewAs(e.target.value); return; }

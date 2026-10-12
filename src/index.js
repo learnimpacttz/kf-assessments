@@ -2,6 +2,7 @@ import { koboForm } from './koboforms.js';
 import { listNews, manageNews, react as reactNews, saveNews, deleteNews, pinNews, publish as publishNews, runDueNews, checkMilestones, polish as polishNews } from './news.js';
 import { ownWork, teamBlock, coordinatorOverview } from './own.js';
 import { buildCalendar, markCalendarDirty, syncCalendar, calendarStatus, setCalSync, loadCalSync } from './calendar.js';
+import { findRecords, listRequests, actOnRequest, copyOf } from './deletions.js';
 import { messagesApi, builtinSave, runDueMessages } from './messages.js';
 import { formsView, formsRehearse, formsDeploy, formsRollback } from './formsadmin.js';
 import { loadFormJob, saveFormJob, runFormJob, maybeRunFormJob } from './formjob.js';
@@ -423,6 +424,15 @@ export default {
         }
       }
 
+      if (path.startsWith('/api/deletions')) {
+        if (!(who.role === 'hq' || who.role === 'rc' || who.role === 'arc')) return err('Not allowed', 403);
+        try {
+          if (path === '/api/deletions/find') { const r = await findRecords(env, who, Object.fromEntries(url.searchParams)); return r.error ? err(r.error, r.status || 422) : json(r); }
+          if (path === '/api/deletions/copy') { if (who.role !== 'hq' || (who.review_level || 0) < 2) return err('Only the HQ reviewers can download the saved copy', 403); const c = await copyOf(env, url.searchParams.get('id') || ''); if (!c) return err('No copy', 404); const bin = Uint8Array.from(atob(c.gz_b64), (x) => x.charCodeAt(0)); return new Response(bin, { headers: { 'content-type': 'application/gzip', 'content-disposition': `attachment; filename="deleted-records-${url.searchParams.get('id')}.json.gz"`, 'cache-control': 'no-store' } }); }
+          if (method === 'POST') { const r = await actOnRequest(env, who, await request.json().catch(() => ({}))); return r.error ? err(r.error, r.status || 422) : json(r); }
+          return json(await listRequests(env, who));
+        } catch (e) { return err(String(e.message || e), 502); }
+      }
       // ---------- HQ only ----------
       if (who.role !== 'hq') return err('HQ only', 403);
 

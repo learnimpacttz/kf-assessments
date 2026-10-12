@@ -95,6 +95,22 @@ export async function koboForm(env, b) {
     const t = await r.json().catch(() => ({})); if (!r.ok) throw new Error(`KoBo ${r.status} uploading: ${JSON.stringify(t).slice(0, 400)}`);
     return { uploaded: b.filename, uid: t.uid };
   }
+  if (b.op === 'usage') { // the account's plan limits and use (read only)
+    const out = {}; for (const path of ['service_usage/', 'organizations/orgDsa9DB4pAUdqub5Ev53Ct/asset_usage/']) { const r = await fetch(`${srv}/api/v2/${path}?format=json`, { headers: H }); out[path] = { status: r.status, body: (await r.text()).slice(0, 9000) }; } return out;
+  }
+  if (b.op === 'probe_delete') { // rehearsal of the deletion calls on a ZZ_TEST copy: submit two test records, read them back by id, delete one, check the counts
+    const a = await guard(b.asset); if (!isTest(a) || known.includes(a.uid)) throw new Error('Test copies only');
+    const kc = (a.deployment__identifier || '').split('/forms/')[0].replace(/\/[^/]+$/, ''); const idStr = (a.deployment__identifier || '').split('/forms/')[1] || a.uid; const log = [];
+    for (let i = 1; i <= 2; i++) { const xml = `<?xml version='1.0' ?><data id="${idStr}" version="${a.deployed_version_id || a.version_id}"><id_data><school>ZZTEST</school><grade>1</grade><enumerator>ZZ Tester</enumerator></id_data><stuid>ZZ${i}</stuid><meta><instanceID>uuid:${crypto.randomUUID()}</instanceID></meta></data>`; const fd = new FormData(); fd.append('xml_submission_file', new Blob([xml], { type: 'text/xml' }), 'sub.xml'); const r = await fetch(`${srv.replace('kf.', 'kc.')}/submission`, { method: 'POST', headers: { ...H, 'X-OpenRosa-Version': '1.0' }, body: fd }); log.push(`submit ${i}: ${r.status} ${(await r.text()).replace(/\s+/g, " ").slice(0, 600)}`); }
+    await new Promise((x) => setTimeout(x, 3000));
+    const list = async (q) => { const r = await fetch(`${srv}/api/v2/assets/${a.uid}/data/?format=json&limit=1000${q ? '&query=' + encodeURIComponent(JSON.stringify(q)) : ''}`, { headers: H }); const d = await r.json().catch(() => ({})); return { status: r.status, count: d.count, ids: (d.results || []).map((x) => x._id) }; };
+    const all = await list(null); log.push('list: ' + JSON.stringify(all)); if (!all.ids.length) return { ok: false, log };
+    const byId = await list({ _id: { $in: [all.ids[0]] } }); log.push('query by _id: ' + JSON.stringify(byId));
+    const bySchool = await list({ 'id_data/school': 'ZZTEST' }); log.push('query by school: ' + JSON.stringify(bySchool));
+    const d1 = await fetch(`${srv}/api/v2/assets/${a.uid}/data/${all.ids[0]}/`, { method: 'DELETE', headers: H }); log.push('delete: ' + d1.status);
+    const after = await list(null); log.push('after: ' + JSON.stringify(after));
+    return { ok: byId.ids.length === 1 && d1.status === 204 && after.count === all.count - 1, log };
+  }
   if (b.op === 'delete') {
     const a = await get(b.asset);
     if (!isTest(a) || known.includes(a.uid)) throw new Error('Only ZZ_TEST copies can be deleted');

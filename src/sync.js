@@ -66,23 +66,40 @@ export async function recomputeSummaries(env, years, { allDays = false } = {}) {
   if (env.DASHBOARD_KV) await env.DASHBOARD_KV.put('years', JSON.stringify([...have].sort()));
 }
 
+// After records are deleted in KoBo the stored totals still count them. Clear that kind's part of each affected year and read it again from KoBo.
+async function startRebuild(env) {
+  const rb = (await kv(env).get('v2:rebuild')) || []; if (!rb.length) return;
+  const kind = rb[0].kind; const wm0 = await kv(env).get(wmKey(kind)); if (wm0?.cursor || wm0?.only) return; // one at a time
+  const years = rb.filter((x) => x.kind === kind).map((x) => x.year);
+  for (const y of years) {
+    const Y = await loadYear(env, y); if (!Y) continue;
+    if (kind === 'students') { Y.cells = {}; Y.n = 0; for (const d of Object.keys(Y.tl || {})) Y.tl[d] = Y.tl[d].filter((e) => e[6] !== 't'); }
+    else if (kind === 'sampling') { Y.sg = {}; Y.nsamp = 0; for (const d of Object.keys(Y.tl || {})) Y.tl[d] = Y.tl[d].filter((e) => e[6] !== 's'); }
+    await saveYear(env, y, Y);
+  }
+  await kv(env).put(wmKey(kind), { max_id: 0, pages: 0, cursor: null, years: [], last_check: null, records: 0, only: years });
+  await kv(env).put('v2:rebuild', rb.filter((x) => x.kind !== kind));
+}
+
 async function processPage(env, kind) {
   const cfg = KINDS[kind];
   const assetId = env[cfg.asset];
   const server = env.KOBO_SERVER || 'kf.kobotoolbox.org';
   const wm = (await kv(env).get(wmKey(kind))) || { max_id: 0, pages: 0, cursor: null, years: [], last_check: null, records: 0 };
   const page = await fetchKoboPage(server, assetId, env.KOBO_TOKEN, wm.cursor, wm.max_id_pass ?? wm.max_id);
-  if (page.results.length) {
-    const touched = [...new Set(page.results.map((r) => (kind === 'sampling' ? (isPracticeSchool(r['id_data/school'] || r.school || r['att_gr/school']) ? 'practice' : yearOf(r)) : stateYearOf(r))).filter(Boolean))];
+  const yOf = (r) => (kind === 'sampling' ? (isPracticeSchool(r['id_data/school'] || r.school || r['att_gr/school']) ? 'practice' : yearOf(r)) : stateYearOf(r));
+  const rows = wm.only ? page.results.filter((r) => wm.only.includes(yOf(r))) : page.results; // a rebuild after deletions reads only the affected years
+  if (rows.length) {
+    const touched = [...new Set(rows.map((r) => (kind === 'sampling' ? (isPracticeSchool(r['id_data/school'] || r.school || r['att_gr/school']) ? 'practice' : yearOf(r)) : stateYearOf(r))).filter(Boolean))];
     const state = await loadState(env, touched);
-    cfg.add(state, page.results);
+    cfg.add(state, rows);
     for (const y of touched) if (state.yrs[y]) await saveYear(env, y, state.yrs[y]);
-    for (const r of page.results) {
+    for (const r of rows) {
       const y = kind === 'sampling' ? (isPracticeSchool(r['id_data/school'] || r.school || r['att_gr/school']) ? 'practice' : yearOf(r)) : stateYearOf(r);
       if (y && !wm.years.includes(y)) wm.years.push(y);
       if (typeof r._id === 'number' && r._id > (wm.max_id_pass ?? 0)) wm.max_id_pass = r._id;
     }
-    wm.records += page.results.length;
+    wm.records += rows.length;
   }
   wm.pages += 1;
   wm.last_check = new Date().toISOString();
@@ -93,7 +110,8 @@ async function processPage(env, kind) {
   }
   // pass finished
   if (wm.max_id_pass) wm.max_id = wm.max_id_pass;
-  const years = wm.years;
+  const years = wm.only ? [...new Set([...wm.years, ...wm.only])] : wm.years;
+  wm.only = undefined;
   wm.cursor = null; wm.max_id_pass = undefined; wm.pages = 0; wm.years = []; wm.done_at = new Date().toISOString();
   await kv(env).put(wmKey(kind), wm);
   if (years.length) {
@@ -117,6 +135,7 @@ export async function tick(env, { force = false } = {}) {
 }
 
 async function tickInner(env, { force }) {
+  await startRebuild(env);
   const dirty = await kv(env).get('v2:dirty');
   if (dirty && dirty.length) {
     await recomputeSummaries(env, dirty);
