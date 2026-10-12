@@ -25,7 +25,7 @@ const title = (s) => String(s || '').toLowerCase().replace(/\b\w/g, (c) => c.toU
 const FLAG_LABEL = { fast: 'Test too fast', slow: 'Test too slow', window: 'Outside school hours', gps: 'Far from school', skilltime: 'Skills skipped', dup: 'Pupil tested twice', notlist: 'Not on sampling list', latesub: 'Sent late', team: 'Team size', over: 'Over the sample', short: 'Short of the sample', nosample: 'No sampling record', offcal: 'Visited off the calendar', headcount: 'Fewer phones than people', devshare: 'One phone, several names', devowner: 'Someone else\'s phone', devoverlap: 'Tests overlap on one phone', devtravel: 'Phone at two schools too fast', devswitch: 'Phone jumping between grades', devnames: 'Names changing on one phone', namedevs: 'One person, several phones' };
 
 // ---------- shared pieces ----------
-const kpi = (l, v, s = '') => `<div class="kpi"><div class="l">${l}</div><div class="v num">${v}</div><div class="s">${s}</div></div>`;
+const kpi = (l, v, s = '', go = '') => `<div class="kpi${go ? ' click' : ''}"${go ? ` data-tab="${go}" title="Open"` : ''}><div class="l">${l}</div><div class="v num">${v}</div><div class="s">${s}</div></div>`;
 const bar = (p, color) => `<div class="bar"><i style="width:${Math.min(100, p)}%;${color ? 'background:' + color : ''}"></i></div>`;
 const statusPill = (s) => (s.done ? '<span class="pill good">Complete</span>' : s.started ? '<span class="pill warn">In progress</span>' : '<span class="pill mute">Not started</span>');
 
@@ -119,11 +119,11 @@ function viewRegion() {
   const remaining = r.total - r.done;
   const rows = schools.slice().sort((a, b) => (a.done - b.done) || (b.started - a.started) || a.name.localeCompare(b.name)).map((s) => {
     const t = s.g[1].av + s.g[2].av + s.g[3].av, tg = s.g[1].target + s.g[2].target + s.g[3].target;
-    return `<tr><td><b>${esc(s.name)}</b></td><td class="hide-s">${esc(title(s.lga))}</td><td class="hide-s">${esc(armLabel(s))}</td><td class="num hide-s">${s.g[1].av}/${s.g[1].target}</td><td class="num hide-s">${s.g[2].av}/${s.g[2].target}</td><td class="num hide-s">${s.g[3].av}/${s.g[3].target}</td><td>${bar(pc(t, tg))}</td><td>${statusPill(s)}</td></tr>`;
+    return `<tr class="click" data-open="school:${esc(s.id)}"><td><b>${esc(s.name)}</b></td><td class="hide-s">${esc(title(s.lga))}</td><td class="hide-s">${esc(armLabel(s))}</td><td class="num hide-s">${s.g[1].av}/${s.g[1].target}</td><td class="num hide-s">${s.g[2].av}/${s.g[2].target}</td><td class="num hide-s">${s.g[3].av}/${s.g[3].target}</td><td>${bar(pc(t, tg))}</td><td>${statusPill(s)}</td></tr>`;
   }).join('');
   const neededPerDay = remaining > 0 ? remaining / Math.max(1, workingLeft(o.today)) : 0;
   return `${dataBanner()}<div class="pagehead"><div><h2>${esc(title(r.region))} · ${esc(S.who.position || 'Coordinator')}</h2><p>${r.total} schools · target ${tpg} pupils per grade per school</p></div></div>
-  <div class="grid kpis">${kpi('Schools complete', `${r.done}<small> / ${r.total}</small>`, pc(r.done, r.total) + '%')}${kpi('Pupils tested', fmt(r.tested), 'of ' + fmt(r.target))}${kpi('Open flags', flags.length, flags.filter((f) => f.sev === 'bad').length + ' need a call')}${kpi('Pace', r.pace + ' / day', 'schools per field day, last 5 days')}${kpi('Projected finish', r.projected === 'done' ? 'Done' : r.projected ? shortDate(r.projected) : '–', r.behind ? 'after the 4 Dec close' : 'before the 4 Dec close')}</div>
+  <div class="grid kpis">${kpi('Schools complete', `${r.done}<small> / ${r.total}</small>`, pc(r.done, r.total) + '%')}${kpi('Pupils tested', fmt(r.tested), 'of ' + fmt(r.target))}${kpi('Open flags', flags.length, flags.filter((f) => f.sev === 'bad').length + ' need a call', 'allq')}${kpi('Pace', r.pace + ' / day', 'schools per field day, last 5 days')}${kpi('Projected finish', r.projected === 'done' ? 'Done' : r.projected ? shortDate(r.projected) : '–', r.behind ? 'after the 4 Dec close' : 'before the 4 Dec close')}</div>
   ${ownSection()}
   <div class="grid two" style="margin-top:14px"><div class="card"><h3>Schools in ${esc(title(r.region))}</h3><div class="sub">Pupils tested against sample, by grade</div><div class="tbl"><table><thead><tr><th>School</th><th class="hide-s">LGA</th><th class="hide-s">Type</th><th class="hide-s">Gr 1</th><th class="hide-s">Gr 2</th><th class="hide-s">Gr 3</th><th>Progress</th><th>Status</th></tr></thead><tbody>${rows}</tbody></table></div></div>
   <div style="display:grid;gap:14px;align-content:start">${briefCard()}${forecastCard(r.region)}<div class="card"><h3>Needs your call</h3><div class="sub">Checked after every submission</div>${flagList(flags)}</div>
@@ -155,7 +155,7 @@ function viewDay() {
   <h3 style="margin:18px 0 8px">Zinazofuata · Coming up</h3>${next.length ? next.map((v) => `<div class="sch"><h4>${esc(v.school_name)}</h4><div class="m">${dayName(v.date)} · ${esc(v.start)} · ${esc(title(v.lga))}</div></div>`).join('') : '<div class="note">Nothing planned yet.</div>'}`;
 }
 function viewWork() {
-  const rows = (S.ov.mine.work || []).map((w) => `<tr><td>${shortDate(w[0])}</td><td>${esc(schoolName(w[1]))}</td><td class="r">${w[2]}</td><td class="num r">${w[3]}</td><td class="num r">${w[4] ?? '–'}</td></tr>`).join('');
+  const rows = (S.ov.mine.work || []).map((w) => `<tr class="click" data-open="school:${esc(w[1])}"><td>${shortDate(w[0])}</td><td>${esc(schoolName(w[1]))}</td><td class="r">${w[2]}</td><td class="num r">${w[3]}</td><td class="num r">${w[4] ?? '–'}</td></tr>`).join('');
   return `<div class="pagehead"><div><h2>My work</h2><p>Everything you tested, by day and school. Pupils appear as numbers only.</p></div></div><div class="card"><div class="tbl"><table><thead><tr><th>Day</th><th>School</th><th class="r">Grade</th><th class="r">Tested</th><th class="r">Avg min</th></tr></thead><tbody>${rows || '<tr><td colspan="5" class="empty">Nothing recorded yet.</td></tr>'}</tbody></table></div></div>`;
 }
 function schoolName(id) { const s = (S.ov.mine?.schools || []).find((x) => x.id === id); return s ? s.name : id; }
@@ -223,7 +223,7 @@ function viewPlan() {
   const slotCls = (v) => (v.outcome === 'visited' ? 'done' : v.outcome === 'missed' ? 'miss' : v.outcome === 'visited_other_day' || v.status === 'moved' ? 'moved' : '');
   const cal = weeks.map((w, wi) => `<h4 style="margin:14px 0 6px">Week ${wi + 1}</h4><div class="cal">${w.map((d) => `<div class="day ${d === today ? 'today' : ''}"><h5>${dayName(d)}<span title="${esc(plan.day_notes?.[d] ? plan.day_notes[d].note : '')}">${(byDate[d] || []).length || ''}${plan.day_notes?.[d] && (byDate[d] || []).length !== 2 ? ' ⓘ' : ''}</span></h5>${(byDate[d] || []).map((v) => `<button class="slot ${slotCls(v)}" data-act="selVisit" data-id="${v.id}"><b>${esc(v.school_name)}</b>${esc(title(v.lga))} · ${esc(v.start)}${v.status === 'moved' ? ' · moved' : ''}</button>`).join('')}</div>`).join('')}</div>`).join('');
   const notice = (st) => ({ sent: '<span class="pill good">sent</span>', late: '<span class="pill bad">late</span>', due: '<span class="pill warn">due today</span>', upcoming: '<span class="pill mute">upcoming</span>' }[st]);
-  const nrows = plan.visits.filter((v) => v.date >= today).sort((a, b) => (a.date < b.date ? -1 : 1)).slice(0, 14).map((v) => `<tr><td><b>${esc(v.school_name)}</b>${plan.changes.some((c) => c.visit_id === v.id) ? ' <span class="pill warn">changed</span>' : ''}${v.lead_name ? ` <span class="pill mute">${v.lead_name === S.who?.name ? 'led by you' : 'lead: ' + esc(v.lead_name.split(' ')[0])}</span>` : ''}<br><span class="m" style="font-size:12px;color:var(--ink3)">${dayName(v.date)}</span></td><td>${notice(v.aek_state)} <span style="font-size:12px;color:var(--ink3)">by ${shortDate(v.aek_due)}</span>${canEdit && !v.notices.aek ? ` <button class="btn sm sec" data-act="notice" data-kind="aek" data-id="${v.id}">Mark sent</button>` : ''}</td><td>${notice(v.ht_state)} <span style="font-size:12px;color:var(--ink3)">by ${shortDate(v.ht_due)}</span>${canEdit && !v.notices.ht ? ` <button class="btn sm sec" data-act="notice" data-kind="ht" data-id="${v.id}">Mark sent</button>` : ''}</td><td>${notice(v.team_state)}${canEdit && !v.notices.team ? ` <button class="btn sm sec" data-act="notice" data-kind="team" data-id="${v.id}">Mark told</button>` : ''}</td></tr>`).join('');
+  const nrows = plan.visits.filter((v) => v.date >= today).sort((a, b) => (a.date < b.date ? -1 : 1)).slice(0, 14).map((v) => `<tr class="click" data-open="school:${esc(v.school)}"><td><b>${esc(v.school_name)}</b>${plan.changes.some((c) => c.visit_id === v.id) ? ' <span class="pill warn">changed</span>' : ''}${v.lead_name ? ` <span class="pill mute">${v.lead_name === S.who?.name ? 'led by you' : 'lead: ' + esc(v.lead_name.split(' ')[0])}</span>` : ''}<br><span class="m" style="font-size:12px;color:var(--ink3)">${dayName(v.date)}</span></td><td>${notice(v.aek_state)} <span style="font-size:12px;color:var(--ink3)">by ${shortDate(v.aek_due)}</span>${canEdit && !v.notices.aek ? ` <button class="btn sm sec" data-act="notice" data-kind="aek" data-id="${v.id}">Mark sent</button>` : ''}</td><td>${notice(v.ht_state)} <span style="font-size:12px;color:var(--ink3)">by ${shortDate(v.ht_due)}</span>${canEdit && !v.notices.ht ? ` <button class="btn sm sec" data-act="notice" data-kind="ht" data-id="${v.id}">Mark sent</button>` : ''}</td><td>${notice(v.team_state)}${canEdit && !v.notices.team ? ` <button class="btn sm sec" data-act="notice" data-kind="team" data-id="${v.id}">Mark told</button>` : ''}</td></tr>`).join('');
   const changes = plan.changes.slice().reverse().slice(0, 8).map((c) => `<div class="flag"><i class="st ${c.late ? 'bad' : 'warn'}"></i><div><b>${esc(SCH(c.school))} · ${shortDate(c.from.date)} → ${shortDate(c.to.date)}${c.late ? ' · late change' : ''}</b><span>${esc(c.reason)}${c.note ? ': ' + esc(c.note) : ''} · ${esc(c.by)}</span></div></div>`).join('') || '<div class="empty">No changes yet.</div>';
   const v = plan.visits.find((x) => x.id === S.selVisit);
   const editor = v && canEdit ? `<div class="card" style="margin-top:14px"><h3>Change ${esc(v.school_name)}</h3><div class="sub">Planned ${dayName(v.date)} at ${esc(v.start)}. The team and the ward and head teacher notices are re-sent for a new date.</div><div class="f"><label>New date<input type="date" id="chDate" value="${v.date}" min="${planFrom(region)}" max="${S.cfg.field.end}"></label><label>Start<input type="time" id="chStart" value="${esc(v.start)}"></label><label>Reason<select id="chReason">${Object.entries(S.cfg.reasons).map(([k, t]) => `<option value="${k}">${esc(t)}</option>`).join('')}</select></label><textarea id="chNote" placeholder="Short note (required for Other)"></textarea></div><div style="margin-top:10px;display:flex;gap:8px"><button class="btn" data-act="applyChange" data-id="${v.id}">Save change</button><button class="btn sec" data-act="selVisit" data-id="">Cancel</button></div><div id="chErr" class="banner bad" hidden></div></div>` : '';
@@ -266,7 +266,7 @@ function viewHQ() {
   const types = Object.entries(byType).sort((a, b) => b[1] - a[1]);
   const mx = Math.max(1, ...types.map((t) => t[1]));
   return `${dataBanner()}<div class="pagehead"><div><h2>HQ command centre</h2><p>All regions · ${esc(o.year)}</p></div></div>
-  <div class="grid kpis">${kpi('Schools complete', `${fmt(n.done)}<small> / ${fmt(n.schools)}</small>`, pc(n.done, n.schools) + '%')}${kpi('Pupils tested', fmt(n.tested), 'of ' + fmt(n.target))}${kpi('Open flags', fmt(openF.length), bad + ' serious')}${kpi('Regions at risk', atRisk, 'projected after 4 Dec')}${kpi('Projected finish', n.projected === 'done' ? 'Done' : n.projected ? shortDate(n.projected) : '–', 'at current pace')}</div>
+  <div class="grid kpis">${kpi('Schools complete', `${fmt(n.done)}<small> / ${fmt(n.schools)}</small>`, pc(n.done, n.schools) + '%', 'regions')}${kpi('Pupils tested', fmt(n.tested), 'of ' + fmt(n.target), 'compare')}${kpi('Open flags', fmt(openF.length), bad + ' serious', 'allq')}${kpi('Regions at risk', atRisk, 'projected after 4 Dec', 'regions')}${kpi('Projected finish', n.projected === 'done' ? 'Done' : n.projected ? shortDate(n.projected) : '–', 'at current pace')}</div>
   ${S.brief ? '<div style="margin-top:14px">' + briefCard() + '</div>' : ''}<div style="margin-top:14px">${forecastCard()}</div><div class="card" style="margin-top:14px"><h3>Regions</h3><div class="sub">Schools complete out of ${fmt(n.schools)}</div>${tiles(o.regions)}</div>
   <div class="grid two" style="margin-top:14px"><div class="card"><h3>Flags to act on</h3><div class="sub">Newest checks across all regions</div>${flagList(openF.slice().sort((a, b) => (a.sev === 'bad' ? 0 : 1) - (b.sev === 'bad' ? 0 : 1)), { limit: 12 })}</div>
   <div style="display:grid;gap:14px;align-content:start"><div class="card"><h3>Checks running</h3><div class="sub">Open flags by type</div>${types.map(([t, c]) => `<div style="display:flex;gap:10px;align-items:center;padding:6px 0;border-bottom:1px solid var(--line)"><span style="flex:1">${esc(FLAG_LABEL[t] || t)}</span>${bar(pc(c, mx))}<span class="num" style="width:34px;text-align:right">${c}</span></div>`).join('') || '<div class="empty">No flags.</div>'}</div>
@@ -278,7 +278,7 @@ function viewRegionsHQ() {
   return `${dataBanner()}<div class="pagehead"><div><h2>Regions and plans</h2><p>Progress, pace and whether each coordinator has submitted the field plan</p></div></div><div class="card"><div class="tbl"><table><thead><tr><th>Region</th><th class="r">Schools</th><th class="r">Pupils</th><th>Progress</th><th class="r">Pace/day</th><th>Finish</th><th>Field plan</th></tr></thead><tbody>${rows}</tbody></table></div></div>${calendarChangesCard(o.calendar_changes || [])}`;
 }
 function calendarChangesCard(list) {
-  const rows = list.length ? list.map((c) => `<div class="flag"><i class="st ${c.late ? 'bad' : 'warn'}"></i><div><b>${esc(title(c.region))} · ${esc(c.school_name ? c.school_name.trim() : c.school)}</b> · ${c.from ? shortDate(c.from) : '?'} → ${c.to ? shortDate(c.to) : '?'}${c.late ? ' <span class="pill bad">late change</span>' : ''}<div class="sub">${esc(c.reason || '')}${c.note ? ': ' + esc(c.note) : ''} · ${esc(c.by)} · ${new Date(c.at).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Africa/Dar_es_Salaam' })}</div></div></div>`).join('') : '<div class="empty">No calendar changes since plans were submitted.</div>';
+  const rows = list.length ? list.map((c) => `<div class="flag click" data-open="school:${esc(c.school)}"><i class="st ${c.late ? 'bad' : 'warn'}"></i><div><b>${esc(title(c.region))} · ${esc(c.school_name ? c.school_name.trim() : c.school)}</b> · ${c.from ? shortDate(c.from) : '?'} → ${c.to ? shortDate(c.to) : '?'}${c.late ? ' <span class="pill bad">late change</span>' : ''}<div class="sub">${esc(c.reason || '')}${c.note ? ': ' + esc(c.note) : ''} · ${esc(c.by)} · ${new Date(c.at).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Africa/Dar_es_Salaam' })}</div></div></div>`).join('') : '<div class="empty">No calendar changes since plans were submitted.</div>';
   return `<div class="card" style="margin-top:14px"><h3>Calendar changes</h3><div class="sub">Every change an RC makes after submitting, with who, why and when. Late = inside the notice period. Phones use the calendar file, which HQ refreshes from these plans.</div>${rows}</div>`;
 }
 // ----- data explorer -----
@@ -319,6 +319,33 @@ function backupDaysCard(a) {
   <div class="card" style="margin-top:14px"><h3>KoBo write access</h3><div class="sub">Needed to mark submissions as approved, not approved or on hold from a query.</div><button class="btn sm sec" data-act="koboCheck">Check access</button>${S.koboWho ? `<p class="m" style="margin-top:8px">${esc(S.koboWho)}</p>` : ''}</div>`;
 }
 const eatTime = (iso) => (iso ? new Date(iso).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Africa/Dar_es_Salaam' }) : '–');
+// ---- email recipients as a table ----
+const REC_ROLES = [['hq', 'HQ'], ['rc', 'RC'], ['arc', 'ARC']];
+function recInit(rec) {
+  const order = { hq: 0, rc: 1, arc: 2 };
+  S.recRows = Object.entries((rec && rec.recipients) || {}).map(([email, r]) => ({ email, name: r.name || '', role: r.role || 'rc', region: r.region || '', copy: Boolean(r.copy), backup: r.backup || '', from: r.from || '', active: r.active !== false }))
+    .sort((x, y) => (order[x.role] - order[y.role]) || (x.region || '').localeCompare(y.region || '') || x.name.localeCompare(y.name));
+  S.recDirty = false;
+}
+function recipientsTable(a) {
+  if (!S.recRows) recInit(a.rec);
+  const regs = S.cfg?.regions || [];
+  const n = S.recRows.length, act = S.recRows.filter((x) => x.active).length;
+  const cnt = (role) => S.recRows.filter((x) => x.role === role).length;
+  const body = S.recRows.map((r, i) => `<tr data-ri="${i}" data-q="${esc((r.name + ' ' + r.email + ' ' + r.role + ' ' + r.region).toLowerCase())}" class="${r.active ? '' : 'paused'}">
+    <td><input data-rr="${i}" data-f="name" value="${esc(r.name)}" placeholder="Name"></td>
+    <td><input data-rr="${i}" data-f="email" type="email" value="${esc(r.email)}" placeholder="name@example.org"></td>
+    <td><select data-rr="${i}" data-f="role">${REC_ROLES.map(([k, t]) => `<option value="${k}" ${r.role === k ? 'selected' : ''}>${t}</option>`).join('')}</select></td>
+    <td><select data-rr="${i}" data-f="region"><option value="">All (HQ)</option>${regs.map((g) => `<option value="${g}" ${r.region === g ? 'selected' : ''}>${esc(title(g))}</option>`).join('')}</select></td>
+    <td class="c"><input type="checkbox" data-rr="${i}" data-f="copy" ${r.copy ? 'checked' : ''} title="Gets a copy for information only"></td>
+    <td><select data-rr="${i}" data-f="backup"><option value="">No</option><option value="to" ${r.backup === 'to' ? 'selected' : ''}>To</option><option value="cc" ${r.backup === 'cc' ? 'selected' : ''}>Cc</option></select></td>
+    <td><input data-rr="${i}" data-f="from" type="date" value="${esc(r.from)}" title="Emails start on this day (empty = now)"></td>
+    <td class="c"><input type="checkbox" data-rr="${i}" data-f="active" ${r.active ? 'checked' : ''} title="Untick to pause"></td>
+    <td><button class="btn sm ghost" data-act="recDel" data-i="${i}" title="Remove">✕</button></td></tr>`).join('');
+  return `<div class="recbar"><input id="recQ" placeholder="Search name, email, role or region" autocomplete="off"><span class="m"><b>${n}</b> people · ${act} active · ${cnt('hq')} HQ · ${cnt('rc')} RC · ${cnt('arc')} ARC ${S.recDirty ? '<span class="pill warn">unsaved changes</span>' : ''}</span><button class="btn sm sec" data-act="recAdd">+ Add a person</button></div>
+  <div class="tbl rectbl"><table class="dt"><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Region</th><th class="c" title="Copy for information only">Copy</th><th title="Weekly backup email">Backup</th><th title="Emails start on this day">Starts</th><th class="c" title="Untick to pause">On</th><th></th></tr></thead><tbody>${body || '<tr><td colspan="9" class="empty">No recipients yet.</td></tr>'}</tbody></table></div>
+  <div class="m" style="margin-top:6px">Copy = gets a copy for information only. Backup = takes part in the Monday 07:00 backup email (To or Cc). Starts = no emails before this day. On = untick to pause without deleting.</div>`;
+}
 function autoCards(a) {
   const c = a.calsync, f = a.formjob; let out = '';
   if (c) {
@@ -345,7 +372,7 @@ function viewAdmin() {
   ${readinessCard(a)}<div class="card"><h3>Data connections</h3><div class="sub">Student tests, sampling and teacher forms are read from KoBo every 5 minutes in field hours</div><div class="tbl"><table><thead><tr><th>Form</th><th>Status</th><th class="r">Records read</th><th>State</th><th>Last complete</th></tr></thead><tbody>${sync}</tbody></table></div></div>
   ${S.ov.unlisted?.length ? `<div class="banner" style="margin-top:14px"><b>Names in KoBo that are not in the staff roster:</b> ${S.ov.unlisted.map(esc).join(', ')}. Their tests still count, but they have no region or access code.</div>` : ''}
   <div class="card" style="margin-top:14px"><h3>Email digests</h3><div class="sub">Morning brief 07:00 and evening check 17:30 (East Africa Time). ${a.rec?.sending?.domain_ready && a.rec?.sending?.enabled ? '<span class="pill good">sending is on</span>' : '<span class="pill warn">preview only: no sending domain connected yet</span>'}</div>
-  <div class="f"><label style="grid-column:1/-1">Recipients, one per line: email, name, role (hq, rc or arc), region, copy (write copy for copy-only), 6th column: paused, or a start date like 2026-10-16. 7th column: backup role, to or cc (weekly backup email)<textarea id="recText" placeholder="name@example.org, Hatibu Lugendo, rc, TANGA">${esc(Object.entries(a.rec?.recipients || {}).map(([e, r]) => [e, r.name, r.role, r.region || '', r.copy ? 'copy' : '', r.active === false ? 'paused' : (r.from || ''), r.backup || ''].join(', ')).join('\n'))}</textarea></label></div>
+  ${recipientsTable(a)}
   <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn sm" data-act="saveRec">Save recipients</button><button class="btn sm sec" data-act="prevMail" data-kind="morning" data-region="">Preview national morning</button><button class="btn sm sec" data-act="prevMail" data-kind="morning" data-region="TANGA">Preview Tanga morning</button><button class="btn sm sec" data-act="prevMail" data-kind="evening" data-region="">Preview evening</button><button class="btn sm sec" data-act="prevRem" data-region="TANGA">Preview notice reminder (Tanga)</button></div>
   ${a.preview ? `<p style="margin:12px 0 4px"><b>${esc(a.preview.subject)}</b></p><iframe sandbox title="Email preview" style="width:100%;height:420px;border:1px solid var(--line);border-radius:8px;background:#fff" srcdoc="${esc(a.preview.html)}"></iframe>` : ''}</div>
   <div class="card" style="margin-top:14px"><h3>Calendar for the KoBo forms</h3><div class="sub">The assessment and sampling forms check each visit against this file. Download it after plans are submitted and after every approved change, then upload it to both forms as <b>ref_calendar.csv</b> (Form, Settings, Media). Without it the check stays off.</div><button class="btn sm" data-act="calCsv">Download ref_calendar.csv</button>${S.calMsg ? `<p class="m" style="margin-top:8px">${esc(S.calMsg)}</p>` : ''}</div>\n  ${autoCards(a)}
@@ -381,7 +408,7 @@ const roleLabel = (a) => (a.position || (a.role === 'unlisted' ? 'Not in roster'
 // ---------- links and the detail panel ----------
 const isVol = () => S.who && S.who.role === 'volunteer';
 const lk = (kind, id, text) => (kind === 'person' && isVol() && S.ov?.mine?.me?.name !== id ? esc(text) : `<a href="#" class="lk" data-open="${esc(kind)}:${esc(id)}">${esc(text)}</a>`);
-const schoolsAll = () => (S.who?.role === 'hq' ? S.allSchools || [] : S.ov?.mine?.schools || []);
+const schoolsAll = () => [...(S.who?.role === 'hq' ? S.allSchools || [] : S.ov?.mine?.schools || []), ...(S.pr?.schools || [])];
 const adminsAll = () => (S.who?.role === 'hq' ? S.ov.admins : S.ov?.mine?.admins || (S.ov?.mine?.me ? [S.ov.mine.me] : []));
 const flagsAll = () => (S.who?.role === 'hq' ? S.ov.flags : S.ov?.mine?.flags || []);
 const workOf = (name) => S.workCache[name] || (S.ov?.mine?.work_all || {})[name] || (S.ov?.mine?.me?.name === name ? S.ov.mine.work : []) || [];
@@ -391,7 +418,7 @@ function openDetail(spec, push = true) {
   if (push && S.cur) S.stack.push(S.cur);
   S.cur = spec;
   const [kind, ...rest] = spec.split(':'); const id = rest.join(':');
-  const body = kind === 'person' ? personCard(id) : kind === 'school' ? schoolCard(id) : kind === 'region' ? regionCard(id) : '<p>Not found.</p>';
+  const body = kind === 'person' ? personCard(id) : kind === 'school' ? schoolCard(id) : kind === 'region' ? regionCard(id) : kind === 'phone' ? phoneCard(id) : '<p>Not found.</p>';
   $('#drawerBody').innerHTML = `<div class="dnav">${S.stack.length ? '<button class="btn sm sec" data-act="dBack">‹ Back</button>' : ''}<button class="btn sm sec" data-act="dClose" style="margin-left:auto">Close ✕</button></div>${body}`;
   $('#drawer').hidden = false; if (push !== false || !$('#drawerBody').scrollTop) $('#drawerBody').scrollTop = 0;
   if (kind === 'person' && S.who?.role !== 'volunteer') loadWork(id);
@@ -399,6 +426,18 @@ function openDetail(spec, push = true) {
 }
 function closeDetail() { $('#drawer').hidden = true; S.cur = null; S.stack = []; }
 
+function phoneCard(code) {
+  const P = S.ph; const p = P && (P.phones || []).find((x) => x.c === code);
+  if (!p) return `<h2>Phone ${esc(code)}</h2><p class="m">Open the Phones tab for the day to see this phone.</p>`;
+  const hm = (t) => `${String(Math.floor(t / 3600)).padStart(2, '0')}:${String(Math.floor((t % 3600) / 60)).padStart(2, '0')}`;
+  const flags = (P.flags || []).filter((f) => (f.text || '').includes(code));
+  const ev = (P.events || []).filter((e) => e.c === code);
+  return `<h2>Phone ${esc(code)}</h2><p class="m">${esc(dayName(P.date))} · ${p.n} records · active ${hm(p.first)} to ${hm(p.last)}</p>
+  <h3 style="margin:14px 0 4px">Names used on it</h3><p>${p.names.length ? p.names.map((n) => lk('person', n, n)).join(' · ') : '<span class="m">none recorded</span>'}</p>
+  <h3 style="margin:14px 0 4px">Schools</h3><p>${p.schools.map((s) => lk('school', s.id, s.name)).join(' · ') || '<span class="m">none</span>'}</p>
+  <h3 style="margin:14px 0 4px">Checks on this phone (${flags.length})</h3>${flags.length ? flagList(flags, { limit: 20 }) : '<div class="note">Nothing to look at.</div>'}
+  <h3 style="margin:14px 0 4px">What it did</h3>${timelineChart({ ...P, events: ev })}`;
+}
 function personCard(name) {
   const a = adminsAll().find((x) => x.name === name);
   if (!a) return `<h2>${esc(name)}</h2><p class="m">No tests recorded for this year yet.</p>`;
@@ -417,7 +456,7 @@ const schoolNameOf = (id) => schoolsAll().find((x) => x.id === id)?.name || S.pl
 function schoolCard(id) {
   const s = schoolsAll().find((x) => x.id === id);
   if (!s) return `<h2>School</h2><p class="m">Details are not available for ${esc(id)}.</p>`;
-  const flags = flagsAll().filter((f) => f.school === id && isOpen(f));
+  const flags = [...flagsAll(), ...(S.pr?.flags || [])].filter((f) => f.school === id && isOpen(f));
   const rows = [1, 2, 3].map((g) => `<tr><td>Grade ${g}</td><td class="r num">${s.g[g].att ?? '–'}</td><td class="r num">${s.g[g].target}</td><td class="r num">${s.g[g].av}</td><td>${s.g[g].done ? '<span class="pill good">complete</span>' : s.g[g].n ? '<span class="pill warn">in progress</span>' : '<span class="pill mute">not started</span>'}</td></tr>`).join('');
   return `<h2>${esc(s.name)}</h2><p class="m">${s.region ? lk('region', s.region, title(s.region)) + ' · ' : ''}${esc(title(s.lga))} LGA · ${esc(title(s.ward || ''))} ward · ${esc(s.id)}</p>
   <p style="margin:8px 0">${statusPill(s)} <span class="pill mute">${esc(s.arm)}</span> ${s.mne === 'M&E' ? '<span class="pill mute">M&amp;E</span>' : ''}</p>
@@ -494,7 +533,7 @@ function submitBoard(rows) {
   const ok = rows.filter((a) => a.sub_all && a.sub_all.n >= 5);
   if (ok.length < 2) return '<div class="card" style="margin-top:14px"><h3>Who sends records early</h3><div class="sub">Appears once people have sent at least 5 records.</div></div>';
   const ord = ok.slice().sort((x, y) => (y.sub_all.same_pct - x.sub_all.same_pct) || ((x.sub_all.avg_h ?? 1e9) - (y.sub_all.avg_h ?? 1e9)));
-  const line = (a, i) => `<tr><td class="num">${i}</td><td><b>${lk('person', a.name, a.name)}</b></td><td>${sameChip(a.sub_all)}</td><td class="r num">${lagText(a.sub_all.avg_h)}</td><td class="r num">${lagText(a.sub_all.max_h)}</td><td class="r num">${a.sub_all.d1 + a.sub_all.d2 + a.sub_all.d3}</td></tr>`;
+  const line = (a, i) => `<tr class="click" data-open="person:${esc(a.name)}"><td class="num">${i}</td><td><b>${lk('person', a.name, a.name)}</b></td><td>${sameChip(a.sub_all)}</td><td class="r num">${lagText(a.sub_all.avg_h)}</td><td class="r num">${lagText(a.sub_all.max_h)}</td><td class="r num">${a.sub_all.d1 + a.sub_all.d2 + a.sub_all.d3}</td></tr>`;
   const head = '<thead><tr><th>#</th><th>Name</th><th>Same day</th><th class="r">Delay</th><th class="r">Longest</th><th class="r">Days late</th></tr></thead>';
   const n = Math.min(5, Math.floor(ord.length / 2));
   return `<div class="grid two"><div class="card"><h3>Earliest to send</h3><div class="sub">Share of records sent the same day as the visit, then the usual wait between finishing a form and sending it. Thank these people.</div><div class="tbl"><table>${head}<tbody>${ord.slice(0, n).map((a, i) => line(a, i + 1)).join('')}</tbody></table></div></div>
@@ -531,7 +570,7 @@ function coordinatorsBlock() {
   const val = (x, k) => (x.rows.find((r) => r.key === k) || {});
   const cell = (r) => (r.status ? chip(esc(r.display), r.status) : esc(r.display || '–'));
   const rowsC = o.coordinators.map((c) => `<tr class="click" data-open="person:${esc(c.person.name)}"><td><b>${esc(c.person.name)}</b></td><td>${esc(title(c.person.region))}</td><td>${chip(esc(c.person.position), c.person.role === 'rc' ? 'navy' : 'teal')}</td><td class="r num">${fmt(c.assessment.tested)}</td><td class="r num">${c.assessment.sampling}</td><td class="r num">${c.led.done}/${c.led.due || 0}</td><td>${cell(val(c, 'notices'))}</td><td>${cell(val(c, 'changes'))}</td><td>${cell(val(c, 'sameday'))}</td><td>${qChip(c.assessment.quality)}</td><td>${cell(val(c, 'queries'))}</td><td class="r num">${c.baseline.forms}</td></tr>`).join('');
-  const rowsT = Object.values(o.team_blocks).map((t) => `<tr><td><b>${esc(title(t.region))}</b></td><td>${esc(t.people.map((p) => p.name.split(' ')[0] + ' (' + p.position + ')').join(', '))}</td><td style="white-space:normal;line-height:2.1">${t.rows.map((r) => chip(esc(SHORT_ROW[r.key] || r.label) + ': ' + esc(r.display), r.status || 'mute')).join(' ')}</td></tr>`).join('');
+  const rowsT = Object.values(o.team_blocks).map((t) => `<tr class="click" data-open="region:${esc(t.region)}"><td><b>${esc(title(t.region))}</b></td><td>${esc(t.people.map((p) => p.name.split(' ')[0] + ' (' + p.position + ')').join(', '))}</td><td style="white-space:normal;line-height:2.1">${t.rows.map((r) => chip(esc(SHORT_ROW[r.key] || r.label) + ': ' + esc(r.display), r.status || 'mute')).join(' ')}</td></tr>`).join('');
   return `<div class="card" style="margin-top:14px"><h3>Coordinators' own work</h3><div class="sub">What each RC and ARC did themselves, apart from supervising the team. Chips use the targets in each person's card.</div><div class="tbl"><table><thead><tr><th>Name</th><th>Region</th><th>Role</th><th class="r">Tested</th><th class="r">Sampling</th><th class="r">Led, done</th><th>Notices on time</th><th>Late changes</th><th>Same-day sends</th><th>Quality</th><th>Queries answered in 2 days</th><th class="r">Teacher forms</th></tr></thead><tbody>${rowsC}</tbody></table></div></div>
   <div class="card" style="margin-top:14px"><h3>Regional coordination teams</h3><div class="sub">What each RC and ARC did together for their region</div><div class="tbl"><table><thead><tr><th>Region</th><th>Team</th><th>Status</th></tr></thead><tbody>${rowsT}</tbody></table></div></div>`;
 }
@@ -765,7 +804,7 @@ function viewPhones() {
   const dev = P.flags;
   const sel = `<div class="sel"><select id="phDate" aria-label="Day">${P.dates.slice().reverse().map((d) => `<option value="${d}" ${d === P.date ? 'selected' : ''}>${dayName(d)}</option>`).join('')}</select>${hq ? `<select id="phRegion" aria-label="Region"><option value="">All regions</option>${S.cfg.regions.map((r) => `<option value="${r}" ${r === (S.phRegion || '') ? 'selected' : ''}>${title(r)}</option>`).join('')}</select>` : `<span class="pill mute">${esc(title(S.who.region))}</span>`}</div>`;
   const maxPer = Math.max(0, ...P.schools.map((s) => s.phones));
-  const prows = P.phones.slice().sort((a, b) => a.first - b.first).map((p) => { const hm = (t) => `${String(Math.floor(t / 3600)).padStart(2, '0')}:${String(Math.floor((t % 3600) / 60)).padStart(2, '0')}`; const nflags = dev.filter((f) => (f.text || '').includes(p.c)).length; return `<tr><td class="num"><b>${esc(p.c)}</b>${p.names.includes(S.who.name) ? ' ' + chip('You', 'gold') : ''}</td><td>${p.names.map((n) => lk('person', n, n)).join(', ') || '–'}</td><td>${p.schools.map((s) => lk('school', s.id, s.name)).join(', ')}</td><td class="r num">${p.n}</td><td class="num">${hm(p.first)}–${hm(p.last)}</td><td class="r">${nflags ? chip(nflags + ' flag' + (nflags > 1 ? 's' : ''), 'warn') : chip('clear', 'good')}</td></tr>`; }).join('');
+  const prows = P.phones.slice().sort((a, b) => a.first - b.first).map((p) => { const hm = (t) => `${String(Math.floor(t / 3600)).padStart(2, '0')}:${String(Math.floor((t % 3600) / 60)).padStart(2, '0')}`; const nflags = dev.filter((f) => (f.text || '').includes(p.c)).length; return `<tr class="click" data-open="phone:${esc(p.c)}"><td class="num"><b>${esc(p.c)}</b>${p.names.includes(S.who.name) ? ' ' + chip('You', 'gold') : ''}</td><td>${p.names.map((n) => lk('person', n, n)).join(', ') || '–'}</td><td>${p.schools.map((s) => lk('school', s.id, s.name)).join(', ')}</td><td class="r num">${p.n}</td><td class="num">${hm(p.first)}–${hm(p.last)}</td><td class="r">${nflags ? chip(nflags + ' flag' + (nflags > 1 ? 's' : ''), 'warn') : chip('clear', 'good')}</td></tr>`; }).join('');
   return `<div class="pagehead"><div><h2>Phones</h2><p>What each phone did on the day. Shown to the whole team so the work is open and fair. A flag means "look at this", not "this is wrong".</p></div>${sel}</div>
   <div class="grid kpis">${kpi('Phones active', P.phones.length)}${kpi('Schools with tests', P.schools.length, 'on this day')}${kpi('Most phones at one school', maxPer)}${kpi('Phone checks to look at', dev.length, dev.filter((f) => f.sev === 'bad').length + ' serious')}</div>
   <div class="card" style="margin-top:14px"><h3>Timeline</h3><div class="sub">One row per phone. Each bar is a test or sampling record. A phone should do one thing at a time, in one school, and one person normally uses one phone.</div>${timelineChart(P)}</div>
@@ -789,7 +828,7 @@ function viewPractice() {
   const banner = '<div class="banner warn"><b>PRACTICE AREA.</b> Everything here comes from the TRAINING region (TRAINING SCHOOL 1, 2 and 3). It is for role-play, training and testing the forms. It never counts in the real progress, forecasts, alerts or emails, and the calendar check is off for these schools. Anyone can use it, from any region.</div>';
   const head = `<div class="pagehead"><div><h2>Practice</h2><p>Submit a test or a sampling record for a TRAINING school and see it here within a few minutes.</p></div>${S.who.role === 'hq' ? '<button class="btn ghost" data-act="practiceClear">Clear practice data</button>' : ''}</div>`;
   if (P.status !== 'ok') return `${banner}${head}<div class="card"><div class="empty">${esc(P.note || 'No practice records yet.')}</div><div class="sub" style="margin-top:8px">${P.schools.map((x) => esc(x.name) + ' (' + esc(x.id) + ')').join(' · ')}</div></div>`;
-  const srows = P.schools.map((x) => `<tr><td><b>${esc(x.name)}</b><div class="sub">${esc(x.id)}</div></td><td class="r num">${x.started ? 'yes' : 'no'}</td><td class="r num">${x.g ? Object.values(x.g).reduce((a, b) => a + (b.n || 0), 0) : 0}</td><td>${(x.admins || []).length}</td></tr>`).join('');
+  const srows = P.schools.map((x) => `<tr class="click" data-open="school:${esc(x.id)}"><td><b>${esc(x.name)}</b><div class="sub">${esc(x.id)}</div></td><td class="r num">${x.started ? 'yes' : 'no'}</td><td class="r num">${x.g ? Object.values(x.g).reduce((a, b) => a + (b.n || 0), 0) : 0}</td><td>${(x.admins || []).length}</td></tr>`).join('');
   const ph = S.prPh && S.prPh.events ? `<div class="card" style="margin-top:14px"><h3>Phones in practice</h3><div class="sub">One row per phone, each bar a record, so people can see how their own phone shows up on the dashboard.</div>${timelineChart(S.prPh)}</div>` : '';
   return `${banner}${head}<div class="grid kpis">${kpi('Practice records', fmt(P.records))}${kpi('Pupils tested', fmt(P.tested))}${kpi('Phones', P.devices || 0)}${kpi('Checks raised', (P.flags || []).length)}</div>
   <div class="card" style="margin-top:14px"><h3>Training schools</h3><div class="tbl"><table><thead><tr><th>School</th><th class="r">Started</th><th class="r">Pupils tested</th><th>People</th></tr></thead><tbody>${srows}</tbody></table></div></div>
@@ -905,6 +944,21 @@ const TABS = {
 const roleKey = () => (!S.who ? 'public' : S.who.role === 'arc' ? 'rc' : S.who.role);
 const VIEWS = { progress: viewProgress, compare: viewCompare, day: viewDay, work: viewWork, queries: viewQueries, stats: viewStats, region: viewRegion, plan: viewPlan, team: viewTeam, explore: viewExplore, hq: viewHQ, regions: viewRegionsHQ, people: viewPeopleHQ, admin: viewAdmin, allq: viewAllQueries, phones: viewPhones, practice: viewPractice, news: viewNews };
 
+// Admin is long: each card folds away so you can jump to what you need. The first card stays open; your choices are remembered.
+function enhanceCollapsible() {
+  if (S.tab !== 'admin') return;
+  let first = true;
+  document.querySelectorAll('#app .card').forEach((card) => {
+    const h = card.querySelector(':scope > h3'); if (!h || card.closest('details')) return;
+    const key = 'kf_col:' + h.textContent.trim(); const saved = store.get(key);
+    const d = document.createElement('details'); d.className = card.className + ' colcard'; d.style.cssText = card.style.cssText;
+    d.open = saved ? saved === 'o' : first; first = false;
+    const sum = document.createElement('summary'); sum.className = 'colsum'; sum.innerHTML = h.innerHTML; h.remove(); d.appendChild(sum);
+    while (card.firstChild) d.appendChild(card.firstChild);
+    d.addEventListener('toggle', () => store.set(key, d.open ? 'o' : 'c'));
+    card.replaceWith(d);
+  });
+}
 function render() {
   const tabs = TABS[roleKey()];
   if (!tabs.find((t) => t[0] === S.tab)) S.tab = tabs[0][0];
@@ -921,6 +975,7 @@ function render() {
   const newsBanner = un ? `<div class="banner" style="background:var(--surface2)"><b>News:</b> ${esc(un.title)} <a href="#news" data-tab="news"><b>Read</b></a></div>` : '';
   $('#app').innerHTML = previewBanner() + planBanner + newsBanner + VIEWS[S.tab]();
   $('#gswrap').hidden = !S.who;
+  enhanceCollapsible();
 }
 
 // ---------- phone alerts ----------
@@ -1023,7 +1078,7 @@ async function loadAdmin() {
   const [devices, backups] = await Promise.all([api('/api/admin/devices').catch(() => null), api('/api/admin/backup?list=1').catch(() => null)]);
   const push = await api('/api/admin/push-status').catch(() => null);
   const [calsync, formjob] = await Promise.all([api('/api/admin/calsync').catch(() => null), api('/api/admin/formjob').catch(() => null)]);
-  S.adm = { status, codes, rec, push, ready, roster, devices, backups, calsync, formjob, preview: S.adm?.preview || null };
+  S.recRows = null; S.adm = { status, codes, rec, push, ready, roster, devices, backups, calsync, formjob, preview: S.adm?.preview || null };
 }
 
 if (!window.__newsTimer) window.__newsTimer = setInterval(() => { if (S.who && !document.hidden) loadNews(); }, 90000);
@@ -1077,7 +1132,9 @@ document.addEventListener('click', async (e) => {
     }
     else if (a === 'qOpen') { S.qOpen = t.dataset.k || null; render(); $('#qText')?.focus(); }
     else if (a === 'qSend' || a === 'qResolve') { const text = ($('#qText') || {}).value || ''; await api('/api/query', { method: 'POST', body: { key: t.dataset.k, text, action: a === 'qResolve' ? 'resolve' : 'reply' } }); S.qOpen = null; await loadData(); render(); }
-    else if (a === 'saveRec') { const rows = ($('#recText').value || '').split('\n').map((l) => l.split(',').map((x) => x.trim())).filter((p) => p[0]).map((p) => ({ email: p[0], name: p[1], role: p[2], region: p[3], copy: (p[4] || '').toLowerCase() === 'copy', paused: (p[5] || '').toLowerCase() === 'paused', from: /^\d{4}-\d\d-\d\d$/.test(p[5] || '') ? p[5] : '', backup: ['to', 'cc'].includes((p[6] || '').toLowerCase()) ? p[6].toLowerCase() : '' })); await api('/api/admin/recipients', { method: 'POST', body: { rows } }); await loadAdmin(); render(); }
+    else if (a === 'saveRec') { const bad = S.recRows.find((r) => r.email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(r.email.trim())); if (bad) { alert('This email address is not valid: ' + bad.email); return; } const rows = S.recRows.filter((r) => r.email.trim()).map((r) => ({ email: r.email.trim(), name: r.name.trim(), role: r.role, region: r.role === 'hq' ? '' : r.region, copy: r.copy, paused: !r.active, from: r.from, backup: r.backup })); const lost = S.recRows.filter((r) => r.email.trim() && r.role !== 'hq' && !r.region); if (lost.length && !confirm(lost.length + ' RC/ARC row(s) have no region and will get no regional emails. Save anyway?')) return; await api('/api/admin/recipients', { method: 'POST', body: { rows } }); S.recRows = null; await loadAdmin(); render(); }
+    else if (a === 'recAdd') { S.recRows.unshift({ email: '', name: '', role: 'rc', region: '', copy: false, backup: '', from: '', active: true }); S.recDirty = true; render(); const f = document.querySelector('[data-rr="0"][data-f="name"]'); if (f) { f.scrollIntoView({ block: 'center' }); f.focus(); } }
+    else if (a === 'recDel') { const i = Number(t.dataset.i); const r = S.recRows[i]; if (r && (!r.email || confirm('Remove ' + (r.name || r.email) + ' from the email list? (Save to apply.)'))) { S.recRows.splice(i, 1); S.recDirty = true; render(); } }
     else if (a === 'prevMail') { const p = await api(`/api/admin/digest-preview?kind=${t.dataset.kind}&region=${t.dataset.region}`); S.adm.preview = p; render(); }
     else if (a === 'calCsv') {
       const res = await fetch('/api/admin/calendar-csv', { headers: { 'x-access-code': S.code } });
@@ -1121,6 +1178,7 @@ async function downloadFile(path, name) {
   link.href = url; link.download = name; document.body.appendChild(link); link.click(); link.remove(); URL.revokeObjectURL(url);
 }
 document.addEventListener('change', async (e) => {
+  if (e.target.dataset?.rr !== undefined && S.recRows) { const r = S.recRows[Number(e.target.dataset.rr)]; const f = e.target.dataset.f; if (r) { r[f] = e.target.type === 'checkbox' ? e.target.checked : e.target.value; if (f === 'role' && r.role === 'hq') r.region = ''; S.recDirty = true; if (f === 'active' || f === 'role') render(); else { const tr = e.target.closest('tr'); if (tr) tr.dataset.q = (r.name + ' ' + r.email + ' ' + r.role + ' ' + r.region).toLowerCase(); } } return; }
   if (e.target.id === 'phDate') { S.phDate = e.target.value; S.ph = null; render(); await loadPhones(); render(); return; }
   if (e.target.id === 'phRegion') { S.phRegion = e.target.value; S.ph = null; render(); await loadPhones(); render(); return; }
   if (e.target.dataset?.pl && S.plan && S.plan.plan.status !== 'locked') { readDraftFromDom(); render(); return; }
@@ -1137,6 +1195,8 @@ document.addEventListener('change', async (e) => {
   else if (e.target.id === 'exLga') { S.explore.lga = e.target.value; render(); }
 });
 document.addEventListener('input', (e) => {
+  if (e.target.id === 'recQ') { const q = e.target.value.trim().toLowerCase(); document.querySelectorAll('tr[data-ri]').forEach((tr) => { tr.hidden = Boolean(q) && !tr.dataset.q.includes(q); }); return; }
+  if (e.target.dataset?.rr !== undefined && S.recRows && e.target.type !== 'checkbox') { const r = S.recRows[Number(e.target.dataset.rr)]; if (r) { r[e.target.dataset.f] = e.target.value; S.recDirty = true; } return; }
   if (e.target.id === 'gs') { doSearch(e.target.value); return; }
   const tq = e.target.dataset?.tq; if (tq) { S.tbl[tq].q = e.target.value; const pos = e.target.selectionStart; render(); const el = document.querySelector(`[data-tq="${tq}"]`); if (el) { el.focus(); el.setSelectionRange(pos, pos); } return; }
   if (e.target.dataset?.qf === 'q') { S.qf.q = e.target.value; const pos = e.target.selectionStart; render(); const el = document.querySelector('[data-qf="q"]'); if (el) { el.focus(); el.setSelectionRange(pos, pos); } return; } if (e.target.id === 'exQ') { S.explore.q = e.target.value; const pos = e.target.selectionStart; render(); const el = $('#exQ'); el.focus(); el.setSelectionRange(pos, pos); } });
