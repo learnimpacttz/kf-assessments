@@ -1144,20 +1144,21 @@ const TABS = {
   public: [['progress', 'Progress'], ['compare', 'Compare']],
   volunteer: [['day', 'My day'], ['news', 'News'], ['work', 'My work'], ['queries', 'My queries'], ['stats', 'My stats'], ['phones', 'Phones'], ['compare', 'Compare'], ['practice', 'Practice'], ['help', 'Help']],
   rc: [['region', 'Region'], ['news', 'News'], ['plan', 'Plan & calendar'], ['team', 'My team'], ['allq', 'Queries'], ['phones', 'Phones'], ['compare', 'Compare'], ['reports', 'Reports'], ['explore', 'Data explorer'], ['practice', 'Practice'], ['help', 'Help']],
-  hq: [['today', 'Today'], ['hq', 'HQ'], ['news', 'News'], ['regions', 'Regions & plans'], ['plan', 'Plan & calendar'], ['people', 'People'], ['allq', 'Queries'], ['phones', 'Phones'], ['compare', 'Compare'], ['reports', 'Reports'], ['explore', 'Data explorer'], ['admin', 'Admin'], ['help', 'Help'], ['practice', 'Practice']],
+  hq: [['today', 'Today'], ['hq', 'HQ'], ['news', 'News'], ['messages', 'Write and schedule'], ['regions', 'Regions & plans'], ['plan', 'Plan & calendar'], ['people', 'People'], ['allq', 'Queries'], ['phones', 'Phones'], ['compare', 'Compare'], ['reports', 'Reports'], ['explore', 'Data explorer'], ['admin', 'Admin'], ['help', 'Help'], ['practice', 'Practice']],
 };
-const HQ_GROUPS = [['Today', ['today']], ['Field', ['hq', 'regions', 'plan', 'people']], ['Checks', ['allq', 'phones', 'compare', 'explore']], ['News', ['news']], ['Reports', ['reports']], ['Admin', ['admin']], ['Help', ['help']]];
+const HQ_GROUPS = [['Today', ['today']], ['Field', ['hq', 'regions', 'plan', 'people']], ['Checks', ['allq', 'phones', 'compare', 'explore']], ['Messages', ['news', 'messages']], ['Reports', ['reports']], ['Admin', ['admin']], ['Help', ['help']]];
 const REPORTS_READY = true;
 const LEVEL_TXT = { admin: 'Admin', editor: 'Editor', viewer: 'Viewer' };
 const hqLevel = () => (S.who?.role === 'hq' ? S.who.level || 'admin' : null);
 const canWrite = () => !S.who || S.who.role !== 'hq' || hqLevel() !== 'viewer'; // editors and admins write messages and reports
 function tabAllowed(k) {
   if (k === 'admin') return hqLevel() === 'admin';
+  if (k === 'messages') return hqLevel() !== null;
   if (k === 'reports') return REPORTS_READY && S.who && S.who.role !== 'arc' && S.who.role !== 'volunteer';
   return true;
 }
 const roleKey = () => (!S.who ? 'public' : S.who.role === 'arc' ? 'rc' : S.who.role);
-const VIEWS = { progress: viewProgress, compare: viewCompare, day: viewDay, work: viewWork, queries: viewQueries, stats: viewStats, region: viewRegion, plan: viewPlan, team: viewTeam, explore: viewExplore, hq: viewHQ, regions: viewRegionsHQ, people: viewPeopleHQ, admin: viewAdmin, allq: viewAllQueries, phones: viewPhones, practice: viewPractice, news: viewNews, reports: viewReports, today: viewToday, help: viewHelp };
+const VIEWS = { progress: viewProgress, compare: viewCompare, day: viewDay, work: viewWork, queries: viewQueries, stats: viewStats, region: viewRegion, plan: viewPlan, team: viewTeam, explore: viewExplore, hq: viewHQ, regions: viewRegionsHQ, people: viewPeopleHQ, admin: viewAdmin, allq: viewAllQueries, phones: viewPhones, practice: viewPractice, news: viewNews, messages: viewMessages, reports: viewReports, today: viewToday, help: viewHelp };
 
 // Admin is long: each card folds away so you can jump to what you need. The first card stays open; your choices are remembered.
 function enhanceCollapsible() {
@@ -1344,6 +1345,109 @@ async function formsAction(a, t) {
   render();
 }
 
+// ---------- Messages hub (compose, schedule, templates, built-in emails, log) ----------
+const MS_TABS = [['compose', 'Compose'], ['jobs', 'Scheduled and repeating'], ['tpl', 'Templates'], ['builtin', 'Built-in emails'], ['log', 'Sent log']];
+const DOW = [[1, 'Mon'], [2, 'Tue'], [3, 'Wed'], [4, 'Thu'], [5, 'Fri'], [6, 'Sat'], [0, 'Sun']];
+const BUILTIN_TXT = { morning: ['Morning brief and update', 'Progress, plans, calendar changes, checks, today and tomorrow. To HQ and coordinators, Monday to Friday.'], evening: ['End-of-day check', 'Schools that started and are not complete. Field days only. Not sent when nothing is open.'], reminder: ['Reminders', 'Plan not submitted, notices due, queries waiting. Not sent when nothing is due.'] };
+const msBlank = () => ({ id: null, name: '', subject: '', body: '', channels: { email: true, push: false, news: false }, audience: { roles: ['rc', 'arc'], regions: [], people: [] }, schedule: { type: 'now', at: '', time: '08:00', days: [1, 2, 3, 4, 5], from: '', until: '' } });
+async function loadMsgs() { try { const d = await api('/api/admin/messages'); S.msg = { ...(S.msg || {}), data: d, tab: S.msg?.tab || 'compose', draft: S.msg?.draft || msBlank(), note: S.msg?.note || '' }; } catch (e) { S.msg = { ...(S.msg || {}), err: e.message }; } }
+function msRead() {
+  const D = (S.msg.draft ||= msBlank()); const g = (id) => document.getElementById(id); if (!g('mcSubj')) return D;
+  D.subject = g('mcSubj').value; D.body = g('mcBody').value; D.name = g('mcName')?.value || D.name;
+  D.channels = { email: g('mcEmail').checked, push: g('mcPush').checked, news: g('mcNews').checked };
+  D.audience = { roles: ['hq', 'rc', 'arc', 'volunteer'].filter((r) => g('mcR-' + r)?.checked), regions: [...document.querySelectorAll('[data-mreg]')].filter((x) => x.checked).map((x) => x.dataset.mreg), people: [...document.querySelectorAll('[data-mpe]')].filter((x) => x.checked).map((x) => x.dataset.mpe) };
+  const t = document.querySelector('input[name=mcWhen]:checked')?.value || 'now';
+  D.schedule = { type: t, at: g('mcAt').value, time: g('mcTime').value || '08:00', days: [...document.querySelectorAll('[data-mday]')].filter((x) => x.checked).map((x) => Number(x.dataset.mday)), from: g('mcFrom').value, until: g('mcUntil').value };
+  return D;
+}
+const msBody = (D) => ({ ...D, name: D.name || D.subject, schedule: { ...D.schedule, at: D.schedule.type === 'once' && D.schedule.at ? eatIso(D.schedule.at) : null } });
+function msCount(D) {
+  const A = D.audience, P = S.msg.data.people; const regs = new Set(A.regions.map((r) => r.toUpperCase()));
+  const em = P.filter((p) => A.people.includes(p.email) || (A.roles.includes(p.role) && (p.role === 'hq' || !regs.size || regs.has(String(p.region || '').toUpperCase())))).length;
+  return em;
+}
+function viewMessages() {
+  const M = S.msg; if (!M) return '<div class="empty">Loading…</div>'; if (M.err) return `<div class="banner bad">${esc(M.err)}</div>`; if (!M.data) return '<div class="empty">Loading…</div>';
+  const t = M.tab || 'compose'; const d = M.data; const pend = d.jobs.filter((j) => j.status === 'pending').length;
+  const bar = `<div class="sel" style="margin:8px 0 12px;flex-wrap:wrap">${MS_TABS.map(([k, n]) => `<button class="btn sm ${k === t ? '' : 'sec'}" data-act="msTab" data-t="${k}">${n}${k === 'jobs' && d.jobs.filter((j) => ['scheduled', 'pending', 'paused'].includes(j.status)).length ? ` (${d.jobs.filter((j) => ['scheduled', 'pending', 'paused'].includes(j.status)).length})` : ''}${k === 'jobs' && pend ? ' ⚑' : ''}</button>`).join('')}</div>`;
+  const head = `<div class="pagehead"><div><h2>Messages</h2><p>Write a message, send it now, schedule it once or repeat it. Emails, phone alerts and News all work from here.</p></div></div>${d.sending_on ? '' : '<div class="banner bad"><b>Email sending is switched off in this system.</b> Phone alerts and News still work.</div>'}${M.note ? `<div class="banner" style="background:var(--surface2)">${esc(M.note)}</div>` : ''}`;
+  return head + bar + ({ compose: msCompose, jobs: msJobs, tpl: msTpl, builtin: msBuiltin, log: msLog }[t] || msCompose)();
+}
+function msCompose() {
+  const M = S.msg, d = M.data, D = M.draft || msBlank(); const can = canWrite(); const sc = D.schedule;
+  const chips = d.fields.map((f) => `<button type="button" class="chipbtn" data-act="msInsert" data-f="${f}">{${f}}</button>`).join(' ');
+  const roleBox = [['hq', 'HQ'], ['rc', 'RCs'], ['arc', 'ARCs'], ['volunteer', 'Volunteers (phone alert and News only)']].map(([k, n]) => `<label class="cb"><input type="checkbox" id="mcR-${k}" ${D.audience.roles.includes(k) ? 'checked' : ''}> ${n}</label>`).join(' ');
+  const regBox = d.regions.map((r) => `<label class="cb"><input type="checkbox" data-mreg="${r}" ${D.audience.regions.includes(r) ? 'checked' : ''}> ${esc(title(r))}</label>`).join(' ');
+  const peBox = d.people.map((p) => `<label class="cb"><input type="checkbox" data-mpe="${esc(p.email)}" ${D.audience.people.includes(p.email) ? 'checked' : ''}> ${esc(p.name)} <span class="m">${esc((p.role || '').toUpperCase())}${p.region ? ' · ' + esc(title(p.region)) : ''}</span></label>`).join(' ');
+  const n = msCount(D);
+  return `<div class="card"><h3>${D.id ? 'Edit message' : 'New message'}</h3>
+  <div class="mf"><label>Start from a template<select id="mcTpl"><option value="">None</option>${d.templates.map((t) => `<option value="${t.id}">${esc(t.name)}</option>`).join('')}</select></label></div>
+  <div class="mf"><label>Subject<input id="mcSubj" value="${esc(D.subject)}" placeholder="What is it about?"></label></div>
+  <div class="mf"><label>Message<textarea id="mcBody" rows="8" placeholder="Write it as you would speak to the person.">${esc(D.body)}</textarea></label><div class="m" style="margin-top:4px">Fields filled for each person: ${chips}</div></div>
+  <div class="mf"><b>How</b><div>${['email:Email', 'push:Phone alert', 'news:News feed'].map((x) => { const [k, nme] = x.split(':'); return `<label class="cb"><input type="checkbox" id="mc${k[0].toUpperCase() + k.slice(1)}" ${D.channels[k] ? 'checked' : ''}> ${nme}</label>`; }).join(' ')}</div></div>
+  <div class="mf"><b>Who</b><div>${roleBox}</div>
+  <details class="fd"><summary>Regions (everyone if none ticked)</summary><div>${regBox}</div></details><details class="fd"><summary>Add named people (emails)${D.audience.people.length ? ' · ' + D.audience.people.length + ' chosen' : ''}</summary><div style="columns:2;min-width:0">${peBox}</div></details>
+  <div class="m" style="margin-top:6px">Email goes to <b>${n}</b> address${n === 1 ? '' : 'es'} on the email list.</div></div>
+  <div class="mf"><b>When</b><div><label class="cb"><input type="radio" name="mcWhen" value="now" ${sc.type === 'now' ? 'checked' : ''}> Send now</label> <label class="cb"><input type="radio" name="mcWhen" value="once" ${sc.type === 'once' ? 'checked' : ''}> Once, later</label> <label class="cb"><input type="radio" name="mcWhen" value="repeat" ${sc.type === 'repeat' ? 'checked' : ''}> Repeat</label></div>
+  <div style="${sc.type === 'once' ? '' : 'display:none'}" id="mcOnce"><label>Date and time (East Africa time)<input type="datetime-local" id="mcAt" value="${esc(sc.at || '')}"></label></div>
+  <div style="${sc.type === 'repeat' ? '' : 'display:none'}" id="mcRep"><div>${DOW.map(([k, nme]) => `<label class="cb"><input type="checkbox" data-mday="${k}" ${sc.days.includes(k) ? 'checked' : ''}> ${nme}</label>`).join(' ')}</div><div style="display:flex;gap:10px;flex-wrap:wrap"><label>At<input type="time" id="mcTime" value="${esc(sc.time)}"></label><label>From<input type="date" id="mcFrom" value="${esc(sc.from || '')}"></label><label>Until<input type="date" id="mcUntil" value="${esc(sc.until || '')}"></label></div><div class="m">${can && S.who.level !== 'admin' ? 'A repeating message waits for an Admin to approve it.' : ''}</div></div></div>
+  <div class="mf"><label>Name for the list (optional)<input id="mcName" value="${esc(D.name || '')}"></label></div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px"><button class="btn sec" data-act="msPolish">Polish with AI</button><button class="btn sec" data-act="msPreview">Preview</button><input id="mcTest" type="email" placeholder="test to my email" value="${esc(store.get('kf_test_to') || '')}" style="max-width:220px"><button class="btn sec" data-act="msTest">Send test</button><button class="btn sec" data-act="msTplSave">Save as template</button>${D.id ? '<button class="btn ghost" data-act="msNew">Start a new one</button>' : ''}</div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">${can ? `<button class="btn" data-act="msSend">${sc.type === 'now' ? 'Send now' : sc.type === 'once' ? 'Schedule' : 'Start repeating'}</button>` : '<span class="m">Viewers can read only.</span>'}</div>
+  ${M.preview ? `<div style="margin-top:12px"><div class="banner" style="background:var(--warn-bg)"><b>PREVIEW, NOT SENT.</b> Subject: ${esc(M.preview.subject)} · shown for ${esc(M.preview.sample)}</div><iframe sandbox title="Preview" style="width:100%;height:380px;border:1px solid var(--line);border-radius:8px" srcdoc="${esc(M.preview.html)}"></iframe></div>` : ''}</div>`;
+}
+const msWhen = (j) => { const s = j.schedule; return s.type === 'once' ? 'Once, ' + (s.at ? eatTime(s.at) : '') : s.type === 'repeat' ? `${s.days.length === 5 && [1, 2, 3, 4, 5].every((x) => s.days.includes(x)) ? 'Every working day' : DOW.filter(([k]) => s.days.includes(k)).map(([, n]) => n).join(', ')} at ${s.time}${s.from ? ' from ' + s.from : ''}${s.until ? ' until ' + s.until : ''}` : 'Sent now'; };
+const msWho = (j) => [...j.audience.roles.map((r) => ({ hq: 'HQ', rc: 'RCs', arc: 'ARCs', volunteer: 'Volunteers' }[r])), j.audience.regions.length ? 'in ' + j.audience.regions.map(title).join(', ') : '', j.audience.people.length ? `+${j.audience.people.length} named` : ''].filter(Boolean).join(' ');
+function msJobs() {
+  const d = S.msg.data, can = canWrite(), admin = S.who.level === 'admin' || !S.who.level;
+  const rows = d.jobs.slice().sort((a, b) => (a.status === 'sent') - (b.status === 'sent') || (b.created_at > a.created_at ? 1 : -1)).map((j) => `<tr><td><b>${esc(j.name)}</b><div class="m">${esc(j.subject)}</div></td><td>${['email', 'push', 'news'].filter((k) => j.channels[k]).map((k) => ({ email: 'Email', push: 'Phone alert', news: 'News' }[k])).join(', ')}</td><td>${esc(msWho(j))}</td><td>${esc(msWhen(j))}${j.next ? `<div class="m">Next: ${esc(j.next)}</div>` : ''}${j.last_at ? `<div class="m">Last: ${esc(eatTime(j.last_at))}</div>` : ''}</td><td>${chip(({ scheduled: 'scheduled', pending: 'needs approval', paused: 'paused', sent: 'sent', ended: 'ended', draft: 'draft' })[j.status] || j.status, j.status === 'scheduled' ? 'good' : j.status === 'pending' ? 'warn' : 'mute')}<div class="m">by ${esc(j.by || '')}</div></td><td style="white-space:nowrap">${can ? `${j.status !== 'sent' ? `<button class="btn sm sec" data-act="msEdit" data-id="${j.id}">Edit</button> ` : `<button class="btn sm sec" data-act="msEdit" data-id="${j.id}" data-copy="1">Copy</button> `}${j.status === 'pending' && admin ? `<button class="btn sm" data-act="msJob" data-op="job_approve" data-id="${j.id}">Approve</button> ` : ''}${j.status === 'scheduled' ? `<button class="btn sm ghost" data-act="msJob" data-op="job_pause" data-id="${j.id}">Pause</button> ` : ''}${j.status === 'paused' ? `<button class="btn sm ghost" data-act="msJob" data-op="job_resume" data-id="${j.id}">Resume</button> ` : ''}${['scheduled', 'paused'].includes(j.status) ? `<button class="btn sm ghost" data-act="msJob" data-op="job_run" data-id="${j.id}" data-ask="Send this message now to everyone it is set for?">Send now</button> ` : ''}<button class="btn sm ghost" data-act="msJob" data-op="job_delete" data-id="${j.id}" data-ask="Delete this message?">Delete</button>` : ''}</td></tr>`).join('');
+  return `<div class="card"><h3>Scheduled and repeating</h3><div class="sub">Everything written here. Pause a repeating message any time. A repeating message from an Editor waits for an Admin.</div><div class="tbl dt-wrap"><table class="dt"><thead><tr><th>Message</th><th>How</th><th>Who</th><th>When</th><th>Status</th><th></th></tr></thead><tbody>${rows || '<tr><td colspan="6" class="empty">Nothing yet. Write one in Compose.</td></tr>'}</tbody></table></div></div>`;
+}
+function msTpl() {
+  const d = S.msg.data, can = canWrite(); const E = S.msg.tplEdit;
+  const rows = d.templates.map((t) => `<tr><td><b>${esc(t.name)}</b><div class="m">${esc(t.subject)}</div></td><td class="m">${esc(t.body.slice(0, 120))}${t.body.length > 120 ? '…' : ''}</td><td style="white-space:nowrap">${can ? `<button class="btn sm" data-act="msUse" data-id="${t.id}">Use</button> <button class="btn sm sec" data-act="msTplEdit" data-id="${t.id}">Edit</button> <button class="btn sm ghost" data-act="msTplDel" data-id="${t.id}">Delete</button>` : ''}</td></tr>`).join('');
+  const form = E ? `<div class="card" style="margin-top:14px"><h3>${E.id ? 'Edit template' : 'New template'}</h3><div class="mf"><label>Name<input id="tpN" value="${esc(E.name)}"></label></div><div class="mf"><label>Subject<input id="tpS" value="${esc(E.subject)}"></label></div><div class="mf"><label>Message<textarea id="tpB" rows="7">${esc(E.body)}</textarea></label><div class="m">Fields: ${d.fields.map((f) => '{' + f + '}').join(' ')}</div></div><div style="display:flex;gap:8px"><button class="btn" data-act="msTplOk">Save template</button><button class="btn ghost" data-act="msTplCancel">Cancel</button></div></div>` : '';
+  return `<div class="card"><h3>Templates</h3><div class="sub">Ready-made wording you can edit. Fields like {first_name} fill in for each person.</div>${can ? '<p><button class="btn sm" data-act="msTplEdit" data-id="">New template</button></p>' : ''}<div class="tbl dt-wrap"><table class="dt"><thead><tr><th>Name</th><th>Message</th><th></th></tr></thead><tbody>${rows}</tbody></table></div></div>${form}`;
+}
+function msBuiltin() {
+  const d = S.msg.data; const admin = S.who.level === 'admin' || !S.who.level; const sched = S.adm?.emailSched;
+  const rows = Object.entries(d.builtin).map(([k, c]) => `<tr><td><b>${BUILTIN_TXT[k][0]}</b><div class="m">${BUILTIN_TXT[k][1]}</div></td><td class="c"><input type="checkbox" data-bi="${k}" data-f="enabled" ${c.enabled ? 'checked' : ''} ${admin ? '' : 'disabled'}></td><td><input type="time" data-bi="${k}" data-f="time" value="${esc(c.time)}" ${admin ? '' : 'disabled'}></td><td><input data-bi="${k}" data-f="note" value="${esc(c.note || '')}" placeholder="Optional note at the top" ${admin ? '' : 'disabled'}></td><td>${admin ? `<button class="btn sm" data-act="msBuiltin" data-k="${k}">Save</button>` : ''}</td></tr>`).join('');
+  return `<div class="card"><h3>Built-in emails</h3><div class="sub">These go out by themselves on working days (the other automatic emails, such as the weekly backup, are listed in Admin under Automatic emails). An Admin can switch one off, change its time (East Africa time) or add a note at the top. The contents (numbers, plans, your day) are filled in automatically.</div><div class="tbl dt-wrap"><table class="dt"><thead><tr><th>Email</th><th class="c">On</th><th>Time</th><th>Note</th><th></th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
+}
+function msLog() {
+  const rows = S.msg.data.log.map((l) => `<tr><td>${esc(eatTime(l.at))}</td><td><b>${esc(l.name)}</b></td><td>${esc(l.by || '')}</td><td>${l.email ? `Email: ${l.email.sent}/${l.email.people}${l.email.errors?.length ? ` <span class="pill bad">${l.email.errors.length} problem${l.email.errors.length > 1 ? 's' : ''}</span>` : ''}` : ''}${l.push ? ` Alert: ${l.push.sent ?? 0}${l.push.skipped ? ' (' + esc(l.push.skipped) + ')' : ''}` : ''}${l.news ? ' News: ' + (l.news.ok ? 'posted' : esc(l.news.error || 'not posted')) : ''}</td></tr>`).join('');
+  return `<div class="card"><h3>Sent log</h3><div class="sub">Every message sent from here, newest first. Built-in emails are listed in Admin.</div><div class="tbl dt-wrap"><table class="dt"><thead><tr><th>When</th><th>Message</th><th>By</th><th>Result</th></tr></thead><tbody>${rows || '<tr><td colspan="4" class="empty">Nothing sent yet.</td></tr>'}</tbody></table></div></div>`;
+}
+async function msAction(a, t) {
+  const M = S.msg; M.note = '';
+  try {
+    if (a === 'msTab') { msRead(); M.tab = t.dataset.t; M.preview = null; }
+    else if (a === 'msInsert') { msRead(); M.draft.body += (M.draft.body && !/\s$/.test(M.draft.body) ? ' ' : '') + '{' + t.dataset.f + '}'; }
+    else if (a === 'msNew') { M.draft = msBlank(); M.preview = null; }
+    else if (a === 'msPreview') { const D = msRead(); M.preview = await api('/api/admin/messages', { method: 'POST', body: { action: 'preview', ...msBody(D) } }); }
+    else if (a === 'msTest') { const D = msRead(); const to = document.getElementById('mcTest').value.trim(); store.set('kf_test_to', to); const r = await api('/api/admin/messages', { method: 'POST', body: { action: 'test', to, ...msBody(D) } }); M.note = 'Test sent to ' + r.sent_to + '.'; }
+    else if (a === 'msPolish') { const D = msRead(); M.note = 'Polishing…'; render(); const r = await api('/api/admin/messages', { method: 'POST', body: { action: 'polish', subject: D.subject, body: D.body } }); D.subject = r.title || D.subject; D.body = r.body || D.body; M.note = 'Polished. Read it carefully before you send.'; }
+    else if (a === 'msSend') {
+      const D = msRead(); const n = msCount(D); const sc = D.schedule.type;
+      if (sc === 'now' && !confirm(`Send "${D.subject}" now? ${D.channels.email ? n + ' email address' + (n === 1 ? '' : 'es') + '. ' : ''}${D.channels.push ? 'Phone alerts too. ' : ''}${D.channels.news ? 'It will be posted in News. ' : ''}`)) return;
+      const r = await api('/api/admin/messages', { method: 'POST', body: { action: sc === 'now' ? 'job_send' : 'job_save', ...msBody(D) } });
+      M.note = sc === 'now' ? `Sent. ${r.sent?.email ? 'Emails: ' + r.sent.email.sent + ' of ' + r.sent.email.people + '. ' : ''}${r.sent?.push ? 'Phone alerts: ' + (r.sent.push.sent ?? 0) + '. ' : ''}${r.sent?.news ? 'Posted in News.' : ''}` : r.status === 'pending' ? 'Saved. It waits for an Admin to approve it.' : 'Scheduled.';
+      M.draft = msBlank(); M.tab = sc === 'now' ? 'log' : 'jobs'; M.preview = null;
+    }
+    else if (a === 'msTplSave') { const D = msRead(); const name = prompt('Name for this template:', D.subject); if (!name) return; await api('/api/admin/messages', { method: 'POST', body: { action: 'template_save', name, subject: D.subject, body: D.body } }); M.note = 'Template saved.'; }
+    else if (a === 'msUse') { const tp = M.data.templates.find((x) => x.id === t.dataset.id); M.draft = { ...msBlank(), subject: tp.subject, body: tp.body }; M.tab = 'compose'; }
+    else if (a === 'msTplEdit') { const tp = M.data.templates.find((x) => x.id === t.dataset.id); M.tplEdit = tp ? { ...tp } : { id: null, name: '', subject: '', body: '' }; }
+    else if (a === 'msTplCancel') { M.tplEdit = null; }
+    else if (a === 'msTplOk') { const E = M.tplEdit; await api('/api/admin/messages', { method: 'POST', body: { action: 'template_save', id: E.id, name: document.getElementById('tpN').value, subject: document.getElementById('tpS').value, body: document.getElementById('tpB').value } }); M.tplEdit = null; M.note = 'Template saved.'; }
+    else if (a === 'msTplDel') { if (!confirm('Delete this template?')) return; await api('/api/admin/messages', { method: 'POST', body: { action: 'template_delete', id: t.dataset.id } }); }
+    else if (a === 'msEdit') { const j = M.data.jobs.find((x) => x.id === t.dataset.id); const cp = Boolean(t.dataset.copy); M.draft = { ...msBlank(), ...JSON.parse(JSON.stringify(j)), id: cp ? null : j.id, name: j.name, schedule: { ...j.schedule, at: j.schedule.at ? new Date(Date.parse(j.schedule.at) + 3 * 3600e3).toISOString().slice(0, 16) : '', from: j.schedule.from || '', until: j.schedule.until || '' } }; if (cp) M.draft.schedule.type = 'now'; M.tab = 'compose'; }
+    else if (a === 'msJob') { if (t.dataset.ask && !confirm(t.dataset.ask)) return; const r = await api('/api/admin/messages', { method: 'POST', body: { action: t.dataset.op, id: t.dataset.id } }); if (t.dataset.op === 'job_run') M.note = 'Sent.'; }
+    else if (a === 'msBuiltin') { const k = t.dataset.k; const g = (f) => document.querySelector(`[data-bi="${k}"][data-f="${f}"]`); await api('/api/admin/messages', { method: 'POST', body: { action: 'builtin_save', id: k, enabled: g('enabled').checked, time: g('time').value, note: g('note').value } }); M.note = 'Saved. It applies from the next run.'; try { S.adm.emailSched = await api('/api/admin/email-schedule'); } catch { /* shown on next Admin visit */ } }
+    await loadMsgs();
+  } catch (e) { M.note = e.message; }
+  render();
+}
+
 // ---------- phone alerts ----------
 const pushSupported = () => 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
 function alertsLabel() {
@@ -1465,7 +1569,7 @@ document.addEventListener('click', async (e) => {
   const th = e.target.closest('[data-ts]');
   if (th) { const [id, k] = th.dataset.ts.split(':'); const T = S.tbl[id]; if (T.sort === k) T.dir = -T.dir; else { T.sort = k; T.dir = 1; } render(); return; }
   const t = e.target.closest('[data-tab],[data-act]'); if (!t) return;
-  if (t.dataset.tab) { S.tab = t.dataset.tab; S.selVisit = null; if (S.tab === 'plan') { await loadPlan(); } if (S.tab === 'phones') { S.ph = null; render(); await loadPhones(); } if (S.tab === 'practice') { S.pr = null; render(); await loadPractice(); } if (S.tab === 'news') { await openNews(); } if (S.tab === 'reports') { render(); await openReports(); } if (S.tab === 'admin') await loadAdmin(); render(); return; }
+  if (t.dataset.tab) { S.tab = t.dataset.tab; S.selVisit = null; if (S.tab === 'messages') { render(); await loadMsgs(); } if (S.tab === 'plan') { await loadPlan(); } if (S.tab === 'phones') { S.ph = null; render(); await loadPhones(); } if (S.tab === 'practice') { S.pr = null; render(); await loadPractice(); } if (S.tab === 'news') { await openNews(); } if (S.tab === 'reports') { render(); await openReports(); } if (S.tab === 'admin') await loadAdmin(); render(); return; }
   const a = t.dataset.act;
   try {
     if (a === 'login') { const c = $('#code').value.trim().toUpperCase(); if (!c) return; S.code = c; try { const r = await api('/api/login'); S.who = r.who; store.set('kf_code', c); S.tab = null; await go(); } catch { S.code = null; loginScreen('That code was not recognised.'); } }
@@ -1480,6 +1584,7 @@ document.addEventListener('click', async (e) => {
     else if (a === 'stSave') { const g = (id) => document.getElementById(id).value; const targets = {}; document.querySelectorAll('[data-tg]').forEach((i) => { (targets[i.dataset.tg] ||= {})[i.dataset.f] = Number(i.value); }); try { await api('/api/admin/settings', { method: 'POST', body: { brand: { platform: g('stPlatform'), programme: g('stProgramme'), tagline: g('stTagline'), assistant: g('stAssistant') }, targets } }); S.cfg = await api('/api/config'); applyBrand(); S.stMsg = 'Saved. The new name shows everywhere.'; await loadAdmin(); } catch (e) { S.stMsg = e.message; } render(); }
     else if (/^rep[A-Z]/.test(a)) await repAction(a, t);
     else if (a === 'goMineQ') { S.qf = { q: '', type: '', sev: '', region: '', st: 'mine' }; S.tab = 'allq'; render(); }
+    else if (/^ms[A-Z]/.test(a)) await msAction(a, t);
     else if (/^ai[A-Z]/.test(a)) await aiAction(a, t);
     else if (/^fm[A-Z]/.test(a)) await formsAction(a, t);
     else if (a === 'react') await reactTo(t);
@@ -1588,6 +1693,9 @@ document.addEventListener('change', async (e) => {
     render(); return;
   }
   if (e.target.dataset?.ffile && e.target.files[0]) { const f = e.target.files[0]; const buf = new Uint8Array(await f.arrayBuffer()); let bin = ''; for (let i = 0; i < buf.length; i += 8192) bin += String.fromCharCode(...buf.subarray(i, i + 8192)); const b64 = btoa(bin); const h = [...new Uint8Array(await crypto.subtle.digest('SHA-256', buf))].map((x) => x.toString(16).padStart(2, '0')).join('').slice(0, 16); (S.formFile ||= {})[e.target.dataset.ffile] = { name: f.name, b64, hash: h }; (S.formMsg ||= {})[e.target.dataset.ffile] = ''; render(); return; }
+  if (e.target.id === 'mcTpl' && e.target.value) { const tp = S.msg.data.templates.find((x) => x.id === e.target.value); msRead(); S.msg.draft.subject = tp.subject; S.msg.draft.body = tp.body; render(); return; }
+  if (e.target.name === 'mcWhen') { msRead(); render(); return; }
+  if (e.target.dataset?.mreg || e.target.dataset?.mpe || e.target.id?.startsWith('mcR-')) { msRead(); render(); return; }
   const tf = e.target.dataset?.tf; if (tf) { const [id, k] = tf.split(':'); S.tbl[id].f[k] = e.target.value; render(); return; }
   const qf = e.target.dataset?.qf; if (qf) { S.qf[qf] = e.target.value; render(); return; }
   if (e.target.id === 'viewAsSel') { await setViewAs(e.target.value); return; }

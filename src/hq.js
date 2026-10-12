@@ -76,7 +76,7 @@ export function levelGate(who, method, path) {
   const lv = who.level || 'admin'; if (lv === 'admin') return null;
   const read = method === 'GET' || method === 'HEAD';
   if (path.startsWith('/api/admin/')) {
-    if (lv === 'editor' && path === '/api/admin/news') return null;
+    if (lv === 'editor' && (path === '/api/admin/news' || path === '/api/admin/messages')) return null;
     return 'Admin access is needed for this.';
   }
   if (read) return null;
@@ -137,6 +137,7 @@ export function activityLabel(path, body) {
     [/^\/api\/query$/, () => (a === 'resolve' ? 'Closed a query' : 'Replied to a query'), () => String(body.key || '').split('|').slice(0, 2).join(' ')],
     [/^\/api\/admin\/roster$/, () => 'Changed the staff roster (' + (a || 'edit') + ')', () => body.name || body.kobo_name || ''],
     [/^\/api\/admin\/recipients$/, () => 'Saved the email list', () => (body.rows || []).length + ' people'],
+    [/^\/api\/admin\/messages$/, () => ({ job_send: 'Sent a message', job_save: 'Saved or scheduled a message', job_run: 'Sent a scheduled message now', job_pause: 'Paused a message', job_resume: 'Resumed a message', job_approve: 'Approved a repeating message', job_delete: 'Deleted a message', template_save: 'Saved a message template', template_delete: 'Deleted a template', builtin_save: 'Changed a built-in email', test: 'Sent a test email', polish: null, view: null, count: null, preview: null }[a] ?? 'Changed messages'), () => body.subject || body.name || body.id || ''],
     [/^\/api\/admin\/news$/, () => ({ send: 'Sent a message', publish: 'Sent a message', save: 'Saved a message', delete: 'Deleted a message', pin: 'Pinned a message', polish: null }[a] ?? 'Changed a message'), () => body.title || ''],
     [/^\/api\/admin\/calsync$/, () => 'Calendar file: ' + (a || ''), () => ''],
     [/^\/api\/admin\/formjob$/, () => 'Sampling form job: ' + (a || ''), () => ''],

@@ -10,6 +10,7 @@ import { REGIONS, SCHOOLS_BY_REGION, eatToday, isWorkingDay, addDays, FIELD_STAR
 import { loadQueries, flagKey, decorate, overdueQueries } from './queries.js';
 import { ownWork } from './own.js';
 import { BRAND } from './hq.js';
+import { builtinCfg } from './messages.js';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const title = (s) => String(s || '').toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
@@ -91,7 +92,9 @@ export async function eveningGap(env, sum, region, today, siteUrl) {
 
 const FROM_NAME = 'KiuFunza 4 Automated Updates (LearnImpact)';
 // Resend (REST) when RESEND_API_KEY is set, otherwise the Cloudflare email binding.
+let NOTE = ''; // an extra note HQ wrote for the built-in email being sent right now
 export async function sendMail(env, to, msg) {
+  if (NOTE && msg.html) msg = { ...msg, html: msg.html.replace('line-height:1.5">', `line-height:1.5"><div style="background:#fff7e0;border-left:4px solid #FFC650;padding:8px 12px;margin-bottom:12px">${esc(NOTE)}</div>`), text: NOTE + '\n\n' + (msg.text || '') };
   const foot = `the ${BRAND.platform} (LearnImpact)`; // the footer follows the platform name chosen in Settings
   msg = { ...msg, html: String(msg.html || '').replaceAll('the LearnImpact KiuFunza field dashboard', foot) };
   if (env.RESEND_API_KEY) {
@@ -189,7 +192,9 @@ export async function sendingWindow(env, today, kind) {
 export async function maybeRunScheduledDigests(env) {
   const now = new Date();
   const hhmm = now.toISOString().slice(11, 16); // UTC
-  const slots = { '04:00': 'morning', '14:30': 'evening', '11:00': 'reminder' }; // 07:00, 17:30 and 14:00 EAT
+  const cfgB = await builtinCfg(env); // times are set by HQ in Messages (East Africa time); default 07:00, 17:30 and 14:00
+  const utc = (t) => { const [h, m] = t.split(':').map(Number); return `${String((h + 21) % 24).padStart(2, '0')}:${String(m).padStart(2, '0')}`; };
+  const slots = {}; for (const k of ['morning', 'evening', 'reminder']) if (cfgB[k].enabled) slots[utc(cfgB[k].time)] = k;
   const kind = slots[hhmm];
   const today0 = eatToday();
   if (hhmm >= '07:00' && hhmm < '12:00' && today0 === ONBOARD_DATE) { // any minute from 10:00 to 15:00 EAT (after the morning training session), so a missed tick cannot skip it
@@ -207,8 +212,11 @@ export async function maybeRunScheduledDigests(env) {
   if (last[kind] === today) return null;
   last[kind] = today;
   await kv(env).put('v2:digest:last', last);
-  if (kind === 'reminder') return { kind, results: await runReminders(env, { dry: false }) };
-  return { kind, results: await runDigests(env, kind) };
+  NOTE = cfgB[kind].note || '';
+  try {
+    if (kind === 'reminder') return { kind, results: await runReminders(env, { dry: false }) };
+    return { kind, results: await runDigests(env, kind) };
+  } finally { NOTE = ''; }
 }
 
 // ---------- one-off onboarding email: access code and how to start ----------
@@ -369,7 +377,9 @@ export async function emailSchedule(env) {
     { id: 'onboarding', name: 'Access codes', to: `Coordinators (${co.length})`, when: 'Tuesday 13 October, from 10:00 (once)', contents: 'Each coordinator\'s personal code, how to sign in, and what to do first.', last: onb?.at ? onb.at.slice(0, 10) : null, next: onb ? null : (today <= '2026-10-13' ? next('10:00', (d) => d === '2026-10-13', null, null) : null), once: true, count: co.length },
     { id: 'formjob', name: 'Sampling form replacement result', to: `HQ team (${hq.length})`, when: 'Friday 16 October, after 06:00', contents: 'Whether the standard Sampling form replaced the pilot form, with the rollback version.', last: fj?.result?.at ? fj.result.at.slice(0, 10) : null, next: fj?.done ? null : (fj && fj.armed === false ? null : '2026-10-16 06:00'), once: true, count: hq.length },
   ];
-  return { sending_on: sendingOn, now_eat: `${today} ${hm}`, emails: rows.map((r) => ({ ...r, status: !r.count ? 'no recipients' : !sendingOn ? 'sending is off' : r.once && r.last ? 'sent' : r.next ? 'scheduled' : 'finished' })) };
+  const cfgB = await builtinCfg(env); const map = { morning_hq: 'morning', morning_co: 'morning', evening: 'evening', reminder: 'reminder' };
+  for (const r of rows) { const c = cfgB[map[r.id]]; if (!c) continue; r.when = r.when.replace(/\b\d\d:\d\d\b/, c.time); if (r.next) r.next = String(r.next).replace(/\d\d:\d\d$/, c.time); r.off = !c.enabled; }
+  return { sending_on: sendingOn, now_eat: `${today} ${hm}`, emails: rows.map((r) => ({ ...r, status: r.off ? 'switched off' : !r.count ? 'no recipients' : !sendingOn ? 'sending is off' : r.once && r.last ? 'sent' : r.next ? 'scheduled' : 'finished' })) };
 }
 
 export async function hqPersonalCodeEmail(env, user, code, siteUrl) {

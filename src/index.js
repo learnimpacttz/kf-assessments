@@ -2,6 +2,7 @@ import { koboForm } from './koboforms.js';
 import { listNews, manageNews, react as reactNews, saveNews, deleteNews, pinNews, publish as publishNews, runDueNews, checkMilestones, polish as polishNews } from './news.js';
 import { ownWork, teamBlock, coordinatorOverview } from './own.js';
 import { buildCalendar, markCalendarDirty, syncCalendar, calendarStatus, setCalSync, loadCalSync } from './calendar.js';
+import { messagesApi, builtinSave, runDueMessages } from './messages.js';
 import { formsView, formsRehearse, formsDeploy, formsRollback } from './formsadmin.js';
 import { loadFormJob, saveFormJob, runFormJob, maybeRunFormJob } from './formjob.js';
 import { kv } from './store.js';
@@ -681,6 +682,14 @@ export default {
         }
         return json(await calendarStatus(env));
       }
+      if (path === '/api/admin/messages') {
+        try {
+          if (method !== 'POST') return json(await messagesApi(env, who, { action: 'view' }));
+          const b = await request.json().catch(() => ({}));
+          if (b.action === 'builtin_save') { const r = await builtinSave(env, who, b); return r.error ? err(r.error, 422) : json(r); }
+          const r = await messagesApi(env, who, b); return r.error ? err(r.error, r.status || 422) : json(r);
+        } catch (e) { return err(String(e.message || e), 502); }
+      }
       if (path === '/api/admin/forms') {
         try {
           if (method === 'POST') { const b = await request.json().catch(() => ({})); if (b.action === 'rehearse') return json(await formsRehearse(env, who, b)); if (b.action === 'deploy') { const r = await formsDeploy(env, who, b); await logActivity(env, who, 'Deployed a form: ' + r.label, b.filename || ''); return json(r); } if (b.action === 'rollback') { const r = await formsRollback(env, who, b); await logActivity(env, who, 'Rolled back a form: ' + r.label, ''); return json(r); } return err('Unknown action'); }
@@ -755,9 +764,8 @@ export default {
 
   async scheduled(event, env, ctx) {
     try {
-      await ensureRoster(env, true);
-      const out = await tick(env);
-      if (out.length) console.log(JSON.stringify(out));
+      // a KoBo or roster problem must not stop the emails, News, backups and messages that follow
+      try { await ensureRoster(env, true); const out = await tick(env); if (out.length) console.log(JSON.stringify(out)); } catch (e) { console.error('sync failed: ' + (e && e.message)); }
       const hhmm = new Date().toISOString().slice(11, 16);
       const hourNow = Number(hhmm.slice(0, 2));
       const alertSlot = { '04:05': 'morning', '05:30': 'queries', '08:00': 'silent', '13:30': 'evening' }[hhmm] || (hhmm.endsWith(':00') && hourNow >= 4 && hourNow <= 15 ? 'health' : null); // health: every hour of the field day
@@ -769,6 +777,7 @@ export default {
       try { const cs = await syncCalendar(env); if (cs) console.log('calendar ' + JSON.stringify(cs).slice(0, 400)); } catch (e) { console.error('calendar sync failed: ' + (e && e.message)); }
       try { const fj = await maybeRunFormJob(env); if (fj) console.log('formjob ' + JSON.stringify(fj).slice(0, 600)); } catch (e) { console.error('form job failed: ' + (e && e.message)); }
       try { const nw = await runDueNews(env); if (nw.length) console.log('news ' + JSON.stringify(nw)); if (new Date().getUTCMinutes() % 15 === 0) { const ms = await checkMilestones(env); if (ms && ms.length) console.log('milestones ' + JSON.stringify(ms)); } } catch (e) { console.error('news failed: ' + (e && e.message)); }
+      try { const mj = await runDueMessages(env); if (mj) console.log('messages ' + JSON.stringify(mj).slice(0, 500)); } catch (e) { console.error('messages failed: ' + (e && e.message)); }
       const bk = await maybeRunScheduledBackup(env); if (bk) console.log('backup ' + JSON.stringify(bk));
       const dg = await maybeRunScheduledDigests(env);
       if (dg) console.log('digest ' + JSON.stringify(dg).slice(0, 500));

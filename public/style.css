@@ -148,3 +148,9 @@ details.fd{margin-top:6px}details.fd summary{cursor:pointer;font-size:12.5px;fon
 .aisug{display:flex;flex-direction:column;gap:6px}.chipbtn{text-align:left;border:1px solid var(--line,#d5dae4);background:#fff;border-radius:10px;padding:8px 10px;font-size:13px;cursor:pointer}
 .aiin{display:flex;gap:6px;padding:8px;border-top:1px solid var(--line,#e3e7ee)}.aiin textarea{flex:1;resize:none;border:1px solid var(--line,#d5dae4);border-radius:8px;padding:6px 8px;font:inherit}
 body{padding-bottom:84px}
+
+.mf{display:block;margin:14px 0}.mf>label,.mf>b{display:block;font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--ink3,#5b6577);margin-bottom:4px}
+.mf input:not([type=checkbox]):not([type=radio]),.mf textarea,.mf select{width:100%;box-sizing:border-box}
+.mf label.cb,.mf .cb{display:inline-flex;align-items:center;gap:6px;text-transform:none;letter-spacing:0;font-size:14px;color:inherit;margin:2px 14px 2px 0}
+.mf input[type=checkbox],.mf input[type=radio]{width:auto}
+.mf details{margin-top:6px}.mf details label.cb{display:flex}
