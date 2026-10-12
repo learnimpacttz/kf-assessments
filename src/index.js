@@ -2,6 +2,7 @@ import { koboForm } from './koboforms.js';
 import { listNews, manageNews, react as reactNews, saveNews, deleteNews, pinNews, publish as publishNews, runDueNews, checkMilestones, polish as polishNews } from './news.js';
 import { ownWork, teamBlock, coordinatorOverview } from './own.js';
 import { buildCalendar, markCalendarDirty, syncCalendar, calendarStatus, setCalSync, loadCalSync } from './calendar.js';
+import { attachList, attachFetch, attachDelete, storageView } from './attachments.js';
 import { findRecords, listRequests, actOnRequest, copyOf } from './deletions.js';
 import { messagesApi, builtinSave, runDueMessages } from './messages.js';
 import { formsView, formsRehearse, formsDeploy, formsRollback } from './formsadmin.js';
@@ -691,6 +692,15 @@ export default {
           else return err('Unknown action');
         }
         return json(await calendarStatus(env));
+      }
+      if (path === '/api/admin/storage') { try { return json(await storageView(env)); } catch (e) { return err(String(e.message || e), 502); } }
+      if (path === '/api/admin/attach') {
+        try {
+          if (method === 'POST') { const r = await attachDelete(env, who, await request.json().catch(() => ({}))); return r.error ? err(r.error, r.status || 422) : json(r); }
+          const asset = url.searchParams.get('asset') || '';
+          if (url.searchParams.get('url')) return await attachFetch(env, asset, url.searchParams.get('url'));
+          return json(await attachList(env, asset, url.searchParams.get('cursor') || null, Math.min(500, Number(url.searchParams.get('limit')) || 100)));
+        } catch (e) { return err(String(e.message || e), 502); }
       }
       if (path === '/api/admin/messages') {
         try {

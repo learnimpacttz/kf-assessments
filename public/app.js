@@ -460,7 +460,7 @@ function viewAdmin() {
   return `<div class="pagehead"><div><h2>Admin</h2><p>Readiness, data connections, people, access codes and backups</p></div><button class="btn" data-act="refreshNow">Sync now</button></div>
   ${readinessCard(a)}<div class="card"><h3>Data connections</h3><div class="sub">Student tests, sampling and teacher forms are read from KoBo every 5 minutes in field hours</div><div class="tbl"><table><thead><tr><th>Form</th><th>Status</th><th class="r">Records read</th><th>State</th><th>Last complete</th></tr></thead><tbody>${sync}</tbody></table></div></div>
   ${S.ov.unlisted?.length ? `<div class="banner" style="margin-top:14px"><b>Names in KoBo that are not in the staff roster:</b> ${S.ov.unlisted.map(esc).join(', ')}. Their tests still count, but they have no region or access code.</div>` : ''}
-  ${hqTeamCard(a)}${settingsCard(a)}${formsCard()}${emailScheduleCard(a)}
+  ${storageCard()}${hqTeamCard(a)}${settingsCard(a)}${formsCard()}${emailScheduleCard(a)}
   <div class="card" style="margin-top:14px"><h3>Email list</h3><div class="sub">Who is on the lists. Changes apply after you press Save. This does not send anything.</div>
   ${recipientsTable(a)}
   <div style="margin-top:10px"><button class="btn sm" data-act="saveRec">Save the email list</button></div></div>
@@ -1304,6 +1304,28 @@ async function aiAction(a, t) {
   }
 }
 
+// ---------- Admin: KoBo storage and deleting photos ----------
+const gb = (b) => (b == null ? '–' : (b / 1e9).toFixed(2) + ' GB');
+function storageCard() {
+  const T = S.storage; if (!T) return '';
+  const can = hqLevel() === 'admin' && S.who?.hq_id && (S.who.review_level || 0) >= 3; S.stMsg ||= {};
+  const rows = T.projects.map((p) => `<div class="formbox"><b>${esc(p.name)}</b> <span class="pill mute">${esc(p.status || '')}</span> · ${gb(p.bytes)} · ${fmt(p.submissions)} submissions${p.protected ? ' <span class="pill good">protected: files here are never deleted</span>' : ''}
+    ${!p.protected && can ? `<div class="mf"><label class="cb"><input type="checkbox" id="stk-${esc(p.asset)}"> I saved all the files of this project and checked them</label><label>Type the project name to confirm<input id="stc-${esc(p.asset)}" placeholder="${esc(p.name)}"></label></div><button class="btn sm sec" data-act="stDel" data-asset="${esc(p.asset)}" data-n="3">1. Test with 3 photos</button> <button class="btn sm" style="background:var(--bad,#b8432a);color:#fff" data-act="stDel" data-asset="${esc(p.asset)}" data-n="0">2. Delete all the photos</button><p class="m">Only photos go. The records and the small audit-log files stay. This cannot be undone from KoBo.</p>` : !p.protected ? '<p class="m">Only Michael or Mundo (personal Admin code) can delete files.</p>' : ''}${S.stMsg[p.asset] ? `<p class="m"><b>${esc(S.stMsg[p.asset])}</b></p>` : ''}</div>`).join('');
+  return `<div class="card" style="margin-top:14px"><h3>KoBo storage and files</h3><div class="sub">Used <b>${gb(T.used)}</b> of <b>${gb(T.limit)}</b>${T.exceeded ? ' · <span class="pill bad">over the limit: KoBo refuses new submissions</span>' : ' · <span class="pill good">within the limit</span>'} · Submissions this 30-day period: ${fmt(T.submissions_period ?? 0)} of ${fmt(T.submissions_limit ?? 0)}. Photos are what fills the space. Save a copy of the files before deleting.</div>${rows || '<p class="m">No project holds more than 1 MB.</p>'}</div>`;
+}
+async function storageAction(t) {
+  const asset = t.dataset.asset, n = Number(t.dataset.n); S.stMsg ||= {};
+  const name = (S.storage.projects.find((p) => p.asset === asset) || {}).name; const typed = (document.getElementById('stc-' + asset)?.value || '').trim(); const ok = document.getElementById('stk-' + asset)?.checked;
+  if (!ok) { S.stMsg[asset] = 'Tick the box: confirm the files were saved and checked.'; render(); return; }
+  if (typed !== name) { S.stMsg[asset] = 'Type the project name exactly.'; render(); return; }
+  if (!confirm(n ? `Delete ${n} photos as a test?` : 'Delete ALL the photos in this project now? The records stay. This cannot be undone from KoBo.')) return;
+  S.stMsg[asset] = 'Working… this can take a few minutes.'; render();
+  try { const r = await api('/api/admin/attach', { method: 'POST', body: { asset, confirm: typed, copy_ok: true, ...(n ? { batch_limit: n } : {}), reason: 'Free KoBo storage. Records kept. Files saved first. Approved by Michael Kamukulu 12 Oct 2026.' } }); S.stMsg[asset] = `Deleted ${r.deleted} photo(s). Files left in the project: ${r.files_after} (was ${r.files_before}). Storage ${gb(r.storage_before)} to ${gb(r.storage_after)}${r.problems?.length ? ' · problems: ' + r.problems.join('; ') : ''}. KoBo can take a little while to update the storage figure.`; }
+  catch (e) { S.stMsg[asset] = e.message; }
+  try { S.storage = await api('/api/admin/storage'); } catch { /* keep the old figures */ }
+  render();
+}
+
 // ---------- Admin: Forms ----------
 function formsCard() {
   const F = S.forms; if (!F) return '';
@@ -1623,6 +1645,7 @@ async function loadAdmin() {
   const [devices, backups] = await Promise.all([api('/api/admin/devices').catch(() => null), api('/api/admin/backup?list=1').catch(() => null)]);
   const push = await api('/api/admin/push-status').catch(() => null);
   const [calsync, formjob, emailSched, hqUsers, settings, activity] = await Promise.all([api('/api/admin/calsync').catch(() => null), api('/api/admin/formjob').catch(() => null), api('/api/admin/email-schedule').catch(() => null), api('/api/admin/hq-users').catch(() => null), api('/api/admin/settings').catch(() => null), api('/api/admin/activity').catch(() => null)]);
+  api('/api/admin/storage').then((r) => { S.storage = r; if (S.tab === 'admin') render(); }).catch(() => {});
   api('/api/admin/forms').then((r) => { S.forms = r; if (S.tab === 'admin') render(); }).catch(() => {});
   S.recRows = null; S.adm = { hqUsers, settings, activity, emailSched, status, codes, rec, push, ready, roster, devices, backups, calsync, formjob, preview: S.adm?.preview || null };
 }
@@ -1663,6 +1686,7 @@ document.addEventListener('click', async (e) => {
     else if (/^dl[A-Z]/.test(a)) await cleanAction(a, t);
     else if (/^ms[A-Z]/.test(a)) await msAction(a, t);
     else if (/^ai[A-Z]/.test(a)) await aiAction(a, t);
+    else if (a === 'stDel') await storageAction(t);
     else if (/^fm[A-Z]/.test(a)) await formsAction(a, t);
     else if (a === 'react') await reactTo(t);
     else if (a === 'sendTest') { const to = ($('#testTo').value || '').trim(); if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(to)) { S.testMsg = 'Type a valid email address first.'; render(); return; } store.set('kf_test_to', to); try { await api('/api/admin/test-email', { method: 'POST', body: { to } }); S.testMsg = 'A test was sent to ' + to + '. It is marked [TEST] and goes only to that address.'; } catch (e) { S.testMsg = e.message; } render(); }
