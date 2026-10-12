@@ -36,17 +36,26 @@ export async function attachDelete(env, who, b) {
   if (b.copy_ok !== true) return { error: 'Confirm that the files were saved and checked first.' };
   // Cloudflare limits the calls one request may make, so each request deletes a chunk and says how many are left; the page repeats until none are
   const u0 = await usage(env);
-  const onlyImages = b.only !== 'all'; let cur = null, all = [];
-  for (let i = 0; i < 60; i++) { const p = await attachList(env, asset, cur, 500); for (const it of p.items) if (it.aid && (!onlyImages || /^image\//.test(it.mime))) all.push(it.aid); if (!p.next) break; cur = p.next; }
+  const onlyImages = b.only !== 'all'; let cur = null, all = []; const GONE = `v2:attgone:${asset}`; const gone = new Set((await kv(env).get(GONE)) || []);
+  for (let i = 0; i < 60; i++) { const p = await attachList(env, asset, cur, 500); for (const it of p.items) if (it.aid && !gone.has(it.aid) && (!onlyImages || /^image\//.test(it.mime))) all.push({ aid: it.aid, sid: it.sid }); if (!p.next) break; cur = p.next; }
   // 40 per request stays under the 50-call limit even on the free Workers plan
   const chunk = Math.min(Number(b.batch_limit) > 0 ? Number(b.batch_limit) : 40, 40); const todo = all.slice(0, chunk);
-  let deleted = 0; const problems = [];
-  for (const aid of todo) { const r = await fetch(`${srv(env)}/api/v2/assets/${asset}/attachments/${aid}/`, { method: 'DELETE', headers: H(env) }); if (r.status === 204 || r.status === 200 || r.status === 404) deleted++; else { problems.push(`${aid}: ${r.status} ${(await r.text()).slice(0, 100)}`); if (problems.length > 3) break; } }
-  const before = { attachments: all.length, submissions: 0 }; const after = { attachments: all.length - deleted }; const u1 = await usage(env); const remaining = all.length - deleted;
-  const entry = { at: new Date().toISOString(), kind: 'Files only: ' + a.name, suggested_by: 'Michael Kamukulu (written approval in chat 12 Oct 2026)', initiated_by: who.name, approved_by: who.name, reason: String(b.reason || 'Free KoBo storage; records kept, files saved first').slice(0, 300), ids: [], regions: [], count_before: before.attachments, count_after: after.attachments, storage_before: u0.used, storage_after: u1.used, ok: !problems.length && deleted > 0, failed: problems };
+  let deleted = 0, already = 0, checked = false; const problems = []; const newlyGone = [];
+  for (const it of todo) {
+    const r = await fetch(`${srv(env)}/api/v2/assets/${asset}/attachments/${it.aid}/`, { method: 'DELETE', headers: H(env) });
+    if (r.status === 204 || r.status === 200) { deleted++; newlyGone.push(it.aid); continue; }
+    if (r.status === 404 || r.status === 400) { // KoBo does not know this file any more (deleted earlier). Check once that it really is gone before trusting that.
+      if (!checked) { checked = true; const g = await fetch(`${srv(env)}/api/v2/assets/${asset}/data/${it.sid}/attachments/${it.aid}/`, { method: 'GET', headers: H(env), redirect: 'manual' }); if (g.status === 200 || g.status === 301 || g.status === 302 || g.status === 0) { problems.push(`${it.aid}: KoBo refuses the delete (${r.status}) but the file is still there (${g.status}). Stopped.`); break; } }
+      already++; newlyGone.push(it.aid); continue;
+    }
+    problems.push(`${it.aid}: ${r.status} ${(await r.text()).slice(0, 100)}`); if (problems.length > 3) break;
+  }
+  if (newlyGone.length) await kv(env).put(GONE, [...gone, ...newlyGone]);
+  const before = { attachments: all.length, submissions: 0 }; const after = { attachments: all.length - deleted - already }; const u1 = await usage(env); const remaining = all.length - deleted - already;
+  const entry = { at: new Date().toISOString(), kind: 'Files only: ' + a.name, suggested_by: 'Michael Kamukulu (written approval in chat 12 Oct 2026)', initiated_by: who.name, approved_by: who.name, reason: String(b.reason || 'Free KoBo storage; records kept, files saved first').slice(0, 300), ids: [], regions: [], count_before: before.attachments, count_after: after.attachments, storage_before: u0.used, storage_after: u1.used, ok: !problems.length && (deleted > 0 || already > 0), failed: problems };
   const lg = (await kv(env).get(LOG)) || []; lg.unshift(entry); await kv(env).put(LOG, lg.slice(0, 500));
   await tellHQ(env, 'KiuFunza 4 · Automated update · Files deleted from a KoBo project', [`${who.name} deleted the attached files (not the records) in "${a.name}": ${before.attachments} files before, ${after.attachments} after. Storage used: ${u0.used} to ${u1.used} bytes.`]).catch(() => {});
-  return { project: a.name, remaining, done: remaining === 0 && !problems.length, files_before: before.attachments, files_after: after.attachments, deleted, storage_before: u0.used, storage_after: u1.used, storage_limit: u1.limit, problems };
+  return { project: a.name, remaining, already_gone: already, done: remaining === 0 && !problems.length, files_before: before.attachments, files_after: after.attachments, deleted, storage_before: u0.used, storage_after: u1.used, storage_limit: u1.limit, problems };
 }
 
 // storage overview for the Admin card: account use and the projects that hold the space

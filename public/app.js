@@ -1321,13 +1321,13 @@ async function storageAction(t) {
   if (!confirm(n ? `Delete ${n} photos as a test?` : 'Delete ALL the photos in this project now? The records stay. This cannot be undone from KoBo.')) return;
   S.stMsg[asset] = 'Working… this can take a few minutes.'; render();
   try {
-    let total = 0, first = null, last = null;
+    let total = 0, gone = 0, first = null, last = null;
     for (let i = 0; i < 40; i++) {
       const r = await api('/api/admin/attach', { method: 'POST', body: { asset, confirm: typed, copy_ok: true, ...(n ? { batch_limit: n } : {}), reason: 'Free KoBo storage. Records kept. Files saved first. Approved by Michael Kamukulu 12 Oct 2026.' } });
-      first = first || r; last = r; total += r.deleted || 0; S.stMsg[asset] = `Deleted ${total} photo(s) so far, ${r.remaining} left…`; render();
-      if (n || r.done || r.remaining === 0 || r.problems?.length || !r.deleted) break;
+      first = first || r; last = r; total += r.deleted || 0; gone += r.already_gone || 0; S.stMsg[asset] = `Deleted ${total} photo(s) so far, ${r.remaining} left…`; render();
+      if (n || r.done || r.remaining === 0 || r.problems?.length || (!r.deleted && !r.already_gone)) break;
     }
-    S.stMsg[asset] = `Deleted ${total} photo(s). Photos left in the project: ${last.remaining}. Storage ${gb(first.storage_before)} to ${gb(last.storage_after)}${last.problems?.length ? ' · problems: ' + last.problems.join('; ') : ''}. KoBo can take a little while to update the storage figure.${last.remaining ? ' Press the button again to continue.' : ''}`;
+    S.stMsg[asset] = `Deleted ${total} photo(s)${gone ? ` (${gone} were already gone from KoBo)` : ''}. Photos left in the project: ${last.remaining}. Storage ${gb(first.storage_before)} to ${gb(last.storage_after)}${last.problems?.length ? ' · problems: ' + last.problems.join('; ') : ''}. KoBo can take a little while to update the storage figure.${last.remaining ? ' Press the button again to continue.' : ''}`;
   } catch (e) { S.stMsg[asset] = e.message; }
   try { S.storage = await api('/api/admin/storage'); } catch { /* keep the old figures */ }
   render();
