@@ -22,6 +22,30 @@ export async function koboForm(env, b) {
     const f = await (await fetch(`${srv}/api/v2/assets/${b.asset}/files/?format=json`, { headers: H })).json().catch(() => ({}));
     return { ...brief(a), links: a.deployment__links || null, rows: survey.length, names: survey.map((q) => q.name || q.$autoname).filter(Boolean), cal_status: (survey.find((q) => q.name === 'cal_status') || {}).calculation || null, files: (f.results || []).map((x) => x.metadata?.filename) };
   }
+  if (b.op === 'media_check') { // structure of each media file in a project: size, hash, encoding, header, rows, and how many rows have text in the named columns (never the content itself)
+    const f = await (await fetch(`${srv}/api/v2/assets/${b.asset}/files/?format=json`, { headers: H })).json().catch(() => ({}));
+    const out = [];
+    const sha = async (u8) => [...new Uint8Array(await crypto.subtle.digest('SHA-256', u8))].map((x) => x.toString(16).padStart(2, '0')).join('').slice(0, 16);
+    for (const x of (f.results || [])) {
+      const name = x.metadata?.filename || ''; const info = { name, uid: x.uid, size: x.metadata?.filesize ?? null };
+      if (/\.csv$/i.test(name)) {
+        const r = await fetch(x.content, { headers: H }); const buf = new Uint8Array(await r.arrayBuffer()); info.bytes = buf.length; info.sha = await sha(buf);
+        let utf8 = true; let text = ''; try { text = new TextDecoder('utf-8', { fatal: true }).decode(buf); } catch { utf8 = false; text = new TextDecoder('windows-1252').decode(buf); }
+        info.utf8 = utf8; info.bom = buf[0] === 0xef && buf[1] === 0xbb; info.crlf = /\r\n/.test(text);
+        // minimal CSV reader (quotes, commas, line breaks inside quotes)
+        const rows = []; let row = [], cur = '', q = false;
+        for (let i = 0; i < text.length; i++) { const c = text[i]; if (q) { if (c === '"') { if (text[i + 1] === '"') { cur += '"'; i++; } else q = false; } else cur += c; } else if (c === '"') q = true; else if (c === ',') { row.push(cur); cur = ''; } else if (c === '\n') { row.push(cur.replace(/\r$/, '')); rows.push(row); row = []; cur = ''; } else cur += c; }
+        if (cur || row.length) { row.push(cur); rows.push(row); }
+        const hdr = (rows[0] || []).map((h) => h.replace(/^\uFEFF/, '')); info.columns = hdr.length; info.rows = rows.length - 1; info.ragged = rows.slice(1).filter((r) => r.length !== hdr.length).length;
+        info.cols = {};
+        for (const c of b.columns || []) { const i = hdr.indexOf(c); if (i < 0) { info.cols[c] = 'MISSING'; continue; } const v = rows.slice(1).map((r) => r[i] || ''); info.cols[c] = { filled: v.filter((t) => t.trim()).length, of: v.length, min: Math.min(...v.map((t) => t.length)), max: Math.max(...v.map((t) => t.length)) }; }
+        if (b.by_prefix && hdr.includes('testid')) { const ti = hdr.indexOf('testid'); const si = (b.columns || []).map((c) => hdr.indexOf(c)).filter((i) => i >= 0 && i !== ti); const g = {}; for (const r of rows.slice(1)) { const k = (r[ti] || '(blank)').slice(0, 6); const e = (g[k] ||= { rows: 0, story: 0 }); e.rows++; if (si.some((i) => (r[i] || '').trim())) e.story++; } info.by_prefix = g; }
+        info.has_testid = hdr.includes('testid'); info.distinct_testid = new Set(rows.slice(1).map((r) => r[hdr.indexOf('testid')])).size;
+      }
+      out.push(info);
+    }
+    return { files: out };
+  }
   if (b.op === 'clone') {
     if (!known.includes(b.source)) throw new Error('Unknown source');
     const r = await fetch(`${srv}/api/v2/assets/`, { method: 'POST', headers: { ...H, ...J }, body: JSON.stringify({ clone_from: b.source, name: 'ZZ_TEST ' + String(b.name || 'copy').slice(0, 60), asset_type: 'survey' }) });

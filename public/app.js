@@ -321,6 +321,29 @@ function backupDaysCard(a) {
 const eatTime = (iso) => (iso ? new Date(iso).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Africa/Dar_es_Salaam' }) : '–');
 // ---- what emails go out automatically ----
 const EMAIL_STATUS = { scheduled: 'good', sent: 'good', finished: 'mute', 'sending is off': 'bad', 'no recipients': 'warn' };
+function hqTeamCard(a) {
+  const H = a.hqUsers; if (!H) return '';
+  const me = S.who.hq_id;
+  const rows = H.users.map((u) => `<tr class="${u.active ? '' : 'paused'}"><td><input data-hq="${u.id}" data-f="name" value="${esc(u.name)}"></td><td><input data-hq="${u.id}" data-f="email" type="email" value="${esc(u.email)}" placeholder="email"></td><td><select data-hq="${u.id}" data-f="level">${Object.entries(LEVEL_TXT).map(([k, t]) => `<option value="${k}" ${u.level === k ? 'selected' : ''}>${t}</option>`).join('')}</select></td><td class="num"><b>${u.code ? esc(u.code) : '–'}</b>${me === u.id ? ' <span class="pill mute">you</span>' : ''}</td><td class="c"><input type="checkbox" data-hq="${u.id}" data-f="active" ${u.active ? 'checked' : ''}></td><td style="white-space:nowrap"><button class="btn sm ghost" data-act="hqReissue" data-id="${u.id}">New code</button> <button class="btn sm ghost" data-act="hqEmail" data-id="${u.id}">Email code</button></td></tr>`).join('');
+  return `<div class="card" style="margin-top:14px"><h3>HQ team and access levels</h3><div class="sub"><b>Admin</b> does everything. <b>Editor</b> reads everything and writes messages and reports and replies to queries. <b>Viewer</b> reads and downloads only. Each person has their own code, and every change is recorded under their name.</div>
+  <div class="tbl rectbl"><table class="dt"><thead><tr><th>Name</th><th>Email</th><th>Level</th><th>Code</th><th class="c">On</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
+  <div class="f" style="margin-top:10px;display:flex;gap:8px;align-items:end;flex-wrap:wrap"><label>Add a person<input id="hqName" placeholder="Name"></label><label>Email<input id="hqEmail" type="email" placeholder="name@example.org"></label><label>Level<select id="hqLevel"><option value="viewer">Viewer</option><option value="editor">Editor</option><option value="admin">Admin</option></select></label><button class="btn sm" data-act="hqAdd">Add</button></div>
+  <div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--line)"><b>The shared HQ code</b> ${H.shared_enabled ? '<span class="pill warn">still works (Admin level)</span>' : '<span class="pill good">switched off</span>'}<div class="m" style="margin:4px 0 8px">Once everyone in HQ has signed in with their personal code, switch the shared code off so that nobody can use it any more.</div>${H.shared_enabled ? `<button class="btn sm ghost" data-act="hqShared" data-on="">${me ? 'Switch the shared code off' : 'Sign in with your personal code to switch it off'}</button>` : '<button class="btn sm ghost" data-act="hqShared" data-on="1">Switch it back on</button>'}</div>${S.hqMsg ? `<p class="m" style="margin-top:8px">${esc(S.hqMsg)}</p>` : ''}</div>`;
+}
+function settingsCard(a) {
+  const T = a.settings; if (!T) return '';
+  const b = T.brand;
+  const tr = Object.entries(T.targets).map(([k, t]) => `<tr><td>${esc({ visits: 'Visits on the planned day (%)', notices: 'Notices sent on time (%)', sameday: 'Records sent the same day (%)', quality: 'Test quality score' }[k] || k)}<div class="m" style="font-size:11.5px;color:var(--ink3)">${esc(t.text)}</div></td><td><input type="number" min="1" max="100" data-tg="${k}" data-f="good" value="${t.good}"></td><td><input type="number" min="1" max="100" data-tg="${k}" data-f="warn" value="${t.warn}"></td><td class="m">${t.default.good} / ${t.default.warn}</td></tr>`).join('');
+  return `<div class="card" style="margin-top:14px"><h3>Settings: name and targets</h3><div class="sub">Changes apply everywhere at once (screens, emails, alerts).</div>
+  <div class="f"><label>Platform name<input id="stPlatform" maxlength="40" value="${esc(b.platform)}"></label><label>Programme shown beside it<input id="stProgramme" maxlength="80" value="${esc(b.programme)}"></label><label style="grid-column:1/-1">Tagline<input id="stTagline" maxlength="160" value="${esc(b.tagline)}"></label><label>Assistant name<input id="stAssistant" maxlength="40" value="${esc(b.assistant)}" placeholder="${esc(T.assistant_name)}"></label></div>
+  <h4 style="margin:14px 0 4px">Targets (green at or above the first number, amber at or above the second)</h4><div class="tbl rectbl"><table class="dt"><thead><tr><th>Target</th><th>Green</th><th>Amber</th><th>Standard</th></tr></thead><tbody>${tr}</tbody></table></div>
+  <div style="margin-top:10px"><button class="btn sm" data-act="stSave">Save settings</button></div>${S.stMsg ? `<p class="m" style="margin-top:8px">${esc(S.stMsg)}</p>` : ''}</div>`;
+}
+function activityCard(a) {
+  const L = a.activity; if (!L) return '';
+  const rows = L.log.slice(0, 200).map((x) => `<tr data-q="${esc((x.who + ' ' + x.action + ' ' + x.detail).toLowerCase())}"><td>${esc(new Date(x.at).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Africa/Dar_es_Salaam' }))}</td><td><b>${esc(x.who)}</b> <span class="m">${esc(x.level || '')}</span></td><td>${esc(x.action)}</td><td class="m">${esc(x.detail)}</td></tr>`).join('');
+  return `<div class="card" style="margin-top:14px"><h3>Activity log</h3><div class="sub">Who did what and when. The last 200 changes.</div><div class="recbar"><input id="actQ" placeholder="Search a person or an action" autocomplete="off"></div><div class="tbl rectbl"><table class="dt"><thead><tr><th>When</th><th>Who</th><th>What</th><th>Detail</th></tr></thead><tbody>${rows || '<tr><td colspan="4" class="empty">Nothing recorded yet.</td></tr>'}</tbody></table></div></div>`;
+}
 function emailScheduleCard(a) {
   const E = a.emailSched; if (!E) return '';
   const when = (t) => (t ? `${dayName(t.slice(0, 10))}, ${t.slice(11)}` : '–');
@@ -379,7 +402,7 @@ function viewAdmin() {
   return `<div class="pagehead"><div><h2>Admin</h2><p>Readiness, data connections, people, access codes and backups</p></div><button class="btn" data-act="refreshNow">Sync now</button></div>
   ${readinessCard(a)}<div class="card"><h3>Data connections</h3><div class="sub">Student tests, sampling and teacher forms are read from KoBo every 5 minutes in field hours</div><div class="tbl"><table><thead><tr><th>Form</th><th>Status</th><th class="r">Records read</th><th>State</th><th>Last complete</th></tr></thead><tbody>${sync}</tbody></table></div></div>
   ${S.ov.unlisted?.length ? `<div class="banner" style="margin-top:14px"><b>Names in KoBo that are not in the staff roster:</b> ${S.ov.unlisted.map(esc).join(', ')}. Their tests still count, but they have no region or access code.</div>` : ''}
-  ${emailScheduleCard(a)}
+  ${hqTeamCard(a)}${settingsCard(a)}${emailScheduleCard(a)}
   <div class="card" style="margin-top:14px"><h3>Email list</h3><div class="sub">Who is on the lists. Changes apply after you press Save. This does not send anything.</div>
   ${recipientsTable(a)}
   <div style="margin-top:10px"><button class="btn sm" data-act="saveRec">Save the email list</button></div></div>
@@ -388,7 +411,7 @@ function viewAdmin() {
   ${a.preview ? `<div class="banner" style="margin-top:12px;background:var(--warn-bg)"><b>PREVIEW, NOT SENT.</b> Subject: ${esc(a.preview.subject)}</div><iframe sandbox title="Email preview" style="width:100%;height:420px;border:1px solid var(--line);border-radius:8px;background:#fff;margin-top:6px" srcdoc="${esc(a.preview.html)}"></iframe>` : ''}
   <div class="f" style="margin-top:12px;display:flex;gap:8px;align-items:end;flex-wrap:wrap"><label>Send a test of the HQ morning brief to<input id="testTo" type="email" placeholder="your address" value="${esc(store.get('kf_test_to') || '')}"></label><button class="btn sm" data-act="sendTest">Send test (marked [TEST])</button></div>${S.testMsg ? `<p class="m">${esc(S.testMsg)}</p>` : ''}</div>
   <div class="card" style="margin-top:14px"><h3>Calendar for the KoBo forms</h3><div class="sub">The assessment and sampling forms check each visit against this file. Download it after plans are submitted and after every approved change, then upload it to both forms as <b>ref_calendar.csv</b> (Form, Settings, Media). Without it the check stays off.</div><button class="btn sm" data-act="calCsv">Download ref_calendar.csv</button>${S.calMsg ? `<p class="m" style="margin-top:8px">${esc(S.calMsg)}</p>` : ''}</div>\n  ${autoCards(a)}
-  <div class="card" style="margin-top:14px"><h3>Phone alerts</h3><div class="sub">${a.push?.ready ? '<span class="pill good">server ready</span>' : '<span class="pill warn">not set up</span>'} ${a.push ? a.push.devices + ' device(s) subscribed' : ''}${a.push && a.push.devices ? ' (' + Object.entries(a.push.by_role).map(([k, v]) => v + ' ' + k).join(', ') + ')' : ''}. Each person turns alerts on from the header button on their own phone. On iPhone the page must be on the home screen first.</div><button class="btn sm" data-act="pushTest">Send a test alert to HQ devices</button></div>\n  ${rosterCard(a)}${devicesCard(a)}${backupDaysCard(a)}
+  <div class="card" style="margin-top:14px"><h3>Phone alerts</h3><div class="sub">${a.push?.ready ? '<span class="pill good">server ready</span>' : '<span class="pill warn">not set up</span>'} ${a.push ? a.push.devices + ' device(s) subscribed' : ''}${a.push && a.push.devices ? ' (' + Object.entries(a.push.by_role).map(([k, v]) => v + ' ' + k).join(', ') + ')' : ''}. Each person turns alerts on from the header button on their own phone. On iPhone the page must be on the home screen first.</div><button class="btn sm" data-act="pushTest">Send a test alert to HQ devices</button></div>\n  ${rosterCard(a)}${devicesCard(a)}${backupDaysCard(a)}${activityCard(a)}
   <div class="card" style="margin-top:14px"><h3>Access codes</h3><div class="sub">One code per person. Send each person their own code; do not share this list. HQ code stays with you.</div><div class="tbl"><table><thead><tr><th>Region</th><th>Role</th><th>Name</th><th>Code</th></tr></thead><tbody>${codes}</tbody></table></div></div>`;
 }
 
@@ -877,7 +900,7 @@ function updateNewsBadge() {
 async function openNews() {
   S.newsPrev = newsSeen();
   await loadNews();
-  if (S.who.role === 'hq') { try { S.newsAdmin = await api('/api/admin/news'); } catch (e) { S.nwMsg = e.message; } }
+  if (S.who.role === 'hq' && hqLevel() !== 'viewer') { try { S.newsAdmin = await api('/api/admin/news'); } catch (e) { S.nwMsg = e.message; } }
   const latest = S.news?.latest || ''; if (latest) store.set('kf_news_seen', latest);
 }
 const nl2br = (t) => esc(t).replace(/\n/g, '<br>');
@@ -912,7 +935,7 @@ function readComposer() {
 }
 const eatIso = (v) => (v ? new Date(v.length === 16 ? v + ':00+03:00' : v).toISOString() : null);
 function viewNews() {
-  const hq = S.who.role === 'hq'; const N = S.news;
+  const hq = S.who.role === 'hq' && hqLevel() !== 'viewer'; const N = S.news;
   if (hq) {
     const A = S.newsAdmin; const items = A ? A.items : [];
     return `<div class="pagehead"><div><h2>News</h2><p>Messages from HQ to the team, good wishes, reminders and congratulations. People can react with a thumbs up, a clap, a party or a heart.</p></div></div>${composer()}<h3 style="margin:18px 0 8px">All messages</h3>${items.length ? items.map((i) => newsCard(i, true)).join('') : '<div class="empty">Nothing yet.</div>'}`;
@@ -942,7 +965,7 @@ async function reactTo(t) {
   if (!r) return;
   const apply = (list) => { const k = (list || []).findIndex((x) => x.id === r.item.id); if (k >= 0) list[k] = { ...list[k], counts: r.item.counts, mine: r.item.mine }; };
   apply(S.news?.items);
-  if (S.who.role === 'hq') { try { S.newsAdmin = await api('/api/admin/news'); } catch {} }
+  if (S.who.role === 'hq' && hqLevel() !== 'viewer') { try { S.newsAdmin = await api('/api/admin/news'); } catch {} }
   render();
 }
 
@@ -963,13 +986,27 @@ function doSearch(q) {
   box.hidden = false;
 }
 
+function applyBrand() {
+  const b = S.cfg?.brand; if (!b) return;
+  const el = document.querySelector('header .brand'); if (el) el.innerHTML = `<b>${esc(b.platform)}</b><span>${esc(b.programme)}${b.tagline ? ' · ' + esc(b.tagline) : ''}</span>`;
+  document.title = b.platform + (b.programme ? ' · ' + b.programme : '');
+}
 // ---------- shell ----------
 const TABS = {
   public: [['progress', 'Progress'], ['compare', 'Compare']],
   volunteer: [['day', 'My day'], ['news', 'News'], ['work', 'My work'], ['queries', 'My queries'], ['stats', 'My stats'], ['phones', 'Phones'], ['compare', 'Compare'], ['practice', 'Practice']],
-  rc: [['region', 'Region'], ['news', 'News'], ['plan', 'Plan & calendar'], ['team', 'My team'], ['allq', 'Queries'], ['phones', 'Phones'], ['compare', 'Compare'], ['explore', 'Data explorer'], ['practice', 'Practice']],
-  hq: [['hq', 'HQ'], ['news', 'News'], ['regions', 'Regions & plans'], ['plan', 'Plan & calendar'], ['people', 'People'], ['allq', 'Queries'], ['phones', 'Phones'], ['compare', 'Compare'], ['explore', 'Data explorer'], ['admin', 'Admin'], ['practice', 'Practice']],
+  rc: [['region', 'Region'], ['news', 'News'], ['plan', 'Plan & calendar'], ['team', 'My team'], ['allq', 'Queries'], ['phones', 'Phones'], ['compare', 'Compare'], ['reports', 'Reports'], ['explore', 'Data explorer'], ['practice', 'Practice']],
+  hq: [['hq', 'HQ'], ['news', 'News'], ['regions', 'Regions & plans'], ['plan', 'Plan & calendar'], ['people', 'People'], ['allq', 'Queries'], ['phones', 'Phones'], ['compare', 'Compare'], ['reports', 'Reports'], ['explore', 'Data explorer'], ['admin', 'Admin'], ['practice', 'Practice']],
 };
+const REPORTS_READY = false; // switched on when the Reports screen is built
+const LEVEL_TXT = { admin: 'Admin', editor: 'Editor', viewer: 'Viewer' };
+const hqLevel = () => (S.who?.role === 'hq' ? S.who.level || 'admin' : null);
+const canWrite = () => !S.who || S.who.role !== 'hq' || hqLevel() !== 'viewer'; // editors and admins write messages and reports
+function tabAllowed(k) {
+  if (k === 'admin') return hqLevel() === 'admin';
+  if (k === 'reports') return REPORTS_READY && S.who && S.who.role !== 'arc' && S.who.role !== 'volunteer';
+  return true;
+}
 const roleKey = () => (!S.who ? 'public' : S.who.role === 'arc' ? 'rc' : S.who.role);
 const VIEWS = { progress: viewProgress, compare: viewCompare, day: viewDay, work: viewWork, queries: viewQueries, stats: viewStats, region: viewRegion, plan: viewPlan, team: viewTeam, explore: viewExplore, hq: viewHQ, regions: viewRegionsHQ, people: viewPeopleHQ, admin: viewAdmin, allq: viewAllQueries, phones: viewPhones, practice: viewPractice, news: viewNews };
 
@@ -989,10 +1026,10 @@ function enhanceCollapsible() {
   });
 }
 function render() {
-  const tabs = TABS[roleKey()];
+  const tabs = TABS[roleKey()].filter(([k]) => tabAllowed(k));
   if (!tabs.find((t) => t[0] === S.tab)) S.tab = tabs[0][0];
   $('#nav').innerHTML = tabs.map(([k, t]) => `<button role="tab" aria-selected="${k === S.tab}" data-tab="${k}">${t}${k === 'news' && S.tab !== 'news' && unreadNews().length ? ` <span class="nbadge">${unreadNews().length}</span>` : ''}</button>`).join('');
-  $('#who').innerHTML = S.viewAs ? `${viewAsControl()}<button class="ghost" data-act="exitPreview">Back to HQ</button>` : S.who ? `${viewAsControl()}<span>${esc(S.who.name)}${S.who.position ? ' · ' + esc(S.who.position) : ''}</span><button class="ghost" data-act="alerts" id="alertsBtn">${alertsLabel()}</button><button class="ghost" data-act="logout">Sign out</button>` : '<button class="ghost" data-act="showLogin">Sign in</button>';
+  $('#who').innerHTML = S.viewAs ? `${viewAsControl()}<button class="ghost" data-act="exitPreview">Back to HQ</button>` : S.who ? `${viewAsControl()}<span>${esc(S.who.name)}${S.who.position ? ' · ' + esc(S.who.position) : ''}${S.who.role === 'hq' ? ' · ' + LEVEL_TXT[hqLevel()] : ''}</span><button class="ghost" data-act="alerts" id="alertsBtn">${alertsLabel()}</button><button class="ghost" data-act="logout">Sign out</button>` : '<button class="ghost" data-act="showLogin">Sign in</button>';
   const pd = S.ov && S.ov.plan_due;
   let planBanner = '';
   if (pd && !pd.locked && !S.viewAs) {
@@ -1106,8 +1143,8 @@ async function loadAdmin() {
   const [status, codes, rec, ready, roster] = await Promise.all([api('/api/admin/status'), api('/api/admin/codes').catch(() => null), api('/api/admin/recipients').catch(() => null), api('/api/admin/readiness').catch(() => null), api('/api/admin/roster').catch(() => null)]);
   const [devices, backups] = await Promise.all([api('/api/admin/devices').catch(() => null), api('/api/admin/backup?list=1').catch(() => null)]);
   const push = await api('/api/admin/push-status').catch(() => null);
-  const [calsync, formjob, emailSched] = await Promise.all([api('/api/admin/calsync').catch(() => null), api('/api/admin/formjob').catch(() => null), api('/api/admin/email-schedule').catch(() => null)]);
-  S.recRows = null; S.adm = { emailSched, status, codes, rec, push, ready, roster, devices, backups, calsync, formjob, preview: S.adm?.preview || null };
+  const [calsync, formjob, emailSched, hqUsers, settings, activity] = await Promise.all([api('/api/admin/calsync').catch(() => null), api('/api/admin/formjob').catch(() => null), api('/api/admin/email-schedule').catch(() => null), api('/api/admin/hq-users').catch(() => null), api('/api/admin/settings').catch(() => null), api('/api/admin/activity').catch(() => null)]);
+  S.recRows = null; S.adm = { hqUsers, settings, activity, emailSched, status, codes, rec, push, ready, roster, devices, backups, calsync, formjob, preview: S.adm?.preview || null };
 }
 
 if (!window.__newsTimer) window.__newsTimer = setInterval(() => { if (S.who && !document.hidden) loadNews(); }, 90000);
@@ -1134,6 +1171,11 @@ document.addEventListener('click', async (e) => {
     else if (a === 'showLogin') loginScreen();
     else if (a === 'alerts') await toggleAlerts();
     else if (a === 'exitPreview') await setViewAs('');
+    else if (a === 'hqAdd') { const name = $('#hqName').value.trim(); if (!name) { S.hqMsg = 'Write the name first.'; render(); return; } try { await api('/api/admin/hq-users', { method: 'POST', body: { action: 'add', name, email: $('#hqEmail').value, level: $('#hqLevel').value } }); S.hqMsg = name + ' was added. Their code is in the table: send it to them (Email code).'; await loadAdmin(); } catch (e) { S.hqMsg = e.message; } render(); }
+    else if (a === 'hqReissue') { if (confirm('Give this person a new code? The old one stops working at once.')) { try { await api('/api/admin/hq-users', { method: 'POST', body: { action: 'reissue', id: t.dataset.id } }); S.hqMsg = 'New code issued.'; await loadAdmin(); } catch (e) { S.hqMsg = e.message; } render(); } }
+    else if (a === 'hqEmail') { try { const r = await api('/api/admin/hq-users', { method: 'POST', body: { action: 'email', id: t.dataset.id } }); S.hqMsg = 'The code was emailed to ' + r.sent_to + '.'; } catch (e) { S.hqMsg = e.message; } render(); }
+    else if (a === 'hqShared') { const on = Boolean(t.dataset.on); if (!on && !confirm('Switch the shared HQ code off? Everyone in HQ must then use their personal code.')) return; try { await api('/api/admin/hq-users', { method: 'POST', body: { action: 'shared', enabled: on } }); S.hqMsg = on ? 'The shared code is on again.' : 'The shared code is off.'; await loadAdmin(); } catch (e) { S.hqMsg = e.message; } render(); }
+    else if (a === 'stSave') { const g = (id) => document.getElementById(id).value; const targets = {}; document.querySelectorAll('[data-tg]').forEach((i) => { (targets[i.dataset.tg] ||= {})[i.dataset.f] = Number(i.value); }); try { await api('/api/admin/settings', { method: 'POST', body: { brand: { platform: g('stPlatform'), programme: g('stProgramme'), tagline: g('stTagline'), assistant: g('stAssistant') }, targets } }); S.cfg = await api('/api/config'); applyBrand(); S.stMsg = 'Saved. The new name shows everywhere.'; await loadAdmin(); } catch (e) { S.stMsg = e.message; } render(); }
     else if (a === 'react') await reactTo(t);
     else if (a === 'sendTest') { const to = ($('#testTo').value || '').trim(); if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(to)) { S.testMsg = 'Type a valid email address first.'; render(); return; } store.set('kf_test_to', to); try { await api('/api/admin/test-email', { method: 'POST', body: { to } }); S.testMsg = 'A test was sent to ' + to + '. It is marked [TEST] and goes only to that address.'; } catch (e) { S.testMsg = e.message; } render(); }
     else if (a === 'copyNotice') await copyNotice(t);
@@ -1210,6 +1252,7 @@ async function downloadFile(path, name) {
   link.href = url; link.download = name; document.body.appendChild(link); link.click(); link.remove(); URL.revokeObjectURL(url);
 }
 document.addEventListener('change', async (e) => {
+  if (e.target.dataset?.hq) { const f = e.target.dataset.f; const body = { action: 'update', id: e.target.dataset.hq, [f]: e.target.type === 'checkbox' ? e.target.checked : e.target.value }; try { await api('/api/admin/hq-users', { method: 'POST', body }); S.hqMsg = 'Saved.'; } catch (err) { S.hqMsg = err.message; } await loadAdmin(); render(); return; }
   if (e.target.dataset?.rr !== undefined && S.recRows) { const r = S.recRows[Number(e.target.dataset.rr)]; const f = e.target.dataset.f; if (r) { r[f] = e.target.type === 'checkbox' ? e.target.checked : e.target.value; if (f === 'role' && r.role === 'hq') r.region = ''; S.recDirty = true; if (f === 'active' || f === 'role') render(); else { const tr = e.target.closest('tr'); if (tr) tr.dataset.q = (r.name + ' ' + r.email + ' ' + r.role + ' ' + r.region).toLowerCase(); } } return; }
   if (e.target.id === 'phDate') { S.phDate = e.target.value; S.ph = null; render(); await loadPhones(); render(); return; }
   if (e.target.id === 'phRegion') { S.phRegion = e.target.value; S.ph = null; render(); await loadPhones(); render(); return; }
@@ -1227,6 +1270,7 @@ document.addEventListener('change', async (e) => {
   else if (e.target.id === 'exLga') { S.explore.lga = e.target.value; render(); }
 });
 document.addEventListener('input', (e) => {
+  if (e.target.id === 'actQ') { const q = e.target.value.trim().toLowerCase(); document.querySelectorAll('tr[data-q]').forEach((tr) => { tr.hidden = Boolean(q) && !tr.dataset.q.includes(q); }); return; }
   if (e.target.id === 'recQ') { const q = e.target.value.trim().toLowerCase(); document.querySelectorAll('tr[data-ri]').forEach((tr) => { tr.hidden = Boolean(q) && !tr.dataset.q.includes(q); }); return; }
   if (e.target.dataset?.rr !== undefined && S.recRows && e.target.type !== 'checkbox') { const r = S.recRows[Number(e.target.dataset.rr)]; if (r) { r[e.target.dataset.f] = e.target.value; S.recDirty = true; } return; }
   if (e.target.id === 'gs') { doSearch(e.target.value); return; }
@@ -1238,7 +1282,7 @@ document.addEventListener('keydown', (e) => {
 (async function boot() {
   setTimeout(() => { checkAlerts(); }, 1500);
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
-  try { S.cfg = await api('/api/config'); } catch { $('#app').innerHTML = '<div class="banner bad">Cannot reach the server.</div>'; return; }
+  try { S.cfg = await api('/api/config'); applyBrand(); } catch { $('#app').innerHTML = '<div class="banner bad">Cannot reach the server.</div>'; return; }
   const saved = store.get('kf_code');
   if (saved) { S.code = saved; try { S.who = (await api('/api/login')).who; } catch { S.code = null; S.who = null; store.set('kf_code', null); } }
   if (!S.who) { loginScreen(); return; }

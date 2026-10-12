@@ -9,6 +9,7 @@ import { getPlan, withNotices, planProgress } from './plan.js';
 import { REGIONS, SCHOOLS_BY_REGION, eatToday, isWorkingDay, addDays, FIELD_START, FIELD_END, workingDaysBetween } from './config.js';
 import { loadQueries, flagKey, decorate, overdueQueries } from './queries.js';
 import { ownWork } from './own.js';
+import { BRAND } from './hq.js';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const title = (s) => String(s || '').toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
@@ -91,6 +92,8 @@ export async function eveningGap(env, sum, region, today, siteUrl) {
 const FROM_NAME = 'KiuFunza 4 Automated Updates (LearnImpact)';
 // Resend (REST) when RESEND_API_KEY is set, otherwise the Cloudflare email binding.
 export async function sendMail(env, to, msg) {
+  const foot = `the ${BRAND.platform} (LearnImpact)`; // the footer follows the platform name chosen in Settings
+  msg = { ...msg, html: String(msg.html || '').replaceAll('the LearnImpact KiuFunza field dashboard', foot) };
   if (env.RESEND_API_KEY) {
     const res = await fetch('https://api.resend.com/emails', {
       method: 'POST',
@@ -367,4 +370,15 @@ export async function emailSchedule(env) {
     { id: 'formjob', name: 'Sampling form replacement result', to: `HQ team (${hq.length})`, when: 'Friday 16 October, after 06:00', contents: 'Whether the standard Sampling form replaced the pilot form, with the rollback version.', last: fj?.result?.at ? fj.result.at.slice(0, 10) : null, next: fj?.done ? null : (fj && fj.armed === false ? null : '2026-10-16 06:00'), once: true, count: hq.length },
   ];
   return { sending_on: sendingOn, now_eat: `${today} ${hm}`, emails: rows.map((r) => ({ ...r, status: !r.count ? 'no recipients' : !sendingOn ? 'sending is off' : r.once && r.last ? 'sent' : r.next ? 'scheduled' : 'finished' })) };
+}
+
+export async function hqPersonalCodeEmail(env, user, code, siteUrl) {
+  const first = user.name.split(' ')[0];
+  const lv = { admin: 'Admin: you can do everything, including changing the team, settings and forms.', editor: 'Editor: you can read everything and write messages and reports and reply to queries.', viewer: 'Viewer: you can read everything and download reports.' }[user.level];
+  const body = `<p>Dear ${esc(first)},</p><p>Here is your own access code for the ${esc(BRAND.platform)}. It belongs to you only, so please do not share it. If you lose it or think someone has seen it, tell an Admin and it will be replaced.</p>
+<p style="font-size:26px;letter-spacing:5px;font-weight:700;margin:8px 0 10px;font-family:ui-monospace,Menlo,monospace">${esc(code)}</p>
+<p><b>Your level.</b> ${esc(lv)}</p>
+<p>Open <a href="${esc(siteUrl)}" style="color:#354062">${esc(siteUrl)}</a>, type the code once, and the device remembers it. On a phone, add the page to the home screen.</p>`;
+  const html = layout(`${BRAND.platform} · Your personal access code`, 'HQ access', body, 'Sent automatically by the LearnImpact KiuFunza field dashboard. Keep this email private because it contains your code.');
+  return { subject: `${BRAND.platform} · Automated update · Your personal access code`, html, text: `AUTOMATED UPDATE - no reply needed\n${BRAND.platform}: ${siteUrl}\nYour personal code: ${code}\nLevel: ${user.level}. Keep it private.` };
 }

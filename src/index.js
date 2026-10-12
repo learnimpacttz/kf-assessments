@@ -5,7 +5,8 @@ import { buildCalendar, markCalendarDirty, syncCalendar, calendarStatus, setCalS
 import { loadFormJob, saveFormJob, runFormJob, maybeRunFormJob } from './formjob.js';
 import { kv } from './store.js';
 import { buildBrief, aiBrief } from './brief.js';
-import { emailSchedule, morningDigest, eveningGap, loadRecipients, saveRecipients, runDigests, maybeRunScheduledDigests, sendMail, onboardingEmail, runOnboarding, hqOnboardingEmail, reminderEmail, runReminders } from './digest.js';
+import { loadHq, hqChange, hqList, hqByCode, codeFor, levelGate, applySettings, settingsView, saveSettings, logActivity, readActivity, activityLabel, BRAND, assistantName } from './hq.js';
+import { emailSchedule, hqPersonalCodeEmail, morningDigest, eveningGap, loadRecipients, saveRecipients, runDigests, maybeRunScheduledDigests, sendMail, onboardingEmail, runOnboarding, hqOnboardingEmail, reminderEmail, runReminders } from './digest.js';
 import { loadQueries, decorate, postQuery, flagKey } from './queries.js';
 import { identify, staffCodes, canSeeRegion } from './auth.js';
 import { forecast, atRiskSchools } from './predict.js';
@@ -87,16 +88,30 @@ function regionBundle(sum, region, who, queries = {}) {
 export { Store } from './store.js';
 
 export default {
+  // every write is noted in the activity log (who, what, when) after it succeeds
   async fetch(request, env, ctx) {
+    const url0 = new URL(request.url); const mut = request.method === 'POST' && url0.pathname.startsWith('/api/');
+    let bodyText = ''; if (mut) { try { bodyText = await request.clone().text(); } catch { /* the handler reports a bad body */ } }
+    const res = await this.handle(request, env, ctx);
+    if (mut && res.status < 300) {
+      const job = (async () => { try { let body = {}; try { body = JSON.parse(bodyText || '{}'); } catch { /* not json */ } const lab = activityLabel(url0.pathname, body); if (lab) { const who = await identify(request, env); if (who && !who.viewAs) await logActivity(env, who, lab.action, lab.detail); } } catch { /* logging never blocks the work */ } })();
+      if (ctx && ctx.waitUntil) ctx.waitUntil(job); else await job;
+    }
+    return res;
+  },
+
+  async handle(request, env, ctx) {
     const url = new URL(request.url);
     const path = url.pathname;
     const method = request.method;
     if (!path.startsWith('/api/')) return env.ASSETS.fetch(request);
     await ensureRoster(env);
+    await applySettings(env);
 
     try {
       if (path === '/api/config') {
         return json({
+          brand: { ...BRAND, assistant: assistantName() },
           year: CURRENT_YEAR, field: { start: FIELD_START, end: FIELD_END }, pilot_day: PILOT_DAY, training_start: TRAINING_START, regions: REGIONS, partners: PARTNERS, reasons: REASONS, day_reasons: DAY_REASONS,
           targets: { per_grade: TARGET_PER_GRADE, dodoma_per_grade: DODOMA_TARGET_PER_GRADE },
           notice: { aek_working_days: NOTICE_AEK_WORKING_DAYS, head_teacher_working_days: NOTICE_HT_WORKING_DAYS },
@@ -120,6 +135,7 @@ export default {
         return json({ who });
       }
       if (!who) return err('Sign in with your access code', 401);
+      { const gate = levelGate(who, method, path); if (gate) return err(gate, 403); }
       if (who.viewAs && method !== 'GET') return err('You are previewing as ' + who.name + '. Previews are read-only, so nothing was changed.', 403);
 
       // ---------- role-aware overview ----------
@@ -593,6 +609,19 @@ export default {
         return json(out);
       }
       if (path === '/api/admin/kobo-form' && method === 'POST') { try { return json(await koboForm(env, await request.json())); } catch (e) { return err(String(e.message || e), 502); } }
+      if (path === '/api/admin/hq-users') {
+        if (method === 'POST') {
+          const b = await request.json().catch(() => ({}));
+          if (b.action === 'email') { const u = (await loadHq(env, true)).users.find((x) => x.id === b.id); if (!u || !u.email) return err('This person has no email address', 422); const m = await hqPersonalCodeEmail(env, u, await codeFor(env, u), env.SITE_URL || url.origin); await sendMail(env, u.email, m); return json({ ok: true, sent_to: u.email }); }
+          const r = await hqChange(env, who, b); if (r.error) return err(r.error, r.status || 422); return json(r);
+        }
+        return json(await hqList(env));
+      }
+      if (path === '/api/admin/settings') {
+        if (method === 'POST') { const r = await saveSettings(env, await request.json().catch(() => ({}))); if (r.error) return err(r.error, 422); return json(r); }
+        return json(await settingsView(env));
+      }
+      if (path === '/api/admin/activity') return json({ log: (await readActivity(env)).slice(0, 400) });
       if (path === '/api/admin/email-schedule') return json(await emailSchedule(env));
       if (path === '/api/admin/calsync') {
         if (method === 'POST') {
