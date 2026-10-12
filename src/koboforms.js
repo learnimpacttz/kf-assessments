@@ -98,6 +98,11 @@ export async function koboForm(env, b) {
   if (b.op === 'usage') { // the account's plan limits and use (read only)
     const out = {}; for (const path of ['service_usage/', 'organizations/orgDsa9DB4pAUdqub5Ev53Ct/asset_usage/']) { const r = await fetch(`${srv}/api/v2/${path}?format=json`, { headers: H }); out[path] = { status: r.status, body: (await r.text()).slice(0, 9000) }; } return out;
   }
+  if (b.op === 'attach_stats') { // read only: how much space the attachments of a project take, by type (no content, no names)
+    const a = await get(b.asset); let url = `${srv}/api/v2/assets/${a.uid}/data/?format=json&limit=500&fields=${encodeURIComponent('["_id","_attachments"]')}`; const by = {}; let n = 0, files = 0, bytes = 0, withAtt = 0; const forms = await (await fetch(`${srv}/api/v2/assets/${a.uid}/files/?format=json`, { headers: H })).json().catch(() => ({}));
+    for (let i = 0; i < 12 && url; i++) { const r = await fetch(url, { headers: H }); const d = await r.json(); for (const x of d.results || []) { n++; const at = x._attachments || []; if (at.length) withAtt++; for (const f of at) { const e = (f.mimetype || 'other').split('/')[0]; const k = by[e] ||= { files: 0, bytes: 0 }; k.files++; k.bytes += Number(f.filesize || 0); files++; bytes += Number(f.filesize || 0); } } url = d.next || null; }
+    return { name: a.name, submissions_read: n, with_attachments: withAtt, attachments: files, attachment_mb: Math.round(bytes / 1e6), by_type_mb: Object.fromEntries(Object.entries(by).map(([k, v]) => [k, { files: v.files, mb: Math.round(v.bytes / 1e6) }])), form_media_files: (forms.results || []).map((f) => ({ name: f.metadata?.filename, mb: Math.round((f.metadata?.filesize || 0) / 1e5) / 10 })), has_deployment: a.has_deployment, deployed: a.deployment__active, count: a.deployment__submission_count, date_modified: a.date_modified };
+  }
   if (b.op === 'probe_delete') { // rehearsal of the deletion calls on a ZZ_TEST copy: submit two test records, read them back by id, delete one, check the counts
     const a = await guard(b.asset); if (!isTest(a) || known.includes(a.uid)) throw new Error('Test copies only');
     const kc = (a.deployment__identifier || '').split('/forms/')[0].replace(/\/[^/]+$/, ''); const idStr = (a.deployment__identifier || '').split('/forms/')[1] || a.uid; const log = [];
