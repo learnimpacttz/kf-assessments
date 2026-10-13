@@ -207,7 +207,8 @@ function viewDay() {
   const sch = Object.fromEntries((o.mine.schools || []).map((s) => [s.id, s]));
   const card = (v) => { const s = sch[v.school]; const g = s?.g; return `<div class="sch"><h4>${esc(v.school_name)}</h4><div class="m">${esc(title(v.lga))} · ${esc(armLabel(v))} · starts ${esc(v.start)}</div>${g ? `<div class="gr">${[1, 2, 3].map((k) => `<div><b>${g[k].av}/${g[k].target}</b><small>Darasa ${k}</small></div>`).join('')}</div>` : ''}${s?.done ? '<div class="note" style="margin-top:8px">Shule imekamilika · School complete</div>' : ''}</div>`; };
   const mf = o.mine.flags.filter(isOpen).length;
-  return `${dataBanner()}<div class="pagehead"><div><h2>Habari, ${esc(me.name.split(' ')[0])}</h2><p>${dayName(today)} · ${esc(title(me.region))}</p></div></div>
+  const lead = (o.mine.staff || []).filter((x) => x.role === 'rc' || x.role === 'arc'); const team = lead.length ? lead.map((x) => esc(x.name.split(' ')[0]) + ' (' + x.role.toUpperCase() + ')').join(', ') : '';
+  return `${dataBanner()}<div class="pagehead"><div><h2>Habari, ${esc(me.name.split(' ')[0])}</h2><p>${esc(/^volunteer/i.test(me.position || '') || !me.position ? 'Test admin' + (me.position ? ' (' + me.position + ')' : '') : me.position)} · ${esc(title(me.region))} · ${dayName(today)}${team ? ' · ' + team : ''} · ${todays.length ? todays.length + ' school' + (todays.length > 1 ? 's' : '') + ' today' : 'no school today'}</p></div></div>
   ${mf ? `<div class="banner bad">You have <b>${mf}</b> query(ies) to look at. Open "My queries".</div>` : ''}
   <h3 style="margin:14px 0 8px">Leo · Today</h3>${todays.length ? todays.map(card).join('') : '<div class="note">No school in the plan for you today. Check with your RC.</div>'}
   <h3 style="margin:18px 0 8px">Zinazofuata · Coming up</h3>${next.length ? next.map((v) => `<div class="sch"><h4>${esc(v.school_name)}</h4><div class="m">${dayName(v.date)} · ${esc(v.start)} · ${esc(title(v.lga))}</div></div>`).join('') : '<div class="note">Nothing planned yet.</div>'}`;
@@ -680,9 +681,9 @@ function coordinatorsBlock() {
   const val = (x, k) => (x.rows.find((r) => r.key === k) || {});
   const cell = (r) => (r.status ? chip(esc(r.display), r.status) : esc(r.display || '–'));
   const rowsC = o.coordinators.map((c) => `<tr class="click" data-open="person:${esc(c.person.name)}"><td><b>${esc(c.person.name)}</b></td><td>${esc(title(c.person.region))}</td><td>${chip(esc(c.person.position), c.person.role === 'rc' ? 'navy' : 'teal')}</td><td class="r num">${fmt(c.assessment.tested)}</td><td class="r num">${c.assessment.sampling}</td><td class="r num">${c.led.done}/${c.led.due || 0}</td><td>${cell(val(c, 'notices'))}</td><td>${cell(val(c, 'changes'))}</td><td>${cell(val(c, 'sameday'))}</td><td>${qChip(c.assessment.quality)}</td><td>${cell(val(c, 'queries'))}</td><td class="r num">${c.baseline.forms}</td></tr>`).join('');
-  const rowsT = Object.values(o.team_blocks).map((t) => `<tr class="click" data-open="region:${esc(t.region)}"><td><b>${esc(title(t.region))}</b></td><td>${esc(t.people.map((p) => p.name.split(' ')[0] + ' (' + p.position + ')').join(', '))}</td><td style="white-space:normal;line-height:2.1">${t.rows.map((r) => chip(esc(SHORT_ROW[r.key] || r.label) + ': ' + esc(r.display), r.status || 'mute')).join(' ')}</td></tr>`).join('');
+  const rowsT = Object.values(o.team_blocks).map((t) => `<tr class="click" data-open="region:${esc(t.region)}"><td><b>${esc(title(t.region))}</b></td><td>${esc(t.people.map((p) => p.name.split(' ')[0] + ' (' + p.position + ')').join(', '))}</td><td class="chips">${t.rows.map((r) => chip(esc(SHORT_ROW[r.key] || r.label) + ': ' + esc(r.display), r.status || 'mute')).join(' ')}</td></tr>`).join('');
   return `<div class="card" style="margin-top:14px"><h3>Coordinators' own work</h3><div class="sub">What each RC and ARC did themselves, apart from supervising the team. Chips use the targets in each person's card.</div><div class="tbl"><table><thead><tr><th>Name</th><th>Region</th><th>Role</th><th class="r">Tested</th><th class="r">Sampling</th><th class="r">Led, done</th><th>Notices on time</th><th>Late changes</th><th>Same-day sends</th><th>Quality</th><th>Queries answered in 2 days</th><th class="r">Teacher forms</th></tr></thead><tbody>${rowsC}</tbody></table></div></div>
-  <div class="card" style="margin-top:14px"><h3>Regional coordination teams</h3><div class="sub">What each RC and ARC did together for their region</div><div class="tbl"><table><thead><tr><th>Region</th><th>Team</th><th>Status</th></tr></thead><tbody>${rowsT}</tbody></table></div></div>`;
+  <div class="card" style="margin-top:14px"><h3>Regional coordination teams</h3><div class="sub">What each RC and ARC did together for their region</div><div class="tbl"><table class="stk"><thead><tr><th>Region</th><th>Team</th><th>Status</th></tr></thead><tbody>${rowsT}</tbody></table></div></div>`;
 }
 function viewPeopleHQ() {
   return `${dataBanner()}<div class="pagehead"><div><h2>Coordinators and volunteers</h2><p>Click a name for the full card. Click a column to sort. Chips are coloured against the normal range for each grade.</p></div></div>${coordinatorsBlock()}${submitBoard(S.ov.admins)}<div class="card" style="margin-top:14px">${peopleTable(S.ov.admins, true)}<div class="legend"><span><i style="background:var(--good)"></i>normal</span><span><i style="background:var(--gold)"></i>borderline</span><span><i style="background:var(--bad)"></i>outside the normal range</span><span>Normal test time: ${bandsText()}</span></div></div>`;
@@ -719,6 +720,7 @@ function schoolTable(rows, hq) {
 // ---- source tags: every table says which form it comes from and which phase ----
 const SRC = {
   assess: { cls: 'src-assess', label: 'Assessments', form: 'Student test form' },
+  pupils: { cls: 'src-assess', label: 'Pupil records', form: 'Student test form' },
   samp: { cls: 'src-samp', label: 'Sampling', form: 'Sampling form' },
   teach: { cls: 'src-teach', label: 'Teachers', form: 'Teacher form' },
   school: { cls: 'src-school', label: 'School baseline', form: 'School block of the teacher form' },
@@ -731,7 +733,7 @@ function srcTag(kind, extra) {
   const upd = (kind === 'teach' || kind === 'school') ? T?.teachers.updated : o.as_of;
   return `<div class="srcbar"><span class="src ${s.cls}">${s.label}</span><span class="m">${esc(s.form)} · ${esc(phase)}${recs}${upd ? ' · updated ' + new Date(upd).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' }) : ''}${extra ? ' · ' + extra : ''}</span></div>`;
 }
-const exTabs = () => [['assess', 'Assessments'], ['samp', 'Sampling'], ['teach', 'Teachers'], ['school', 'School baseline'], ['linked', 'Linked']];
+const exTabs = () => [['assess', 'Assessments'], ['pupils', 'Pupil records'], ['samp', 'Sampling'], ['teach', 'Teachers'], ['school', 'School baseline'], ['linked', 'Linked']];
 async function loadExplore(tab) {
   S.exTab = tab; S.exErr = null;
   render();
@@ -750,6 +752,7 @@ function viewExplore() {
   let body;
   if (hq && !S.allSchools && (tab === 'assess' || tab === 'samp')) body = '<div class="empty">Loading schools…</div>';
   else if (tab === 'assess') body = srcTag('assess') + `<div class="card">${schoolTable(rows, hq)}</div>`;
+  else if (tab === 'pupils') body = srcTag('assess') + pupilsView();
   else if (tab === 'samp') body = srcTag('samp') + `<div class="card">${samplingTable(rows, hq)}</div>`;
   else if (tab === 'teach') body = S.exErr ? `<div class="banner bad">${esc(S.exErr)}</div>` : !S.tch ? '<div class="empty">Loading teacher data…</div>' : teachersView(hq);
   else if (tab === 'school') body = !S.tch ? '<div class="empty">Loading school baseline…</div>' : schoolBaselineView(hq);
@@ -1066,7 +1069,7 @@ function newsCard(i, hq) {
 }
 function composer() {
   const d = S.nwDraft || {}; const regs = S.cfg?.regions || [];
-  return `<div class="card"><h3>${d.id ? 'Edit message' : 'New message'}</h3><div class="sub">Write it, let the AI polish it, read it, then send now or schedule it. Everyone in the audience gets it in the News tab and as a phone alert.</div>
+  return `<div class="card"><h3>Edit message</h3><div class="sub">Change this scheduled message or draft, then save it, schedule it or send it now. To write a new message, close this and use Write a message. <button class="btn sm ghost" data-act="nwClear">Close editor</button></div>
   <div class="f"><label>Title<input id="nwTitle" maxlength="120" value="${esc(d.title || '')}" placeholder="For example: Pilot day is tomorrow"></label></div>
   <div class="f"><label>Message<textarea id="nwBody" rows="6" maxlength="2000" placeholder="Write in English, Kiswahili or both. Keep it short.">${esc(d.body || '')}</textarea></label></div>
   <div class="f" style="display:flex;gap:10px;flex-wrap:wrap"><label>Type<select id="nwKind">${Object.entries({ announcement: 'Announcement', goodwill: 'Good wishes', reminder: 'Reminder', congrats: 'Congratulations', update: 'Update' }).map(([k, t]) => `<option value="${k}" ${d.kind === k ? 'selected' : ''}>${t}</option>`).join('')}</select></label>
@@ -1085,8 +1088,12 @@ const eatIso = (v) => (v ? new Date(v.length === 16 ? v + ':00+03:00' : v).toISO
 function viewNews() {
   const hq = S.who.role === 'hq' && hqLevel() !== 'viewer'; const N = S.news;
   if (hq) {
-    const A = S.newsAdmin; const items = A ? A.items : [];
-    return `<div class="pagehead"><div><h2>News</h2><p>Messages from HQ to the team, good wishes, reminders and congratulations. People can react with a thumbs up, a clap, a party or a heart.</p></div></div>${composer()}<h3 style="margin:18px 0 8px">All messages</h3>${items.length ? items.map((i) => newsCard(i, true)).join('') : '<div class="empty">Nothing yet.</div>'}`;
+    const A = S.newsAdmin; const all = A ? A.items : []; const view = S.nwView || 'read'; const waiting = all.filter((i) => i.status !== 'sent'); const sent = N ? N.items : all.filter((i) => i.status === 'sent');
+    const bar = `<div class="sel" style="margin:6px 0 12px"><button class="btn sm ${view === 'read' ? '' : 'sec'}" data-act="nwView" data-v="read">Read</button><button class="btn sm ${view === 'manage' ? '' : 'sec'}" data-act="nwView" data-v="manage">Scheduled and drafts${waiting.length ? ' (' + waiting.length + ')' : ''}</button><button class="btn sm sec" data-tab="messages" style="margin-left:auto">Write a message</button></div>`;
+    const head = `<div class="pagehead"><div><h2>News</h2><p>Messages from HQ to the team. People can react with a thumbs up, a clap, a party or a heart. To write a new message, use Write a message.</p></div></div>${bar}`;
+    if (S.nwDraft) return `${head}${composer()}`;
+    if (view === 'manage') return `${head}${waiting.length ? waiting.map((i) => newsCard(i, true)).join('') : '<div class="empty">No scheduled messages or drafts.</div>'}`;
+    return `${head}${!sent ? '<div class="empty">Loading…</div>' : sent.length ? sent.map((i) => newsCard(i, false)).join('') : '<div class="empty">No news yet.</div>'}`;
   }
   const items = N ? N.items : null;
   return `<div class="pagehead"><div><h2>News</h2><p>Messages from HQ, good wishes and updates for the whole field team. Tap a reaction to say thank you.</p></div></div>${!items ? '<div class="empty">Loading…</div>' : items.length ? items.map((i) => newsCard(i, false)).join('') : '<div class="empty">No news yet. Messages from HQ will appear here.</div>'}`;
@@ -1142,11 +1149,11 @@ function applyBrand() {
 // ---------- shell ----------
 const TABS = {
   public: [['progress', 'Progress'], ['compare', 'Compare']],
-  volunteer: [['day', 'My day'], ['news', 'News'], ['work', 'My work'], ['queries', 'My queries'], ['stats', 'My stats'], ['phones', 'Phones'], ['compare', 'Compare'], ['practice', 'Practice'], ['help', 'Help']],
+  volunteer: [['day', 'My day'], ['news', 'News'], ['work', 'My work'], ['queries', 'My queries'], ['stats', 'My stats'], ['phones', 'Phones'], ['pupils', 'Pupil records'], ['compare', 'Compare'], ['practice', 'Practice'], ['help', 'Help']],
   rc: [['region', 'Region'], ['news', 'News'], ['plan', 'Plan & calendar'], ['team', 'My team'], ['allq', 'Queries'], ['phones', 'Phones'], ['compare', 'Compare'], ['reports', 'Reports'], ['clean', 'Data cleaning'], ['explore', 'Data explorer'], ['practice', 'Practice'], ['help', 'Help']],
   hq: [['today', 'Today'], ['hq', 'HQ'], ['news', 'News'], ['messages', 'Write and schedule'], ['clean', 'Data cleaning'], ['regions', 'Regions & plans'], ['plan', 'Plan & calendar'], ['people', 'People'], ['allq', 'Queries'], ['phones', 'Phones'], ['compare', 'Compare'], ['reports', 'Reports'], ['explore', 'Data explorer'], ['admin', 'Admin'], ['help', 'Help'], ['practice', 'Practice']],
 };
-const GROUPS = { rc: [['Home', ['region', 'news']], ['Plan', ['plan', 'team']], ['Checks', ['allq', 'clean', 'phones', 'compare', 'explore']], ['Reports', ['reports']], ['More', ['practice', 'help']]], volunteer: [['Today', ['day', 'news']], ['My work', ['work', 'queries', 'stats']], ['Team', ['phones', 'compare']], ['More', ['practice', 'help']]] };
+const GROUPS = { rc: [['Home', ['region', 'news']], ['Plan', ['plan', 'team']], ['Checks', ['allq', 'clean', 'phones', 'compare', 'explore']], ['Reports', ['reports']], ['More', ['practice', 'help']]], volunteer: [['Today', ['day', 'news']], ['My work', ['work', 'queries', 'stats']], ['Team', ['phones', 'pupils', 'compare']], ['More', ['practice', 'help']]] };
 const HQ_GROUPS = [['Today', ['today']], ['Field', ['hq', 'regions', 'plan', 'people']], ['Checks', ['allq', 'clean', 'phones', 'compare', 'explore']], ['Messages', ['news', 'messages']], ['Reports', ['reports']], ['Admin', ['admin']], ['Help', ['help']]];
 const REPORTS_READY = true;
 const LEVEL_TXT = { admin: 'Admin', editor: 'Editor', viewer: 'Viewer' };
@@ -1159,7 +1166,7 @@ function tabAllowed(k) {
   return true;
 }
 const roleKey = () => (!S.who ? 'public' : S.who.role === 'arc' ? 'rc' : S.who.role);
-const VIEWS = { progress: viewProgress, compare: viewCompare, day: viewDay, work: viewWork, queries: viewQueries, stats: viewStats, region: viewRegion, plan: viewPlan, team: viewTeam, explore: viewExplore, hq: viewHQ, regions: viewRegionsHQ, people: viewPeopleHQ, admin: viewAdmin, allq: viewAllQueries, phones: viewPhones, practice: viewPractice, news: viewNews, messages: viewMessages, reports: viewReports, clean: viewClean, today: viewToday, help: viewHelp };
+const VIEWS = { progress: viewProgress, compare: viewCompare, day: viewDay, work: viewWork, queries: viewQueries, stats: viewStats, region: viewRegion, plan: viewPlan, team: viewTeam, explore: viewExplore, hq: viewHQ, regions: viewRegionsHQ, people: viewPeopleHQ, admin: viewAdmin, allq: viewAllQueries, phones: viewPhones, practice: viewPractice, news: viewNews, pupils: viewPupils, messages: viewMessages, reports: viewReports, clean: viewClean, today: viewToday, help: viewHelp };
 
 // Admin is long: each card folds away so you can jump to what you need. The first card stays open; your choices are remembered.
 function enhanceCollapsible() {
@@ -1319,6 +1326,37 @@ async function aiAction(a, t) {
     catch (e) { A.msgs.push({ role: 'assistant', content: e.message || 'That did not work. Try again.' }); }
     A.busy = false; aiRender();
   }
+}
+
+// ---------- Pupil records: every student record with its key information (no pupil names) ----------
+const todayEAT = () => new Date(Date.now() + 3 * 3600e3).toISOString().slice(0, 10);
+function pupilsView() {
+  const P = (S.pu ||= { f: { region: '', school: '', from: todayEAT(), to: '', grade: '', enumerator: '', stuid: '', absent: false }, res: null, msg: '' }); const f = P.f; const hq = S.who.role === 'hq';
+  const schools = schoolsAll().filter((x) => !String(x.id).startsWith('TRAIN') || true);
+  const R = P.res;
+  const sum = R ? `<div class="grid kpis" style="margin:10px 0">${kpi('Records', fmt(R.total), R.capped ? 'first ' + fmt(R.records.length) + ' shown' : '')}${kpi('Present', fmt(R.summary.present))}${kpi('Absent', fmt(R.summary.absent))}${R.summary.by_grade.map(([g, n]) => kpi('Grade ' + g, fmt(n))).join('')}</div>
+  <details class="fd"><summary>Count by test admin (${R.summary.by_enumerator.length})</summary><div class="tbl"><table><tbody>${R.summary.by_enumerator.map(([n, c]) => `<tr><td>${esc(n)}</td><td class="r num">${c}</td></tr>`).join('')}</tbody></table></div></details>
+  <details class="fd"><summary>Count by day (${R.summary.by_date.length})</summary><div class="tbl"><table><tbody>${R.summary.by_date.map(([n, c]) => `<tr><td>${esc(n)}</td><td class="r num">${c}</td></tr>`).join('')}</tbody></table></div></details>` : '';
+  const rows = R ? R.records.map((r) => `<tr><td class="num">${esc(r.date)}</td>${hq ? `<td>${esc(title(r.region))}</td>` : ''}<td>${esc(r.school_name)}</td><td>${esc(r.grade)}</td><td>${esc(r.enumerator)}</td><td class="num">${esc(r.stuid)}</td><td class="r num">${esc(r.rand)}</td><td>${r.present === 'absent' ? chip('absent', 'warn') : 'present'}</td><td class="num">${esc(r.at)}</td><td class="r num">${r.mins === '' ? '' : esc(r.mins)}</td><td class="num">${esc(r.phone)}</td></tr>`).join('') : '';
+  return `<div class="card"><h3>Pupil records</h3><div class="sub">Every student test record with its key information. No pupil names. Choose where and when, then count or download.</div>
+  <div class="mf" style="display:flex;gap:10px;flex-wrap:wrap">${hq ? `<label>Region<select id="puRegion"><option value="">All</option>${(S.cfg?.regions || []).map((r) => `<option value="${r}" ${f.region === r ? 'selected' : ''}>${esc(title(r))}</option>`).join('')}</select></label>` : ''}
+  <label>School<input id="puSchool" list="puSchools" value="${esc(f.school)}" placeholder="Name or code (optional)"></label><datalist id="puSchools">${schools.map((x) => `<option value="${esc(x.id)}">${esc(x.name)}</option>`).join('')}</datalist>
+  <label>From<input type="date" id="puFrom" value="${esc(f.from)}"></label><label>To<input type="date" id="puTo" value="${esc(f.to)}"></label>
+  <label>Grade<select id="puGrade"><option value="">All</option>${[1, 2, 3].map((g) => `<option ${f.grade == g ? 'selected' : ''}>${g}</option>`).join('')}</select></label>
+  <label>Test admin<input id="puEnum" value="${esc(f.enumerator)}" placeholder="Part of the name"></label><label>Pupil ID<input id="puStu" value="${esc(f.stuid)}"></label></div>
+  <label class="cb"><input type="checkbox" id="puAbsent" ${f.absent ? 'checked' : ''}> Absent pupils only</label>
+  <p style="margin:10px 0 0"><button class="btn" data-act="puFind">Show records</button> ${R ? '<button class="btn sec" data-act="puCsv">Download as CSV</button>' : ''} ${P.msg ? `<span class="m">${esc(P.msg)}</span>` : ''}</p></div>
+  ${R ? `${sum}<div class="card" style="margin-top:12px"><div class="tbl dt-wrap"><table class="dt"><thead><tr><th>Date</th>${hq ? '<th>Region</th>' : ''}<th>School</th><th>Gr</th><th>Test admin</th><th>Pupil ID</th><th class="r">No.</th><th>Status</th><th>Start</th><th class="r">Min</th><th>Phone</th></tr></thead><tbody>${rows || '<tr><td colspan="11" class="empty">No records match.</td></tr>'}</tbody></table></div></div>` : ''}`;
+}
+function viewPupils() { return `${dataBanner()}<div class="pagehead"><div><h2>Pupil records</h2><p>Look at and count every student record for your region.</p></div></div>${pupilsView()}`; }
+function puRead() { const g = (i) => document.getElementById(i); const P = (S.pu ||= { f: {}, res: null }); if (!g('puFrom')) return P.f; P.f = { region: g('puRegion')?.value || '', school: g('puSchool').value.trim(), from: g('puFrom').value, to: g('puTo').value, grade: g('puGrade').value, enumerator: g('puEnum').value.trim(), stuid: g('puStu').value.trim(), absent: g('puAbsent').checked }; return P.f; }
+async function pupilAction(a) {
+  const P = (S.pu ||= { f: {}, res: null, msg: '' });
+  try {
+    if (a === 'puFind') { const f = puRead(); P.msg = 'Reading from KoBo…'; render(); const q = new URLSearchParams(Object.fromEntries(Object.entries({ region: f.region, school: f.school, from: f.from, to: f.to, grade: f.grade, enumerator: f.enumerator, stuid: f.stuid, absent: f.absent ? '1' : '' }).filter(([, v]) => v))); P.res = await api('/api/pupils?' + q); P.msg = ''; }
+    else if (a === 'puCsv') { const hdr = ['Date', 'Region', 'School code', 'School', 'Grade', 'Test admin', 'Pupil ID', 'Pupil no', 'Status', 'Start', 'Minutes', 'Phone', 'Submitted']; const q = (v) => '"' + String(v ?? '').replace(/"/g, '""') + '"'; const lines = [hdr.map(q).join(',')].concat(P.res.records.map((r) => [r.date, title(r.region), r.school, r.school_name, r.grade, r.enumerator, r.stuid, r.rand, r.present, r.at, r.mins, r.phone, r.sub].map(q).join(','))); const blob = new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' }); const l = document.createElement('a'); l.href = URL.createObjectURL(blob); l.download = `pupil-records-${todayEAT()}.csv`; l.click(); return; }
+  } catch (e) { P.msg = e.message; }
+  render();
 }
 
 // ---------- Admin: KoBo storage and deleting photos ----------
@@ -1712,6 +1750,7 @@ document.addEventListener('click', async (e) => {
     else if (a === 'stSave') { const g = (id) => document.getElementById(id).value; const targets = {}; document.querySelectorAll('[data-tg]').forEach((i) => { (targets[i.dataset.tg] ||= {})[i.dataset.f] = Number(i.value); }); try { await api('/api/admin/settings', { method: 'POST', body: { brand: { platform: g('stPlatform'), programme: g('stProgramme'), tagline: g('stTagline'), assistant: g('stAssistant') }, targets } }); S.cfg = await api('/api/config'); applyBrand(); S.stMsg = 'Saved. The new name shows everywhere.'; await loadAdmin(); } catch (e) { S.stMsg = e.message; } render(); }
     else if (/^rep[A-Z]/.test(a)) await repAction(a, t);
     else if (a === 'goMineQ') { S.qf = { q: '', type: '', sev: '', region: '', st: 'mine' }; S.tab = 'allq'; render(); }
+    else if (/^pu[A-Z]/.test(a)) await pupilAction(a);
     else if (/^dl[A-Z]/.test(a)) await cleanAction(a, t);
     else if (/^ms[A-Z]/.test(a)) await msAction(a, t);
     else if (/^ai[A-Z]/.test(a)) await aiAction(a, t);
@@ -1721,6 +1760,7 @@ document.addEventListener('click', async (e) => {
     else if (a === 'sendTest') { const to = ($('#testTo').value || '').trim(); if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(to)) { S.testMsg = 'Type a valid email address first.'; render(); return; } store.set('kf_test_to', to); try { await api('/api/admin/test-email', { method: 'POST', body: { to } }); S.testMsg = 'A test was sent to ' + to + '. It is marked [TEST] and goes only to that address.'; } catch (e) { S.testMsg = e.message; } render(); }
     else if (a === 'copyNotice') await copyNotice(t);
     else if (a === 'noticeAll') { S.nAll = !S.nAll; render(); }
+    else if (a === 'nwView') { S.nwView = t.dataset.v; render(); }
     else if (/^nw[A-Z]/.test(a)) await newsAction(a, t);
     else if (a === 'calsyncOn' || a === 'calsyncOff') { if (a === 'calsyncOn' && !confirm('Switch on? When enough regions have submitted, the calendar check turns on in the forms for every planned school.')) return; await api('/api/admin/calsync', { method: 'POST', body: { action: a === 'calsyncOn' ? 'enable' : 'disable' } }); await loadAdmin(); render(); }
     else if (a === 'calsyncRun') { S.calSyncMsg = 'Uploading…'; render(); try { const r = await api('/api/admin/calsync', { method: 'POST', body: { action: 'run' } }); S.calSyncMsg = r.ran?.skipped || (r.ran?.ok ? 'Uploaded ' + r.ran.version : 'Failed: ' + JSON.stringify(r.ran?.results)); } catch (e) { S.calSyncMsg = e.message; } await loadAdmin(); render(); }

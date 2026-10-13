@@ -2,6 +2,7 @@ import { koboForm } from './koboforms.js';
 import { listNews, manageNews, react as reactNews, saveNews, deleteNews, pinNews, publish as publishNews, runDueNews, checkMilestones, polish as polishNews } from './news.js';
 import { ownWork, teamBlock, coordinatorOverview } from './own.js';
 import { buildCalendar, markCalendarDirty, syncCalendar, calendarStatus, setCalSync, loadCalSync } from './calendar.js';
+import { pupilRecords } from './pupils.js';
 import { attachList, attachFetch, attachDelete, storageView } from './attachments.js';
 import { findRecords, listRequests, actOnRequest, copyOf } from './deletions.js';
 import { messagesApi, builtinSave, runDueMessages } from './messages.js';
@@ -425,6 +426,7 @@ export default {
         }
       }
 
+      if (path === '/api/pupils') { try { const r = await pupilRecords(env, who, Object.fromEntries(url.searchParams)); return r.error ? err(r.error, r.status || 422) : json(r); } catch (e) { return err(String(e.message || e), 502); } }
       if (path.startsWith('/api/deletions')) {
         if (!(who.role === 'hq' || who.role === 'rc' || who.role === 'arc')) return err('Not allowed', 403);
         try {
