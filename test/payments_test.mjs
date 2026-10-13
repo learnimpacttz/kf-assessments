@@ -23,4 +23,10 @@ ok('apportion adds up exactly', apportion([1.5, 2.5, 3.5], 8).reduce((a, b) => a
 // 6 an unassigned grade-subject is reported, not lost silently
 const victim = F.teachers.find((t) => t.assign[1].kis); const t2 = F.teachers.map((t) => (t.school === victim.school && t.assign[1].kis ? { ...t, assign: { ...t.assign, 1: { kis: 0, math: t.assign[1].math } } } : t));
 const r2 = runCod({ schools: F.schools, teachers: t2, previous_infra_winners: F.previous_infra_winners }); ok('a cell without a teacher is reported, not lost silently', r2.exceptions.some((e) => e.type === 'cells_without_teacher') && !r2.checks[0].ok && r2.unpaid === undefined);
+// 7 no minimum payment: a school where nobody passes gets zero, teachers there get zero, and the whole budget is still paid out
+const z = JSON.parse(JSON.stringify(F.schools)); const zs = z.find((x) => x.arm !== 'Control' && x.grades[1]); for (const g of Object.values(zs.grades)) for (const k of Object.keys(g.skills)) g.skills[k] = 0;
+const r3 = runCod({ schools: z, teachers: F.teachers, previous_infra_winners: F.previous_infra_winners }); const zeroTeachers = F.teachers.filter((t) => t.school === zs.id && t.position === 2).map((t) => r3.teacher_pay[t.id]);
+ok('a school with no passes earns zero (no minimum) and the budget is still paid out in full', zeroTeachers.length > 0 && zeroTeachers.every((v) => v === 0) && Object.values(r3.teacher_pay).reduce((a, b) => a + b, 0) === 334_400_000 && Object.values(r3.head_pay).reduce((a, b) => a + b, 0) === 66_880_000);
+// 8 infrastructure: one school per region (10 regions plus the Dodoma pilot schools) at TZS 5,000,000
+ok('infrastructure: 11 winners (10 regions + Dodoma pilot), TZS 55,000,000', r.infra.winners.length === 11 && r.totals.infra === 55_000_000 && new Set(r.infra.winners.map((w) => w.region)).size === 11);
 console.log(fail ? `\n${fail} FAILED` : '\nall passed'); process.exit(fail ? 1 : 0);
