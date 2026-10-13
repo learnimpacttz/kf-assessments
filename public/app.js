@@ -1151,22 +1151,23 @@ const TABS = {
   public: [['progress', 'Progress'], ['compare', 'Compare']],
   volunteer: [['day', 'My day'], ['news', 'News'], ['work', 'My work'], ['queries', 'My queries'], ['stats', 'My stats'], ['phones', 'Phones'], ['pupils', 'Pupil records'], ['compare', 'Compare'], ['practice', 'Practice'], ['help', 'Help']],
   rc: [['region', 'Region'], ['news', 'News'], ['plan', 'Plan & calendar'], ['team', 'My team'], ['allq', 'Queries'], ['phones', 'Phones'], ['compare', 'Compare'], ['reports', 'Reports'], ['clean', 'Data cleaning'], ['explore', 'Data explorer'], ['practice', 'Practice'], ['help', 'Help']],
-  hq: [['today', 'Today'], ['hq', 'HQ'], ['news', 'News'], ['messages', 'Write and schedule'], ['clean', 'Data cleaning'], ['regions', 'Regions & plans'], ['plan', 'Plan & calendar'], ['people', 'People'], ['allq', 'Queries'], ['phones', 'Phones'], ['compare', 'Compare'], ['reports', 'Reports'], ['explore', 'Data explorer'], ['admin', 'Admin'], ['help', 'Help'], ['practice', 'Practice']],
+  hq: [['today', 'Today'], ['hq', 'HQ'], ['news', 'News'], ['messages', 'Write and schedule'], ['clean', 'Data cleaning'], ['regions', 'Regions & plans'], ['plan', 'Plan & calendar'], ['people', 'People'], ['allq', 'Queries'], ['phones', 'Phones'], ['compare', 'Compare'], ['reports', 'Reports'], ['payments', 'Payments'], ['payments', 'Payments'], ['explore', 'Data explorer'], ['admin', 'Admin'], ['help', 'Help'], ['practice', 'Practice']],
 };
 const GROUPS = { rc: [['Home', ['region', 'news']], ['Plan', ['plan', 'team']], ['Checks', ['allq', 'clean', 'phones', 'compare', 'explore']], ['Reports', ['reports']], ['More', ['practice', 'help']]], volunteer: [['Today', ['day', 'news']], ['My work', ['work', 'queries', 'stats']], ['Team', ['phones', 'pupils', 'compare']], ['More', ['practice', 'help']]] };
-const HQ_GROUPS = [['Today', ['today']], ['Field', ['hq', 'regions', 'plan', 'people']], ['Checks', ['allq', 'clean', 'phones', 'compare', 'explore']], ['Messages', ['news', 'messages']], ['Reports', ['reports']], ['Admin', ['admin']], ['Help', ['help']]];
+const HQ_GROUPS = [['Today', ['today']], ['Field', ['hq', 'regions', 'plan', 'people']], ['Checks', ['allq', 'clean', 'phones', 'compare', 'explore']], ['Messages', ['news', 'messages']], ['Reports', ['reports', 'payments']], ['Admin', ['admin']], ['Help', ['help']]];
 const REPORTS_READY = true;
 const LEVEL_TXT = { admin: 'Admin', editor: 'Editor', viewer: 'Viewer' };
 const hqLevel = () => (S.who?.role === 'hq' ? S.who.level || 'admin' : null);
 const canWrite = () => !S.who || S.who.role !== 'hq' || hqLevel() !== 'viewer'; // editors and admins write messages and reports
 function tabAllowed(k) {
   if (k === 'admin') return hqLevel() === 'admin';
+  if (k === 'payments') return hqLevel() === 'admin';
   if (k === 'messages') return hqLevel() !== null;
   if (k === 'reports') return REPORTS_READY && S.who && S.who.role !== 'arc' && S.who.role !== 'volunteer';
   return true;
 }
 const roleKey = () => (!S.who ? 'public' : S.who.role === 'arc' ? 'rc' : S.who.role);
-const VIEWS = { progress: viewProgress, compare: viewCompare, day: viewDay, work: viewWork, queries: viewQueries, stats: viewStats, region: viewRegion, plan: viewPlan, team: viewTeam, explore: viewExplore, hq: viewHQ, regions: viewRegionsHQ, people: viewPeopleHQ, admin: viewAdmin, allq: viewAllQueries, phones: viewPhones, practice: viewPractice, news: viewNews, pupils: viewPupils, messages: viewMessages, reports: viewReports, clean: viewClean, today: viewToday, help: viewHelp };
+const VIEWS = { progress: viewProgress, compare: viewCompare, day: viewDay, work: viewWork, queries: viewQueries, stats: viewStats, region: viewRegion, plan: viewPlan, team: viewTeam, explore: viewExplore, hq: viewHQ, regions: viewRegionsHQ, people: viewPeopleHQ, admin: viewAdmin, allq: viewAllQueries, phones: viewPhones, practice: viewPractice, news: viewNews, payments: viewPayments, pupils: viewPupils, messages: viewMessages, reports: viewReports, clean: viewClean, today: viewToday, help: viewHelp };
 
 // Admin is long: each card folds away so you can jump to what you need. The first card stays open; your choices are remembered.
 function enhanceCollapsible() {
@@ -1357,6 +1358,42 @@ async function pupilAction(a) {
     else if (a === 'puCsv') { const hdr = ['Date', 'Region', 'School code', 'School', 'Grade', 'Test admin', 'Pupil ID', 'Pupil no', 'Status', 'Start', 'Minutes', 'Phone', 'Submitted']; const q = (v) => '"' + String(v ?? '').replace(/"/g, '""') + '"'; const lines = [hdr.map(q).join(',')].concat(P.res.records.map((r) => [r.date, title(r.region), r.school, r.school_name, r.grade, r.enumerator, r.stuid, r.rand, r.present, r.at, r.mins, r.phone, r.sub].map(q).join(','))); const blob = new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' }); const l = document.createElement('a'); l.href = URL.createObjectURL(blob); l.download = `pupil-records-${todayEAT()}.csv`; l.click(); return; }
   } catch (e) { P.msg = e.message; }
   render();
+}
+
+// ---------- Payments (HQ Admin only): the COD calculation by school; no names or bank details ----------
+const SKL = { k: 'Kiswahili', a: 'Arithmetic' };
+const tzs = (n) => (n == null ? '–' : Math.round(n).toLocaleString('en-GB'));
+async function loadPayments(year) { try { S.pay = { ...(S.pay || {}), data: null, err: null }; render(); S.pay.data = await api('/api/payments' + (year ? '?year=' + year : '')); } catch (e) { S.pay = { ...(S.pay || {}), err: e.message }; } render(); }
+function viewPayments() {
+  const P = S.pay; if (!P) return '<div class="empty">Loading…</div>'; if (P.err) return `<div class="banner bad">${esc(P.err)}</div>`; const d = P.data; if (!d) return '<div class="empty">Calculating from the stored test results…</div>';
+  if (d.status === 'waiting') return '<div class="empty">No data for that year yet.</div>';
+  const sel = `<select id="payYear" aria-label="Year">${d.years.map((y) => `<option value="${y}" ${y === d.year ? 'selected' : ''}>${y}</option>`).join('')}</select>`;
+  const ok = d.checks.filter((c) => c.ok).length; const prices = d.price_table.map((r) => r.price_per_pass).filter((x) => x != null);
+  const note = d.current ? `<div class="banner"><b>Provisional.</b> These are the numbers from the tests so far. They change until every school has been tested and the teacher data is complete. The official payment run is done in Stata.</div>` : `<div class="banner"><b>Rehearsal with ${esc(d.year)} data.</b> The same rules on last round's results, to check the engine. The 2025 official run paid TZS 334,400,000 to teachers and 66,880,000 to head teachers.</div>`;
+  const kp = `<div class="grid kpis" style="margin-top:10px">${kpi('Teacher budget (net)', tzs(d.net), 'after 5% tax')}${kpi('Head teacher pool', tzs(d.ht_net), '20% of teacher earnings')}${kpi('Schools in the pool', fmt(d.schools.length), 'control schools left out')}${kpi('Price per pass', prices.length ? tzs(Math.min(...prices)) + ' to ' + tzs(Math.max(...prices)) : '–', 'TZS, by skill')}${kpi('Checks passed', `${ok}<small> / ${d.checks.length}</small>`, ok === d.checks.length ? 'all clear' : 'see below')}</div>`;
+  const checks = `<div class="card" style="margin-top:14px"><h3>Checks</h3><div class="sub">All must pass before a payment list is approved.</div>${d.checks.map((c) => `<div class="flag"><i class="st ${c.ok ? 'good' : 'bad'}"></i><div><b>${esc(c.name)}</b><span>${esc(c.detail)}</span></div></div>`).join('')}</div>`;
+  const prt = `<div class="card" style="margin-top:14px"><h3>Price per pass, by skill</h3><div class="sub">The skill budget divided by all projected passes in the programme. Harder skills have fewer passes, so each pass pays more.</div><div class="tbl dt-wrap"><table class="dt"><thead><tr><th>Grade</th><th>Subject</th><th>Skill</th><th class="r">Budget</th><th class="r">Projected passes</th><th class="r">TZS per pass</th></tr></thead><tbody>${d.price_table.map((r) => `<tr><td>${r.grade}</td><td>${r.subject === 'kis' ? 'Kiswahili' : 'Arithmetic'}</td><td>${esc(r.skill.replace(/^[ka]\d_/, '').replace(/_/g, ' '))}</td><td class="r num">${tzs(r.budget)}</td><td class="r num">${tzs(r.projected_passes)}</td><td class="r num">${r.price_per_pass == null ? '–' : tzs(r.price_per_pass)}</td></tr>`).join('')}</tbody></table></div></div>`;
+  const reg = `<div class="card" style="margin-top:14px"><h3>By region</h3><div class="tbl dt-wrap"><table class="dt"><thead><tr><th>Region</th><th class="r">Schools ready</th><th class="r">Teacher pay (TZS)</th><th class="r">Head teacher pool (TZS)</th></tr></thead><tbody>${d.regions.map((r) => `<tr><td><b>${esc(title(r.region))}</b></td><td class="r num">${r.ready} / ${r.schools}</td><td class="r num">${tzs(r.total)}</td><td class="r num">${tzs(r.ht_pot)}</td></tr>`).join('')}</tbody></table></div></div>`;
+  const names = Object.fromEntries(d.schools.map((s) => [s.id, s.name]));
+  const inf = `<div class="card" style="margin-top:14px"><h3>Infrastructure bonus: leading school in each region</h3><div class="sub">Highest pass rate over all skill tests. Earlier winners (2023 to 2025) are left out. TZS 5,000,000 each.</div><div class="tbl dt-wrap"><table class="dt"><thead><tr><th>Region</th><th>School</th><th class="r">Pass rate</th></tr></thead><tbody>${d.infra.winners.slice().sort((a, b) => a.region.localeCompare(b.region)).map((w) => `<tr><td>${esc(title(w.region))}</td><td><b>${esc(names[w.school] || w.school)}</b></td><td class="r num">${(w.rate * 100).toFixed(1)}%</td></tr>`).join('')}</tbody></table></div>${d.infra.ties.length ? `<p class="m"><b>Tie:</b> ${d.infra.ties.map((t) => esc(title(t.region))).join(', ')}. Decide the tie-break.</p>` : ''}</div>`;
+  const cols = [
+    { k: 'name', label: 'School', val: (s) => s.name, search: (s) => s.name + ' ' + s.id, html: (s) => `<b>${esc(s.name)}</b>` },
+    { k: 'region', label: 'Region', val: (s) => s.region, search: (s) => s.region, html: (s) => esc(title(s.region)) },
+    { k: 'arm', label: 'Group', small: true, val: (s) => s.arm, html: (s) => esc(s.arm) },
+    { k: 'rate', label: 'Pass rate', cls: 'r', val: (s) => s.pass_rate ?? -1, html: (s) => (s.pass_rate == null ? '–' : (s.pass_rate * 100).toFixed(1) + '%') },
+    { k: 'total', label: 'Teacher pay (TZS)', cls: 'r', val: (s) => s.total, html: (s) => `<span class="num">${tzs(s.total)}</span>` },
+    { k: 'each', label: 'Average per teacher', cls: 'r', small: true, val: (s) => { const c = s.cells.filter((x) => x.each); return c.length ? c.reduce((a, x) => a + x.each, 0) / c.length : 0; }, html: (s) => { const c = s.cells.filter((x) => x.each); return `<span class="num">${c.length ? tzs(c.reduce((a, x) => a + x.each, 0) / c.length) : '–'}</span>`; } },
+    { k: 'ht', label: 'Head teacher (TZS)', cls: 'r', small: true, val: (s) => s.ht_each ?? 0, html: (s) => `<span class="num">${tzs(s.ht_each)}</span>` },
+    { k: 'ready', label: 'Ready', val: (s) => s.grades_ready, html: (s) => chip(s.grades_ready + ' of 3', s.grades_ready === 3 ? 'good' : s.grades_ready ? 'warn' : 'bad') },
+  ];
+  const filters = [{ k: 'region', label: 'Region', get: (s) => s.region, options: (r) => [...new Set(r.map((s) => s.region))].sort().map((x) => [x, title(x)]) }, { k: 'rdy', label: 'Ready', get: (s) => (s.grades_ready === 3 ? 'yes' : 'no'), options: () => [['yes', 'All 3 grades'], ['no', 'Not complete']] }];
+  const tbl = `<div class="card" style="margin-top:14px"><h3>Schools</h3><div class="sub">Projected payment per school from the pass rates so far. "Average per teacher" is the school's payment shared by the teachers recorded for each grade and subject. Names of teachers and bank details are never shown here.</div>${dataTable('pay-schools', cols, d.schools, { filters, sort: 'total', dir: -1, placeholder: 'Search a school', limit: 400 })}<p style="margin-top:10px"><button class="btn sm sec" data-act="payCsv">Download the school table (CSV)</button></p></div>`;
+  return `<div class="pagehead"><div><h2>Payments</h2><p>The cash-on-delivery bonus worked out from the test results. HQ Admin only.</p></div>${sel}</div>${note}${kp}${checks}${reg}${inf}${prt}${tbl}`;
+}
+function payCsv() {
+  const d = S.pay?.data; if (!d) return; const q = (v) => '"' + String(v ?? '').replace(/"/g, '""') + '"';
+  const lines = [['School code', 'School', 'Region', 'Group', 'Pass rate', 'Teacher pay TZS', 'Head teacher pool TZS', 'Head teachers', 'Per head teacher TZS', 'Grades ready'].map(q).join(',')].concat(d.schools.map((s) => [s.id, s.name, title(s.region), s.arm, s.pass_rate == null ? '' : s.pass_rate.toFixed(4), s.total, s.ht_pot, s.head_teachers, s.ht_each ?? '', s.grades_ready].map(q).join(',')));
+  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' })); a.download = `cod-by-school-${d.year}.csv`; a.click();
 }
 
 // ---------- Admin: KoBo storage and deleting photos ----------
@@ -1733,7 +1770,7 @@ document.addEventListener('click', async (e) => {
   const th = e.target.closest('[data-ts]');
   if (th) { const [id, k] = th.dataset.ts.split(':'); const T = S.tbl[id]; if (T.sort === k) T.dir = -T.dir; else { T.sort = k; T.dir = 1; } render(); return; }
   const t = e.target.closest('[data-tab],[data-act]'); if (!t) return;
-  if (t.dataset.tab) { S.tab = t.dataset.tab; S.selVisit = null; if (S.tab === 'messages') { render(); await loadMsgs(); } if (S.tab === 'clean') { render(); await loadClean(); } if (S.tab === 'plan') { await loadPlan(); } if (S.tab === 'phones') { S.ph = null; render(); await loadPhones(); } if (S.tab === 'practice') { S.pr = null; render(); await loadPractice(); } if (S.tab === 'news') { await openNews(); } if (S.tab === 'reports') { render(); await openReports(); } if (S.tab === 'admin') await loadAdmin(); render(); return; }
+  if (t.dataset.tab) { S.tab = t.dataset.tab; S.selVisit = null; if (S.tab === 'messages') { render(); await loadMsgs(); } if (S.tab === 'clean') { render(); await loadClean(); } if (S.tab === 'payments') { await loadPayments(); return; } if (S.tab === 'plan') { await loadPlan(); } if (S.tab === 'phones') { S.ph = null; render(); await loadPhones(); } if (S.tab === 'practice') { S.pr = null; render(); await loadPractice(); } if (S.tab === 'news') { await openNews(); } if (S.tab === 'reports') { render(); await openReports(); } if (S.tab === 'admin') await loadAdmin(); render(); return; }
   const a = t.dataset.act;
   try {
     if (a === 'login') { const c = $('#code').value.trim().toUpperCase(); if (!c) return; S.code = c; try { const r = await api('/api/login'); S.who = r.who; store.set('kf_code', c); S.tab = null; await go(); } catch { S.code = null; loginScreen('That code was not recognised.'); } }
@@ -1750,6 +1787,7 @@ document.addEventListener('click', async (e) => {
     else if (a === 'stSave') { const g = (id) => document.getElementById(id).value; const targets = {}; document.querySelectorAll('[data-tg]').forEach((i) => { (targets[i.dataset.tg] ||= {})[i.dataset.f] = Number(i.value); }); try { await api('/api/admin/settings', { method: 'POST', body: { brand: { platform: g('stPlatform'), programme: g('stProgramme'), tagline: g('stTagline'), assistant: g('stAssistant') }, targets } }); S.cfg = await api('/api/config'); applyBrand(); S.stMsg = 'Saved. The new name shows everywhere.'; await loadAdmin(); } catch (e) { S.stMsg = e.message; } render(); }
     else if (/^rep[A-Z]/.test(a)) await repAction(a, t);
     else if (a === 'goMineQ') { S.qf = { q: '', type: '', sev: '', region: '', st: 'mine' }; S.tab = 'allq'; render(); }
+    else if (a === 'payCsv') payCsv();
     else if (/^pu[A-Z]/.test(a)) await pupilAction(a);
     else if (/^dl[A-Z]/.test(a)) await cleanAction(a, t);
     else if (/^ms[A-Z]/.test(a)) await msAction(a, t);
@@ -1869,6 +1907,7 @@ document.addEventListener('change', async (e) => {
   if (e.target.dataset?.dsel) { const id = Number(e.target.dataset.dsel); const C = S.cl; const g0 = (i) => document.getElementById(i); if (g0('dfSchool')) C.form = { kind: g0('dfKind').value, school: g0('dfSchool').value.trim(), date: g0('dfDate').value, grade: g0('dfGrade').value, stuid: g0('dfStu').value.trim(), dups: g0('dfDups').checked }; const rs0 = g0('dfReason'); if (rs0) C.reasonDraft = rs0.value; C.sel = (C.sel || []).filter((x) => x !== id); if (e.target.checked) C.sel.push(id); render(); return; }
   const tf = e.target.dataset?.tf; if (tf) { const [id, k] = tf.split(':'); S.tbl[id].f[k] = e.target.value; render(); return; }
   const qf = e.target.dataset?.qf; if (qf) { S.qf[qf] = e.target.value; render(); return; }
+  if (e.target.id === 'payYear') { await loadPayments(e.target.value); return; }
   if (e.target.id === 'viewAsSel') { await setViewAs(e.target.value); return; }
   if (e.target.id === 'yearSel') { S.year = e.target.value; S.allSchools = null; S.workCache = {}; S.linked = null; await go(); }
   else if (e.target.id === 'planRegion') { S.draft = null; S.dayNotes = null; await loadPlan(e.target.value); render(); }

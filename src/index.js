@@ -3,6 +3,8 @@ import { listNews, manageNews, react as reactNews, saveNews, deleteNews, pinNews
 import { ownWork, teamBlock, coordinatorOverview } from './own.js';
 import { buildCalendar, markCalendarDirty, syncCalendar, calendarStatus, setCalSync, loadCalSync } from './calendar.js';
 import { pupilRecords } from './pupils.js';
+import { codFromYear } from './paymentdata.js';
+import { INFRA_WINNERS } from './data/infra_winners.js';
 import { attachList, attachFetch, attachDelete, storageView } from './attachments.js';
 import { findRecords, listRequests, actOnRequest, copyOf } from './deletions.js';
 import { messagesApi, builtinSave, runDueMessages } from './messages.js';
@@ -435,6 +437,15 @@ export default {
           if (method === 'POST') { const r = await actOnRequest(env, who, await request.json().catch(() => ({}))); return r.error ? err(r.error, r.status || 422) : json(r); }
           return json(await listRequests(env, who));
         } catch (e) { return err(String(e.message || e), 502); }
+      }
+      // ---------- payments (HQ Admin only): the COD engine on the stored year; no names or bank details ----------
+      if (path === '/api/payments') {
+        if (who.role !== 'hq' || (who.level || 'admin') !== 'admin') return err('The payments page is for HQ Admin only', 403);
+        const y = String(url.searchParams.get('year') || ''); const years = (await stateYears(env)).filter((x) => x !== 'practice'); let year = years.includes(y) ? y : null; if (!year) { for (const c of [CURRENT_YEAR, ...years.slice().reverse()]) { if (!years.includes(c)) continue; const t = await loadYear(env, c); if (t && t.n > 0) { year = c; break; } } year = year || years[years.length - 1]; }
+        const Y = await loadYear(env, year); if (!Y) return json({ status: 'waiting', years });
+        const prev = [...INFRA_WINNERS['2023-2024'], ...(Number(year) >= 2026 ? INFRA_WINNERS['2025'] : [])];
+        await logActivity(env, who, 'Opened the payments page', year);
+        return json({ status: 'ok', year, years: years.filter((x) => x !== 'practice'), current: year === CURRENT_YEAR, ...codFromYear(Y, prev) });
       }
       // ---------- HQ only ----------
       if (who.role !== 'hq') return err('HQ only', 403);
