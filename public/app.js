@@ -477,14 +477,17 @@ function viewAdmin() {
 
 // ---------- reusable table: search, filter, sort, click-to-open ----------
 S.tbl = {};
+const memKey = (id) => 'kf_view:' + (S.who ? S.who.id ?? S.who.name : 'x') + ':' + id;
+function tblLoad(id, def) { try { const v = JSON.parse(store.get(memKey('t:' + id)) || 'null'); return v ? { ...def, sort: v.sort ?? def.sort, dir: v.dir ?? def.dir, f: v.f || {} } : def; } catch { return def; } }
+function tblSave(id) { const T = S.tbl[id]; if (T) store.set(memKey('t:' + id), JSON.stringify({ sort: T.sort, dir: T.dir, f: T.f })); }
 function dataTable(id, cols, rows, opts = {}) {
-  const T = (S.tbl[id] ||= { q: '', sort: opts.sort || null, dir: opts.dir ?? -1, f: {} });
+  const T = (S.tbl[id] ||= tblLoad(id, { q: '', sort: opts.sort || null, dir: opts.dir ?? -1, f: {} }));
   const filters = opts.filters || [];
   const q = T.q.toLowerCase();
   let list = rows.filter((r) => (!q || cols.some((c) => c.search && String(c.search(r) ?? '').toLowerCase().includes(q))) && filters.every((f) => !T.f[f.k] || String(f.get(r)) === T.f[f.k]));
   const sc = cols.find((c) => c.k === T.sort);
   if (sc) list = list.slice().sort((x, y) => { const a = sc.val(x), b = sc.val(y); if (a == null && b == null) return 0; if (a == null) return 1; if (b == null) return -1; return (typeof a === 'string' ? a.localeCompare(b) : a - b) * T.dir; });
-  const tool = `<div class="toolbar"><input data-tq="${id}" type="search" placeholder="${esc(opts.placeholder || 'Search')}" value="${esc(T.q)}" aria-label="Search">${filters.map((f) => `<select data-tf="${id}:${f.k}" aria-label="${esc(f.label)}"><option value="">${esc(f.label)}: all</option>${f.options(rows).map((o) => `<option value="${esc(o[0])}" ${T.f[f.k] === String(o[0]) ? 'selected' : ''}>${esc(o[1])}</option>`).join('')}</select>`).join('')}<span class="count">${list.length} of ${rows.length}</span></div>`;
+  const dirty = Boolean(T.q) || Object.values(T.f).some(Boolean); const tool = `<div class="toolbar"><input data-tq="${id}" type="search" placeholder="${esc(opts.placeholder || 'Search')}" value="${esc(T.q)}" aria-label="Search">${filters.map((f) => `<select data-tf="${id}:${f.k}" aria-label="${esc(f.label)}"><option value="">${esc(f.label)}: all</option>${f.options(rows).map((o) => `<option value="${esc(o[0])}" ${T.f[f.k] === String(o[0]) ? 'selected' : ''}>${esc(o[1])}</option>`).join('')}</select>`).join('')}${dirty ? `<button class="btn sm ghost" data-act="tblReset" data-id="${id}">Reset</button>` : ''}<span class="count">${list.length} of ${rows.length}</span></div>`;
   const head = cols.map((c) => `<th class="${c.cls || ''} ${c.small ? 'hide-s' : ''} ${c.val ? 'sortable' : ''} ${T.sort === c.k ? 'sorted' : ''}" ${c.val ? `data-ts="${id}:${c.k}"` : ''}>${c.label}${T.sort === c.k ? (T.dir < 0 ? ' ▼' : ' ▲') : ''}</th>`).join('');
   const body = list.slice(0, opts.limit || 300).map((r) => `<tr class="${opts.open && opts.open(r) ? 'click' : ''}" ${opts.open && opts.open(r) ? `data-open="${esc(opts.open(r))}"` : ''}>${cols.map((c) => `<td class="${c.cls || ''} ${c.small ? 'hide-s' : ''}">${c.html(r)}</td>`).join('')}</tr>`).join('');
   return `${tool}<div class="tbl dt-wrap"><table class="dt"><thead><tr>${head}</tr></thead><tbody>${body || `<tr><td colspan="${cols.length}" class="empty">Nothing matches. Clear the search or filters.</td></tr>`}</tbody></table></div>`;
@@ -866,7 +869,7 @@ function linkedView(hq) {
 function viewAllQueries() {
   const hq = S.who.role === 'hq';
   const all = flagsAll();
-  const F = (S.qf ||= { q: '', type: '', sev: '', region: '', st: 'open' });
+  const F = (S.qf ||= (() => { try { return { q: '', type: '', sev: '', region: '', st: 'open', ...JSON.parse(store.get(memKey('qf')) || '{}'), q: '' }; } catch { return { q: '', type: '', sev: '', region: '', st: 'open' }; } })());
   const needsMe = (f) => { const a = qAbility(f); return a.respond || a.review; }; const inReview = (f) => ['team', 'hq1', 'final'].includes(wfOf(f).stage);
   const list = all.filter((f) => (F.st === 'all' || (F.st === 'resolved' ? !isOpen(f) : F.st === 'mine' ? isOpen(f) && needsMe(f) : F.st === 'review' ? isOpen(f) && inReview(f) : isOpen(f))) && (!F.type || f.type === F.type) && (!F.sev || f.sev === F.sev) && (!F.region || f.region === F.region) && (!F.q || [f.school_name, f.school, f.admin, f.lga, f.ward, f.text].join(' ').toLowerCase().includes(F.q.toLowerCase())));
   const types = [...new Set(all.map((f) => f.type))];
@@ -1186,6 +1189,27 @@ function enhanceCollapsible() {
   const ds = [...document.querySelectorAll('#app details.colcard')]; const head = document.querySelector('#app .pagehead');
   if (head && ds.length > 3 && !document.querySelector('#app .jump')) { const j = document.createElement('div'); j.className = 'jump'; ds.forEach((d, i) => { const t = d.querySelector('summary').textContent.trim(); const b = document.createElement('button'); b.textContent = t.length > 22 ? t.slice(0, 21) + '…' : t; b.onclick = () => { d.open = true; d.scrollIntoView({ behavior: 'smooth', block: 'start' }); }; j.appendChild(b); }); head.after(j); }
 }
+const startKey = () => (S.who && !S.viewAs ? store.get('kf_start:' + roleKey() + ':' + (S.who.id ?? S.who.name)) : null);
+const IC = (d) => `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
+const GICON = {
+  Today: IC('<path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/>'), Home: IC('<path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/>'),
+  Field: IC('<path d="M12 21s-7-6-7-11a7 7 0 0114 0c0 5-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/>'), Plan: IC('<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/>'),
+  Checks: IC('<circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-6"/>'), Messages: IC('<path d="M21 12a8 8 0 01-11.5 7.2L4 21l1.8-5A8 8 0 1121 12z"/>'),
+  Reports: IC('<path d="M4 20V10M10 20V4M16 20v-8M22 20H2"/>'), Admin: IC('<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2"/>'),
+  Help: IC('<circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 115 0c0 1.7-2.5 2-2.5 4M12 17h.01"/>'), 'My work': IC('<rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4h6v3H9zM9 12h6M9 16h6"/>'),
+  Team: IC('<circle cx="9" cy="8" r="3"/><path d="M3 20c0-3.5 2.7-6 6-6s6 2.5 6 6M16 5a3 3 0 010 6M21 20c0-2.6-1.6-4.7-4-5.6"/>'), More: IC('<circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/>'),
+};
+function bottomBar(groups, cur, badge) {
+  let b = document.getElementById('bbar'); if (!b) { b = document.createElement('nav'); b.id = 'bbar'; b.setAttribute('aria-label', 'Main'); document.body.appendChild(b); }
+  let sh = document.getElementById('msheet'); if (!sh) { sh = document.createElement('div'); sh.id = 'msheet'; sh.hidden = true; document.body.appendChild(sh); }
+  const lastOf = (g, ks) => (S.grpLast[g] && ks.includes(S.grpLast[g]) ? S.grpLast[g] : ks[0]);
+  const over = groups.length > 5; const main = over ? groups.slice(0, 4) : groups; const rest = over ? groups.slice(4) : [];
+  const btn = ([g, ks]) => `<button data-tab="${lastOf(g, ks)}" class="${g === cur[0] ? 'on' : ''}" aria-label="${g}">${GICON[g] || ''}<span>${g}${ks.includes('news') ? badge('news') : ''}</span></button>`;
+  const moreOn = rest.some(([g]) => g === cur[0]);
+  b.innerHTML = main.map(btn).join('') + (over ? `<button data-act="moreMenu" class="${moreOn ? 'on' : ''}" aria-label="More">${GICON.More}<span>More</span></button>` : '');
+  sh.innerHTML = rest.map(([g, ks]) => `<button data-tab="${lastOf(g, ks)}" class="${g === cur[0] ? 'on' : ''}">${GICON[g] || ''}<span>${g}</span></button>`).join('');
+  b.hidden = false; if (!over) sh.hidden = true;
+}
 const BELL = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>';
 function whoHtml() {
   if (!S.who) return '<button class="ghost" data-act="showLogin">Sign in</button>';
@@ -1196,12 +1220,13 @@ function whoHtml() {
   return `${back}${bell}<div class="umw"><button class="uav" data-act="umenu" aria-haspopup="true" aria-label="Account menu">${esc(ini)}</button><div class="um" id="um" hidden>
   <div class="who2"><b>${esc(w.name)}</b><span>${esc(sub)}</span></div>
   ${viewAsControl() ? `<div class="row"><label>View the app as</label>${viewAsControl()}</div>` : ''}
+  ${S.viewAs ? '' : `<div class="row"><label>Open the app on</label><select id="startSel" aria-label="Start page"><option value="">The first tab (default)</option>${TABS[roleKey()].filter(([k]) => tabAllowed(k)).map(([k, t]) => `<option value="${k}" ${startKey() === k ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select></div>`}
   <button class="mbtn" data-act="alerts">${esc(alertsLabel())}</button>
   <button class="mbtn out" data-act="logout">Sign out</button></div></div>`;
 }
 function render() {
   const tabs = TABS[roleKey()].filter(([k]) => tabAllowed(k));
-  if (!tabs.find((t) => t[0] === S.tab)) S.tab = tabs[0][0];
+  if (!tabs.find((t) => t[0] === S.tab)) { const st = startKey(); S.tab = st && tabs.find((t) => t[0] === st) ? st : tabs[0][0]; if (S.tab !== tabs[0][0] && !S.viewAs) { const want = S.tab; setTimeout(() => { if (S.tab === want) selectTab(want); }, 0); } }
   const badge = (k) => (k === 'news' && S.tab !== 'news' && unreadNews().length ? ` <span class="nbadge">${unreadNews().length}</span>` : '');
   let n2 = $('#nav2'); if (!n2) { n2 = document.createElement('nav'); n2.id = 'nav2'; n2.setAttribute('role', 'tablist'); $('#nav').after(n2); }
   const GRP = roleKey() === 'hq' ? HQ_GROUPS : GROUPS[roleKey()];
@@ -1211,9 +1236,9 @@ function render() {
     const cur = groups.find(([, ks]) => ks.includes(S.tab)) || groups[0];
     S.grpLast ||= {};
     $('#nav').innerHTML = groups.map(([g, ks]) => `<button role="tab" aria-selected="${g === cur[0]}" data-tab="${S.grpLast[g] && ks.includes(S.grpLast[g]) ? S.grpLast[g] : ks[0]}">${g}${ks.includes('news') ? badge('news') : ''}</button>`).join('');
-    S.grpLast[cur[0]] = S.tab;
+    S.grpLast[cur[0]] = S.tab; bottomBar(groups, cur, badge);
     n2.innerHTML = cur[1].length > 1 ? cur[1].map((k) => `<button role="tab" aria-selected="${k === S.tab}" data-tab="${k}">${lab[k]}</button>`).join('') : ''; n2.hidden = cur[1].length < 2;
-  } else { $('#nav').innerHTML = tabs.map(([k, t]) => `<button role="tab" aria-selected="${k === S.tab}" data-tab="${k}">${t}${badge(k)}</button>`).join(''); n2.innerHTML = ''; n2.hidden = true; }
+  } else { const bb = document.getElementById('bbar'); if (bb) bb.hidden = true; $('#nav').innerHTML = tabs.map(([k, t]) => `<button role="tab" aria-selected="${k === S.tab}" data-tab="${k}">${t}${badge(k)}</button>`).join(''); n2.innerHTML = ''; n2.hidden = true; }
   $('#who').innerHTML = whoHtml(); $('#gsb').hidden = !S.who;
   const pd = S.ov && S.ov.plan_due;
   let planBanner = '';
@@ -1760,7 +1785,12 @@ async function go() {
   try { await loadData(); S.stale = null; render(); ensureSchools(); if (S.tab === 'explore' && ['teach', 'school', 'linked'].includes(S.exTab)) loadExplore(S.exTab); if (S.tab === 'phones' && !S.ph) loadPhones().then(render); if (S.tab === 'practice' && !S.pr) loadPractice().then(render); if (S.tab === 'reports' && !S.rep) openReports(); loadNews().then(() => { if (S.tab === 'news') openNews().then(render); }); if (location.hash.includes(':')) { try { openDetail(decodeURIComponent(location.hash.slice(1))); } catch {} } } catch (e) { if (e.status === 401 && S.code) { S.code = null; S.who = null; store.set('kf_code', null); loginScreen('Your code was not recognised. Try again.'); } else $('#app').innerHTML = `<div class="banner bad">${esc(e.message)}</div>`; }
 }
 
+async function selectTab(k) {
+  S.tab = k; S.selVisit = null; if (S.tab === 'messages') { render(); await loadMsgs(); } if (S.tab === 'clean') { render(); await loadClean(); } if (S.tab === 'payments') { await loadPayments();  return; } if (S.tab === 'plan') { await loadPlan(); } if (S.tab === 'phones') { S.ph = null; render(); await loadPhones(); } if (S.tab === 'practice') { S.pr = null; render(); await loadPractice(); } if (S.tab === 'news') { await openNews(); } if (S.tab === 'reports') { render(); await openReports(); } if (S.tab === 'admin') await loadAdmin(); render();
+}
+
 document.addEventListener('click', async (e) => {
+  if (!e.target.closest('#msheet,[data-act=moreMenu]')) { const m = document.getElementById('msheet'); if (m && !m.hidden) m.hidden = true; }
   if (!e.target.closest('.umw')) { const m = document.getElementById('um'); if (m && !m.hidden) m.hidden = true; }
   const dl = e.target.closest('[data-dl]'); if (dl) { e.preventDefault(); try { const res = await fetch('/api/deletions/copy?id=' + dl.dataset.dl, { headers: { 'x-access-code': S.code } }); if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Not allowed'); const a = document.createElement('a'); a.href = URL.createObjectURL(await res.blob()); a.download = 'deleted-records-' + dl.dataset.dl + '.json.gz'; a.click(); } catch (er) { alert(er.message); } return; }
   const ex = e.target.closest('[data-ex]'); if (ex) { await loadExplore(ex.dataset.ex); return; }
@@ -1768,14 +1798,16 @@ document.addEventListener('click', async (e) => {
   if (op && !e.target.closest('summary,button,select,input,textarea')) { e.preventDefault(); $('#gsr') && ($('#gsr').hidden = true); openDetail(op.dataset.open); return; }
   const rs = e.target.closest('[data-rs]'); if (rs && S.rep?.edit) { repSync(); const E = S.rep.edit; E.sort = E.sort && E.sort.k === rs.dataset.rs ? { k: rs.dataset.rs, dir: -E.sort.dir } : { k: rs.dataset.rs, dir: 1 }; const el = document.getElementById('repTable'); if (el) el.innerHTML = repTable(); return; }
   const th = e.target.closest('[data-ts]');
-  if (th) { const [id, k] = th.dataset.ts.split(':'); const T = S.tbl[id]; if (T.sort === k) T.dir = -T.dir; else { T.sort = k; T.dir = 1; } render(); return; }
+  if (th) { const [id, k] = th.dataset.ts.split(':'); const T = S.tbl[id]; if (T.sort === k) T.dir = -T.dir; else { T.sort = k; T.dir = 1; } tblSave(id); render(); return; }
   const t = e.target.closest('[data-tab],[data-act]'); if (!t) return;
-  if (t.dataset.tab) { S.tab = t.dataset.tab; S.selVisit = null; if (S.tab === 'messages') { render(); await loadMsgs(); } if (S.tab === 'clean') { render(); await loadClean(); } if (S.tab === 'payments') { await loadPayments(); return; } if (S.tab === 'plan') { await loadPlan(); } if (S.tab === 'phones') { S.ph = null; render(); await loadPhones(); } if (S.tab === 'practice') { S.pr = null; render(); await loadPractice(); } if (S.tab === 'news') { await openNews(); } if (S.tab === 'reports') { render(); await openReports(); } if (S.tab === 'admin') await loadAdmin(); render(); return; }
+  if (t.dataset.tab) { await selectTab(t.dataset.tab); return; }
   const a = t.dataset.act;
   try {
     if (a === 'login') { const c = $('#code').value.trim().toUpperCase(); if (!c) return; S.code = c; try { const r = await api('/api/login'); S.who = r.who; store.set('kf_code', c); S.tab = null; await go(); } catch { S.code = null; loginScreen('That code was not recognised.'); } }
     else if (a === 'logout') { S.code = null; S.who = null; S.ov = null; S.plan = null; S.draft = null; store.set('kf_code', null); try { localStorage.removeItem('kf_snap'); } catch {} S.tab = null; loginScreen(); }
     else if (a === 'showLogin') loginScreen();
+    else if (a === 'tblReset') { const T = S.tbl[t.dataset.id]; if (T) { T.f = {}; T.q = ''; store.set(memKey('t:' + t.dataset.id), null); } render(); }
+    else if (a === 'moreMenu') { const m = document.getElementById('msheet'); if (m) m.hidden = !m.hidden; }
     else if (a === 'umenu') { const m = document.getElementById('um'); if (m) m.hidden = !m.hidden; }
     else if (a === 'searchToggle') { const g = document.getElementById('gswrap'); g.classList.toggle('open'); if (g.classList.contains('open')) document.getElementById('gs').focus(); }
     else if (a === 'alerts') await toggleAlerts();
@@ -1905,8 +1937,9 @@ document.addEventListener('change', async (e) => {
   if (e.target.name === 'mcWhen') { msRead(); render(); return; }
   if (e.target.dataset?.mreg || e.target.dataset?.mpe || e.target.id?.startsWith('mcR-')) { msRead(); render(); return; }
   if (e.target.dataset?.dsel) { const id = Number(e.target.dataset.dsel); const C = S.cl; const g0 = (i) => document.getElementById(i); if (g0('dfSchool')) C.form = { kind: g0('dfKind').value, school: g0('dfSchool').value.trim(), date: g0('dfDate').value, grade: g0('dfGrade').value, stuid: g0('dfStu').value.trim(), dups: g0('dfDups').checked }; const rs0 = g0('dfReason'); if (rs0) C.reasonDraft = rs0.value; C.sel = (C.sel || []).filter((x) => x !== id); if (e.target.checked) C.sel.push(id); render(); return; }
-  const tf = e.target.dataset?.tf; if (tf) { const [id, k] = tf.split(':'); S.tbl[id].f[k] = e.target.value; render(); return; }
-  const qf = e.target.dataset?.qf; if (qf) { S.qf[qf] = e.target.value; render(); return; }
+  const tf = e.target.dataset?.tf; if (tf) { const [id, k] = tf.split(':'); S.tbl[id].f[k] = e.target.value; tblSave(id); render(); return; }
+  const qf = e.target.dataset?.qf; if (qf) { S.qf[qf] = e.target.value; store.set(memKey('qf'), JSON.stringify(S.qf)); render(); return; }
+  if (e.target.id === 'startSel') { store.set('kf_start:' + roleKey() + ':' + (S.who.id ?? S.who.name), e.target.value || null); return; }
   if (e.target.id === 'payYear') { await loadPayments(e.target.value); return; }
   if (e.target.id === 'viewAsSel') { await setViewAs(e.target.value); return; }
   if (e.target.id === 'yearSel') { S.year = e.target.value; S.allSchools = null; S.workCache = {}; S.linked = null; await go(); }
