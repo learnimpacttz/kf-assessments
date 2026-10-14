@@ -91,7 +91,7 @@ export async function eveningGap(env, sum, region, today, siteUrl) {
   return { subject: `KiuFunza 4 · Automated end-of-day check · ${open.length} school(s) not complete · ${today}`, html, text: open.map((o) => `${o.name}: ${o.g}`).join('\n') };
 }
 
-const FROM_NAME = 'KiuFunza 4 Automated Updates (LearnImpact)';
+const FROM_NAME = 'KF4 Auto Updates';
 // Resend (REST) when RESEND_API_KEY is set, otherwise the Cloudflare email binding.
 let NOTE = ''; // an extra note HQ wrote for the built-in email being sent right now
 export async function sendMail(env, to, msg) {
