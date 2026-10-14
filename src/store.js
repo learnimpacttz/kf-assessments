@@ -7,7 +7,12 @@ import { DurableObject } from 'cloudflare:workers';
 const CHUNK = 400000; // characters per stored piece, well under the per-value limit
 
 export class Store extends DurableObject {
+  // Counts the calls this store receives per hour (kept in memory; shown to HQ Admin) so heavy use can be found.
+  hits = {}; since = new Date().toISOString();
+  bump(what) { const h = new Date().toISOString().slice(0, 13); const x = (this.hits[h] ||= { n: 0 }); x.n++; x[what] = (x[what] || 0) + 1; const ks = Object.keys(this.hits).sort(); while (ks.length > 36) delete this.hits[ks.shift()]; }
+  async usage() { return { since: this.since, hours: this.hits }; }
   async get(key) {
+    this.bump('get');
     const n = await this.ctx.storage.get(`k:${key}:n`);
     if (!n) return null;
     const keys = Array.from({ length: n }, (_, i) => `k:${key}:${i}`);
@@ -15,6 +20,7 @@ export class Store extends DurableObject {
     return keys.map((k) => got.get(k)).join('');
   }
   async put(key, str) {
+    this.bump('put');
     const prev = (await this.ctx.storage.get(`k:${key}:n`)) || 0;
     const pieces = [];
     for (let i = 0; i < str.length; i += CHUNK) pieces.push(str.slice(i, i + CHUNK));
@@ -26,10 +32,12 @@ export class Store extends DurableObject {
     if (prev > pieces.length) await this.ctx.storage.delete(Array.from({ length: prev - pieces.length }, (_, i) => `k:${key}:${pieces.length + i}`));
   }
   async del(key) {
+    this.bump('del');
     const n = (await this.ctx.storage.get(`k:${key}:n`)) || 0;
     await this.ctx.storage.delete([`k:${key}:n`, ...Array.from({ length: n }, (_, i) => `k:${key}:${i}`)]);
   }
   async acquire(name, ttlMs) {
+    this.bump('lock');
     const now = Date.now();
     const until = await this.ctx.storage.get(`lock:${name}`);
     if (until && until > now) return false;
@@ -52,5 +60,6 @@ export const kv = (env) => {
     delete: (key) => stub.del(key),
     acquire: (name, ttl) => stub.acquire(name, ttl),
     release: (name) => stub.release(name),
+    usage: () => stub.usage(),
   };
 };

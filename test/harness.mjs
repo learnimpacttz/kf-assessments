@@ -109,6 +109,7 @@ for (const region of REGIONS) {
   R.push(mk('TRAIN001', 1, 'Hawa Hussein', 'collect:P1', 3));
   addStudents(state, R);
 }
+for (const m of ['get','put','del']) { const f = stub[m]; stub[m] = async (...a) => { globalThis.__ops = (globalThis.__ops || 0) + 1; return f(...a); }; }
 await stub.put('v2:state', JSON.stringify(state));
 await recomputeSummaries(env);
 
@@ -116,6 +117,7 @@ const sess = {};
 http.createServer(async (req, res) => {
   const u = new URL(req.url, 'http://localhost:8788');
   if (u.pathname === '/__kobo') { res.writeHead(200, { 'content-type': 'application/json' }); return res.end(JSON.stringify(globalThis.__kobo)); }
+  if (u.pathname === '/__ops') { const n = globalThis.__ops || 0; globalThis.__ops = 0; res.writeHead(200); return res.end(String(n)); }
   if (u.pathname === '/__tick') { await worker.scheduled({ scheduledTime: Date.now() }, env, { waitUntil() {} }); res.writeHead(200); return res.end('ok'); }
   if (u.pathname === '/__mail') { res.writeHead(200, { 'content-type': 'application/json' }); return res.end(JSON.stringify(globalThis.__mail || [])); }
   const m = /^\/__as\/(\w+)\/?$/.exec(u.pathname);

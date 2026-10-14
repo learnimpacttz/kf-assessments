@@ -706,7 +706,8 @@ export default {
         }
         return json(await calendarStatus(env));
       }
-      if (path === '/api/admin/storage') { try { return json(await storageView(env)); } catch (e) { return err(String(e.message || e), 502); } }
+      if (path === '/api/admin/do-usage') { return json(await kv(env).usage()); }
+      if (path === '/api/admin/storage') { try { return json({ ...(await storageView(env)), dash: await kv(env).usage().catch(() => null) }); } catch (e) { return err(String(e.message || e), 502); } }
       if (path === '/api/admin/attach') {
         try {
           if (method === 'POST') { const r = await attachDelete(env, who, await request.json().catch(() => ({}))); return r.error ? err(r.error, r.status || 422) : json(r); }
