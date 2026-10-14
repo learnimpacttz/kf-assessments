@@ -148,7 +148,7 @@ export function summarize(Y, { year, bands, today, owners = {}, practice = false
   const devReg = {};    // device -> { names: {name: n}, days, schools, n }
   const noteDev = (dev, who, schoolId, date, n, fromTests = false) => {
     if (!dev) return;
-    const dp = (dayPeople[schoolId + '|' + date] ||= { names: new Set(), devs: new Set(), tdevs: new Set() }); dp.devs.add(dev); if (fromTests) dp.tdevs.add(dev); if (who) dp.names.add(who);
+    const dp = (dayPeople[schoolId + '|' + date] ||= { names: new Set(), devs: new Set(), tdevs: new Set(), per: {} }); dp.devs.add(dev); if (fromTests) { dp.tdevs.add(dev); dp.per[dev] = (dp.per[dev] || 0) + (n || 0); } if (who) dp.names.add(who);
     const dd = (dayDev[date + '|' + dev + '|' + schoolId] ||= new Set()); if (who) dd.add(who);
     const r = (devReg[dev] ||= { names: {}, days: new Set(), schools: new Set(), n: 0 });
     if (who) r.names[who] = (r.names[who] || 0) + n; r.days.add(date); r.schools.add(schoolId); r.n += n;
@@ -181,7 +181,7 @@ export function summarize(Y, { year, bands, today, owners = {}, practice = false
     if (c.sb) mergeSb(a.sb, c.sb);
     if (c.sb && c.sb[2] + c.sb[3] > 0) flags.push({ sev: 'warn', type: 'latesub', school: schoolId, grade: +grade, admin: enumerator, date, text: `${c.sb[2] + c.sb[3]} test record(s) sent 2 or more days after the visit`, hint: 'Send records the same day. Turn on auto send in KoBo Collect so nothing waits on the phone.' });
     (work[enumerator] ||= []).push([date, schoolId, +grade, c.av, c.tn ? r1(c.ts / c.tn) : null]);
-    (dayPeople[schoolId + '|' + date] ||= { names: new Set(), devs: new Set(), tdevs: new Set() }).names.add(enumerator);
+    (dayPeople[schoolId + '|' + date] ||= { names: new Set(), devs: new Set(), tdevs: new Set(), per: {} }).names.add(enumerator);
     for (const [dv, cnt] of Object.entries(c.dv || {})) noteDev(dv, enumerator, schoolId, date, cnt, true);
     const dm = ((dayMap[enumerator] ||= {})[date] ||= { s: new Set(), n: 0, h0: 99, h1: -1 });
     dm.s.add(schoolId); dm.n += c.av; if (c.h0 < dm.h0) dm.h0 = c.h0; if (c.h1 > dm.h1) dm.h1 = c.h1;
@@ -269,9 +269,6 @@ export function summarize(Y, { year, bands, today, owners = {}, practice = false
     sc.tf = (Y.tf[sc.id] || {}).n || 0;
     if (Y.tf[sc.id]) { const { last, ...tch } = Y.tf[sc.id]; sc.tch = tch; }
     if (sc.done) nSchoolsDone += 1;
-    // team-size rule: every school visited for assessment (any group, with or without M&E); the Dodoma pilot, where the whole team takes part, is exempt
-    if (sc.started && sc.arm !== 'Pilot' && (sc.maxTeam < 2 || sc.maxTeam > 6))
-      flags.push({ sev: 'warn', type: 'team', school: sc.id, admin: sc.admins[0] || '', date: sc.last, text: `${sc.arm}${sc.mne === 'M&E' ? ' · M&E' : ''} school visited by ${sc.maxTeam} test admin(s)`, hint: 'An assessment visit normally has the RC or ARC and two volunteers (about 3 people). 2 to 6 is accepted.' });
     for (const g of [1, 2, 3]) {
       const G = sc.g[g];
       if (G.av > G.target && G.target > 0) flags.push({ sev: 'warn', type: 'over', school: sc.id, grade: g, admin: sc.admins[0] || '', date: sc.last, text: `Grade ${g}: ${G.av} tested, target ${G.target}`, hint: 'More pupils than the sample. Check for extras.' });
@@ -286,7 +283,10 @@ export function summarize(Y, { year, bands, today, owners = {}, practice = false
   for (const [key, dp] of Object.entries(dayPeople)) {
     const [schoolId, date] = key.split('|'); const sc = schools[schoolId]; if (!sc) continue;
     sc.people = sc.people || {};
-    sc.people[date] = [dp.names.size, dp.devs.size];
+    sc.people[date] = [dp.names.size, dp.devs.size, Object.values(dp.per).sort((a, b) => b - a)];
+    // team size is judged from the phones that sent tests and how many tests each sent, not from a fixed number of people
+    { const P = dp.tdevs.size || dp.devs.size; const loads = Object.values(dp.per); const top = loads.length ? Math.max(...loads) : 0; const total = loads.reduce((a, b) => a + b, 0);
+      if (sc.arm !== 'Pilot' && (P > 6 || top > 45)) flags.push({ sev: 'warn', type: 'team', school: schoolId, admin: [...dp.names][0] || '', date, text: P > 6 ? `${P} phones sent records from this school on one day` : `One phone sent ${top} tests on one day (${total} tests from ${P} phone${P === 1 ? '' : 's'})`, hint: 'Teams differ in size, so this looks at the phones and what each sent. More than 6 phones, or one phone sending more than 45 tests in a day, is unusual. Check who was at the school.', normal: 'up to 6 phones, no phone above 45 tests a day' }); }
     // only when the TEST records carry phone IDs: sampling phones alone say nothing about how many people tested
     if (dp.tdevs.size && dp.tdevs.size < dp.names.size) flags.push({ sev: 'warn', type: 'headcount', school: schoolId, admin: [...dp.names].join(', '), date, text: `${dp.names.size} test admins recorded by name but only ${dp.tdevs.size} phone(s) sent tests`, hint: 'Someone may have used another person\'s phone or name. Confirm who was at the school.', normal: 'one phone per test admin' });
   }

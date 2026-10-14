@@ -72,6 +72,7 @@ for (const region of REGIONS) {
     ...['09:00', '09:10', '09:20', '09:30'].map((f, k) => rec('collect:OK', 'Ayubu Abasi'.replace('Ayubu Abasi', 'Hawa Hussein') === 'x' ? '' : 'Halima Hosea', B, 3, f, ['09:09', '09:19', '09:29', '09:39'][k])),
   ];
   addStudents(state, R);
+  const PY = (state.yrs.practice ||= { cells: {}, sg: {}, tf: {}, tl: {}, n: 0 }); (PY.sg ||= {})['TRAIN001|1'] = { att: 25, list: [3, 5, 9], rn: [], date: '2026-10-14', enum: 'Hawa Hussein', dev: 'collect:P1' }; PY.sg['TRAIN001|2'] = { att: 18, list: [], rn: [], date: '2026-10-14', enum: 'Hawa Hussein', dev: 'collect:P1' }; PY.nsamp = 2;
 }
 // calendar-check answers coming back from the forms (Tanga school 3: one sampling record off-calendar, tests answered 'c' and 'b')
 {
