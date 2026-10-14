@@ -1152,12 +1152,12 @@ function applyBrand() {
 // ---------- shell ----------
 const TABS = {
   public: [['progress', 'Progress'], ['compare', 'Compare']],
-  volunteer: [['day', 'My day'], ['news', 'News'], ['work', 'My work'], ['queries', 'My queries'], ['stats', 'My stats'], ['phones', 'Phones'], ['pupils', 'Pupil records'], ['compare', 'Compare'], ['practice', 'Practice'], ['help', 'Help']],
-  rc: [['region', 'Region'], ['news', 'News'], ['plan', 'Plan & calendar'], ['team', 'My team'], ['allq', 'Queries'], ['phones', 'Phones'], ['compare', 'Compare'], ['reports', 'Reports'], ['clean', 'Data cleaning'], ['explore', 'Data explorer'], ['practice', 'Practice'], ['help', 'Help']],
-  hq: [['today', 'Today'], ['hq', 'HQ'], ['news', 'News'], ['messages', 'Write and schedule'], ['clean', 'Data cleaning'], ['regions', 'Regions & plans'], ['plan', 'Plan & calendar'], ['people', 'People'], ['allq', 'Queries'], ['phones', 'Phones'], ['compare', 'Compare'], ['reports', 'Reports'], ['payments', 'Payments'], ['payments', 'Payments'], ['explore', 'Data explorer'], ['admin', 'Admin'], ['help', 'Help'], ['practice', 'Practice']],
+  volunteer: [['day', 'My day'], ['news', 'News'], ['work', 'My work'], ['queries', 'My queries'], ['stats', 'My stats'], ['phones', 'Phones'], ['pupils', 'Pupil records'], ['compare', 'Compare'], ['practice', 'Practice (Mafunzo)'], ['help', 'Help']],
+  rc: [['region', 'Region'], ['news', 'News'], ['plan', 'Plan & calendar'], ['team', 'My team'], ['allq', 'Queries'], ['phones', 'Phones'], ['compare', 'Compare'], ['reports', 'Reports'], ['clean', 'Data cleaning'], ['explore', 'Data explorer'], ['practice', 'Practice (Mafunzo)'], ['help', 'Help']],
+  hq: [['today', 'Today'], ['hq', 'HQ'], ['news', 'News'], ['messages', 'Write and schedule'], ['clean', 'Data cleaning'], ['regions', 'Regions & plans'], ['plan', 'Plan & calendar'], ['people', 'People'], ['allq', 'Queries'], ['phones', 'Phones'], ['compare', 'Compare'], ['reports', 'Reports'], ['payments', 'Payments'], ['payments', 'Payments'], ['explore', 'Data explorer'], ['admin', 'Admin'], ['help', 'Help'], ['practice', 'Practice (Mafunzo)']],
 };
 const GROUPS = { rc: [['Home', ['region', 'news']], ['Plan', ['plan', 'team']], ['Checks', ['allq', 'clean', 'phones', 'compare', 'explore']], ['Reports', ['reports']], ['More', ['practice', 'help']]], volunteer: [['Today', ['day', 'news']], ['My work', ['work', 'queries', 'stats']], ['Team', ['phones', 'pupils', 'compare']], ['More', ['practice', 'help']]] };
-const HQ_GROUPS = [['Today', ['today']], ['Field', ['hq', 'regions', 'plan', 'people']], ['Checks', ['allq', 'clean', 'phones', 'compare', 'explore']], ['Messages', ['news', 'messages']], ['Reports', ['reports', 'payments']], ['Admin', ['admin']], ['Help', ['help']]];
+const HQ_GROUPS = [['Today', ['today']], ['Field', ['hq', 'regions', 'plan', 'people', 'practice']], ['Checks', ['allq', 'clean', 'phones', 'compare', 'explore']], ['Messages', ['news', 'messages']], ['Reports', ['reports', 'payments']], ['Admin', ['admin']], ['Help', ['help']]];
 const REPORTS_READY = true;
 const LEVEL_TXT = { admin: 'Admin', editor: 'Editor', viewer: 'Viewer' };
 const hqLevel = () => (S.who?.role === 'hq' ? S.who.level || 'admin' : null);
