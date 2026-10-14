@@ -219,3 +219,7 @@ body{overscroll-behavior-y:contain}
 .pnext{background:var(--surface2);border-radius:10px;padding:10px 12px;margin:8px 0}.pnext.ok{background:var(--good-bg);color:var(--good)}
 .step{display:flex;gap:10px;padding:10px 0;border-bottom:1px solid var(--line)}.step .sn{flex:none;width:26px;height:26px;border-radius:50%;background:var(--surface2);display:flex;align-items:center;justify-content:center;font:700 13px var(--f-display)}.step.ok .sn{background:var(--good);color:#fff}.step .sb{min-width:0;flex:1}.step .sb>div{margin-top:3px}
 .pfold>summary{cursor:pointer;list-style:none;display:flex;justify-content:space-between;gap:12px;align-items:center}.pfold>summary::-webkit-details-marker{display:none}.pfold .psum b{display:block}.pfold .pmeta{min-width:110px;text-align:right}.pfold[open]>summary{margin-bottom:8px}
+
+.gcard{border:1px solid var(--line);border-radius:10px;padding:8px 10px;margin-top:8px}.gcard h4{margin:0 0 4px;display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap}.gcard .cb{margin:0}
+
+.prow.stack{flex-direction:column;align-items:stretch;gap:4px}.prow.stack .pr{width:100%}.prow.stack select{width:100%;max-width:100%}
