@@ -27,7 +27,7 @@ import { subscribe, unsubscribe, takeAlert, hashEndpoint, pushTo, pushStatus, pu
 import { tick, syncStatus, recomputeSummaries, resetAll, resetKind, loadState, loadYear, saveYear, stateYears, clearPractice } from './sync.js';
 import { getPlan, submitPlan, saveDraft, changeVisit, markNotice, withNotices } from './plan.js';
 import {
-  REGIONS, PARTNERS, REASONS, DAY_REASONS, PRACTICE_BY_ID, PRACTICE_REGION, PLAN_DEADLINE, FIELD_START, FIELD_END, PILOT_DAY, TRAINING_START, CURRENT_YEAR, STAFF, rosterState, staffForKoboName, SCHOOLS_BY_REGION, SCHOOL_BY_ID, eatToday,
+  devCode as devCodeOf, REGIONS, PARTNERS, REASONS, DAY_REASONS, PRACTICE_BY_ID, PRACTICE_REGION, PLAN_DEADLINE, FIELD_START, FIELD_END, PILOT_DAY, TRAINING_START, CURRENT_YEAR, STAFF, rosterState, staffForKoboName, SCHOOLS_BY_REGION, SCHOOL_BY_ID, eatToday,
   TARGET_PER_GRADE, DODOMA_TARGET_PER_GRADE, NOTICE_AEK_WORKING_DAYS, NOTICE_HT_WORKING_DAYS,
 } from './config.js';
 
@@ -351,10 +351,18 @@ export default {
       // ---------- practice: the training schools, open to everyone, never part of the real numbers ----------
       if (path === '/api/practice') {
         const sum = await readSummary(env, 'practice');
+        // everyone who took part, by name: test admins and whoever filled in a sampling form
+        const people = await (async () => {
+          const Y = await loadYear(env, 'practice'); if (!Y) return [];
+          const P = {}; const who = (nm) => (P[nm] ||= { name: nm, tests: { 1: 0, 2: 0, 3: 0 }, tested: 0, schools: new Set(), sampling: [], phones: new Set(), days: new Set() });
+          for (const [key, c] of Object.entries(Y.cells || {})) { const [date, school, grade, nm] = key.split('|'); if (!nm) continue; const w = who(nm); w.tests[grade] = (w.tests[grade] || 0) + c.n; w.tested += c.av; w.schools.add(school); w.days.add(date); for (const d of Object.keys(c.dv || {})) w.phones.add(devCodeOf(d)); }
+          for (const [key, g] of Object.entries(Y.sg || {})) { if (!g.enum) continue; const [school, grade] = key.split('|'); const w = who(g.enum); w.schools.add(school); w.sampling.push(`${PRACTICE_BY_ID[school]?.name || school} Gr ${grade}: ${g.att ?? '–'} present`); if (g.dev) w.phones.add(devCodeOf(g.dev)); if (g.date) w.days.add(g.date); }
+          return Object.values(P).map((w) => { const st = staffForKoboName(w.name); return { name: w.name, position: st ? st.position : null, region: st ? st.region : null, tests: w.tests, tested: w.tested, schools: [...w.schools].map((i) => PRACTICE_BY_ID[i]?.name || i), sampling: w.sampling, phones: [...w.phones], days: [...w.days].sort() }; }).sort((a, b) => b.tested - a.tested || a.name.localeCompare(b.name));
+        })().catch(() => []);
         const queries = await loadQueries(env);
         if (!sum) return json({ status: 'empty', schools: PRACTICE_SCHOOLS_UI(), note: 'No practice submissions yet. Submit a test or a sampling record for a TRAINING school and it appears here within a few minutes.' });
         const flags = decorate((sum.flags || []).map((f) => ({ ...f, school_name: PRACTICE_BY_ID[f.school]?.name, region: PRACTICE_REGION, lga: 'TRAINING LGA', ward: 'TRAINING' })), queries);
-        return json({ status: 'ok', as_of: sum.as_of, records: sum.national.records, tested: sum.national.tested, schools: Object.values(sum.schools).map(schoolRow).map((s) => ({ ...s, region: PRACTICE_REGION })), flags, admins: sum.admins.map((a) => ({ name: a.name, position: a.position, region: a.region, tested: a.tested, avg_min: a.avg_min, by_grade: a.by_grade, quality: a.quality, days: a.days })), bands: sum.bands, devices: (sum.devices || []).length });
+        return json({ status: 'ok', as_of: sum.as_of, records: sum.national.records, tested: sum.national.tested, schools: Object.values(sum.schools).map(schoolRow).map((s) => ({ ...s, region: PRACTICE_REGION })), flags, admins: sum.admins.map((a) => ({ name: a.name, position: a.position, region: a.region, tested: a.tested, avg_min: a.avg_min, by_grade: a.by_grade, quality: a.quality, days: a.days })), bands: sum.bands, devices: (sum.devices || []).length, people });
       }
 
       // ---------- phones: what each phone did, for the whole team to see ----------
