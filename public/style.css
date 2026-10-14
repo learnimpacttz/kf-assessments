@@ -205,3 +205,8 @@ td.chips{white-space:normal;line-height:2.1}td.chips .chip{white-space:normal;te
 
 .pgrid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:6px}@media(max-width:640px){.pgrid{grid-template-columns:1fr}}.pcell{background:var(--surface2);border-radius:10px;padding:10px 12px}.pcell b{display:block}
 tr.me td{background:var(--gold-bg,#fdf0cf)}
+
+#rfb.spin svg{animation:rfspin .8s linear infinite}@keyframes rfspin{to{transform:rotate(360deg)}}
+#toast{position:fixed;left:50%;bottom:calc(88px + env(safe-area-inset-bottom,0px));transform:translateX(-50%) translateY(20px);background:var(--brand2);color:#fff;padding:8px 16px;border-radius:999px;font:600 13px var(--f-body);opacity:0;pointer-events:none;transition:.25s;z-index:90}#toast.show{opacity:1;transform:translateX(-50%)}
+#ptr{position:fixed;top:0;left:0;right:0;height:60px;display:flex;align-items:flex-end;justify-content:center;transform:translateY(-60px);z-index:5;pointer-events:none}#ptr span{width:30px;height:30px;margin-bottom:8px;border-radius:50%;border:3px solid var(--line);border-top-color:var(--brand);background:var(--surface)}#ptr.ready span{border-top-color:var(--gold);animation:rfspin .8s linear infinite}
+body{overscroll-behavior-y:contain}

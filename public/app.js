@@ -466,9 +466,9 @@ function viewAdmin() {
   ${recipientsTable(a)}
   <div style="margin-top:10px"><button class="btn sm" data-act="saveRec">Save the email list</button></div></div>
   <div class="card" style="margin-top:14px"><h3>Preview and test</h3><div class="sub"><b>Nothing here is sent to people.</b> A preview only shows what an email would look like today, with today's numbers. To check how it arrives, send a test to your own address.</div>
-  <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn sm sec" data-act="prevMail" data-kind="morning" data-region="">Preview: HQ morning brief</button><button class="btn sm sec" data-act="prevMail" data-kind="morning" data-region="TANGA">Preview: coordinator morning update (Tanga)</button><button class="btn sm sec" data-act="prevMail" data-kind="evening" data-region="">Preview: end-of-day check</button><button class="btn sm sec" data-act="prevRem" data-region="TANGA">Preview: notice reminder (Tanga)</button></div>
+  <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn sm sec" data-act="prevMail" data-kind="morning" data-region="">Preview: HQ morning brief</button><button class="btn sm sec" data-act="fuPrev">Preview: onboarding follow-up (QR and install)</button><button class="btn sm sec" data-act="prevMail" data-kind="morning" data-region="TANGA">Preview: coordinator morning update (Tanga)</button><button class="btn sm sec" data-act="prevMail" data-kind="evening" data-region="">Preview: end-of-day check</button><button class="btn sm sec" data-act="prevRem" data-region="TANGA">Preview: notice reminder (Tanga)</button></div>
   ${a.preview ? `<div class="banner" style="margin-top:12px;background:var(--warn-bg)"><b>PREVIEW, NOT SENT.</b> Subject: ${esc(a.preview.subject)}</div><iframe sandbox title="Email preview" style="width:100%;height:420px;border:1px solid var(--line);border-radius:8px;background:#fff;margin-top:6px" srcdoc="${esc(a.preview.html)}"></iframe>` : ''}
-  <div class="f" style="margin-top:12px;display:flex;gap:8px;align-items:end;flex-wrap:wrap"><label>Send a test of the HQ morning brief to<input id="testTo" type="email" placeholder="your address" value="${esc(store.get('kf_test_to') || '')}"></label><button class="btn sm" data-act="sendTest">Send test (marked [TEST])</button></div>${S.testMsg ? `<p class="m">${esc(S.testMsg)}</p>` : ''}</div>
+  <div class="f" style="margin-top:12px;display:flex;gap:8px;align-items:end;flex-wrap:wrap"><label>Send a test of the HQ morning brief to<input id="testTo" type="email" placeholder="your address" value="${esc(store.get('kf_test_to') || '')}"></label><button class="btn sm" data-act="sendTest">Send test (marked [TEST])</button><button class="btn sm sec" data-act="fuTest">Send the follow-up test to this address</button></div><div class="f" style="margin-top:10px"><button class="btn sm" style="background:var(--bad,#b8432a);color:#fff" data-act="fuSend">Send the onboarding follow-up to all coordinators (copy to Michael, Mundo and Joram)</button></div>${S.testMsg ? `<p class="m">${esc(S.testMsg)}</p>` : ''}</div>
   <div class="card" style="margin-top:14px"><h3>Calendar for the KoBo forms: manual backup</h3><div class="sub">The standard way is the automatic update below: switch it on once and the file on the phones follows the plans by itself. This is the manual backup if the automatic update is off or fails. <b>Download</b> the file, then in KoBo open each project (Students and Sampling) > Form > Settings > Media and replace <b>ref_calendar.csv</b>. Never delete the file without replacing it: the forms look it up. <b>Download the last automatic copy</b> gives you exactly what the system last uploaded.</div><button class="btn sm" data-act="calCsv">Download the calendar built from today's plans</button> <button class="btn sm ghost" data-act="calCsvLast">Download the last automatic copy</button>${S.calMsg ? `<p class="m" style="margin-top:8px">${esc(S.calMsg)}</p>` : ''}</div>\n  ${autoCards(a)}
   <div class="card" style="margin-top:14px"><h3>Phone alerts</h3><div class="sub">${a.push?.ready ? '<span class="pill good">server ready</span>' : '<span class="pill warn">not set up</span>'} ${a.push ? a.push.devices + ' device(s) subscribed' : ''}${a.push && a.push.devices ? ' (' + Object.entries(a.push.by_role).map(([k, v]) => v + ' ' + k).join(', ') + ')' : ''}. Each person turns alerts on from the header button on their own phone. On iPhone the page must be on the home screen first.</div><button class="btn sm" data-act="pushTest">Send a test alert to HQ devices</button></div>\n  ${rosterCard(a)}${devicesCard(a)}${backupDaysCard(a)}${activityCard(a)}
   <div class="card" style="margin-top:14px"><h3>Access codes</h3><div class="sub">One code per person. Send each person their own code; do not share this list. HQ code stays with you.</div><div class="tbl"><table><thead><tr><th>Region</th><th>Role</th><th>Name</th><th>Code</th></tr></thead><tbody>${codes}</tbody></table></div></div>`;
@@ -1213,6 +1213,7 @@ function bottomBar(groups, cur, badge) {
   sh.innerHTML = rest.map(([g, ks]) => `<button data-tab="${lastOf(g, ks)}" class="${g === cur[0] ? 'on' : ''}">${GICON[g] || ''}<span>${g}</span></button>`).join('');
   b.hidden = false; if (!over) sh.hidden = true;
 }
+const REFRESH = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.6-6.4"/><path d="M21 4v5h-5"/></svg>';
 const BELL = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>';
 function whoHtml() {
   if (!S.who) return '<button class="ghost" data-act="showLogin">Sign in</button>';
@@ -1220,7 +1221,8 @@ function whoHtml() {
   const sub = [w.position, w.region ? title(w.region) : '', w.role === 'hq' ? LEVEL_TXT[hqLevel()] : ''].filter(Boolean).join(' · ');
   const bell = pushSupported() ? `<button class="ico ${S.alertsOn ? 'on' : ''}" id="alertsBtn" data-act="alerts" title="${esc(alertsLabel())}" aria-label="${esc(alertsLabel())}">${BELL}</button>` : '';
   const back = S.viewAs ? '<button class="ghost" data-act="exitPreview">Back to HQ</button>' : '';
-  return `${back}${bell}<div class="umw"><button class="uav" data-act="umenu" aria-haspopup="true" aria-label="Account menu">${esc(ini)}</button><div class="um" id="um" hidden>
+  const rf = `<button class="ico" id="rfb" data-act="refresh" title="Refresh" aria-label="Refresh">${REFRESH}</button>`;
+  return `${back}${rf}${bell}<div class="umw"><button class="uav" data-act="umenu" aria-haspopup="true" aria-label="Account menu">${esc(ini)}</button><div class="um" id="um" hidden>
   <div class="who2"><b>${esc(w.name)}</b><span>${esc(sub)}</span></div>
   ${viewAsControl() ? `<div class="row"><label>View the app as</label>${viewAsControl()}</div>` : ''}
   ${S.viewAs ? '' : `<div class="row"><label>Open the app on</label><select id="startSel" aria-label="Start page"><option value="">The first tab (default)</option>${TABS[roleKey()].filter(([k]) => tabAllowed(k)).map(([k, t]) => `<option value="${k}" ${startKey() === k ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select></div>`}
@@ -1231,10 +1233,10 @@ function pilotBanner() {
   if (!S.who || S.viewAs || !['volunteer', 'rc', 'arc'].includes(S.who.role)) return '';
   if (!S.pil) { S.pil = { loading: true }; loadPilot(); return ''; }
   const d = S.pil.data; if (!d) return ''; const c = d.schools.find((x) => x.mine); if (!c) return '';
-  const me = S.who; let line;
-  if (me.role === 'volunteer') { const v = c.staff[me.region].volunteers.find((x) => x.id === me.id); line = v && v.grade ? `You test <b>Grade ${v.grade}</b>.` : 'Your RC will tell you the grade you test.'; }
-  else if (me.role === 'rc') line = 'You <b>oversee</b> and talk to the head teacher. You do not administer assessments.';
-  else line = 'You <b>coordinate the sampling</b> and train the new test admins.';
+  const me = S.who; let line; const mine = [...c.staff[me.region].rc, ...c.staff[me.region].arc, ...c.staff[me.region].volunteers].find((x) => x.id === me.id) || {};
+  if (me.role === 'volunteer') line = mine.grade ? `You lead the attendance check and the sampling for <b>Grade ${mine.grade}</b> and test it, coached by the ARCs and RCs.` : 'Your RC will tell you the grade you lead and test.';
+  else if (me.role === 'rc') line = c.lead === me.id ? `You <b>lead the whole activity</b> and talk to the head teacher.${mine.support ? ' You also support Grade ' + mine.support + '.' : ''}` : `You <b>support the lead RC</b> and oversee sampling and tests in <b>${mine.support ? 'Grade ' + mine.support : 'one grade (to be set)'}</b>.`;
+  else line = `You <b>oversee the sampling</b> and administer tests as needed${mine.support ? ', mainly Grade ' + mine.support : ''}. You coach the new test admins.`;
   return `<div class="banner" style="background:var(--gold);color:var(--on-gold)"><b>Pilot day, ${esc(dayName(d.day))}:</b> ${esc(title(c.name))} with ${esc(c.regions.filter((r) => r !== me.region).map(title).join(''))}${c.start ? ' · starts ' + esc(c.start) : ''}. ${line} <a href="#pilot" data-tab="pilot"><b>Open Pilot day</b></a></div>`;
 }
 function render() {
@@ -1297,6 +1299,8 @@ function viewToday() {
 // ---------- Help ----------
 const HELP = {
   common: [
+    ['Install the app on your phone (Android)', '<ol style="margin:4px 0 8px;padding-left:20px"><li>Open the link or scan the QR code below in <b>Chrome</b>. (If you tapped the link inside WhatsApp, Facebook or another app, choose <b>Open in Chrome</b> from its menu first.)</li><li>Enter your access code.</li><li>Tap the menu <b>&#8942;</b> (three dots, top right of Chrome), then <b>Install app</b>, or <b>Add to Home screen</b> if you do not see Install. Tap <b>Install</b>.</li><li>Look for the <b>KiuFunza</b> icon on your home screen or in your apps list. From now on open it from the icon, with no link.</li></ol><p><b>If you do not see Install app:</b> update Chrome from the Play Store, make sure you are in Chrome and not another browser, and try again. In <b>Samsung Internet</b>: menu, <b>Add page to</b>, <b>Home screen</b>.</p><p><b>Alerts:</b> tap the bell icon at the top of the app and choose <b>Allow</b>. If you chose Block by mistake: Settings, Apps, KiuFunza (or Chrome), Notifications, switch on.</p><p><b>Updates:</b> tap the refresh icon at the top, or pull the page down from the top. You do not need to close and reopen the app.</p><p style="margin-top:8px"><img src="/api/qr.png" width="160" height="160" alt="QR code for the dashboard" style="border:1px solid var(--line);background:#fff"><br><span class="m">Scan with your camera to open the dashboard.</span></p>'],
+    ['Install the app on your phone (iPhone)', '<ol style="margin:4px 0 8px;padding-left:20px"><li>Open the link in <b>Safari</b>, not inside WhatsApp or another app.</li><li>Enter your access code.</li><li>Tap <b>Share</b> (the square with an arrow), scroll down, tap <b>Add to Home Screen</b>, then <b>Add</b>.</li><li>Open the <b>KiuFunza</b> icon from your home screen. Alerts work only when it is opened from that icon.</li></ol>'],
     ['What is this?', 'One place for the field work: who is where, which schools are done, what needs a reply, and what is next. It reads the KoBo forms every few minutes. It never shows pupil names.'],
     ['How do I sign in?', 'Use the code you were sent. It is yours alone. Do not share it. If it does not work, ask your RC or HQ for a new one.'],
     ['How do I get alerts on my phone?', 'Press <b>Turn on alerts</b> at the top and allow notifications. On an iPhone, first use Share, then Add to Home Screen, and open the app from there.'],
@@ -1437,24 +1441,27 @@ function payCsv() {
 // ---------- Pilot day: who does what at each Dodoma pilot school ----------
 async function loadPilot() { try { S.pil = { ...(S.pil || {}), data: await api('/api/pilot'), err: null }; } catch (e) { S.pil = { ...(S.pil || {}), err: e.message }; } render(); }
 function pilotCard(c, open) {
-  const names = (l) => l.map((p) => esc(p.name)).join(', ') || '–';
+  const gsel = (kind, sid, id, cur, ok, label) => (ok ? `<select data-${kind}="${sid}:${id}" aria-label="${esc(label)}"><option value="">None</option>${[1, 2, 3].map((g) => `<option value="${g}" ${cur === g ? 'selected' : ''}>Grade ${g}</option>`).join('')}</select>` : cur ? 'Grade ' + cur : '<span class="m">none</span>');
   const rcs = c.regions.flatMap((r) => c.staff[r].rc.map((p) => ({ ...p, r }))); const arcs = c.regions.flatMap((r) => c.staff[r].arc.map((p) => ({ ...p, r })));
   const all = c.regions.flatMap((r) => c.staff[r].volunteers); const cnt = { 1: 0, 2: 0, 3: 0, 0: 0 }; all.forEach((v) => { cnt[v.grade || 0]++; });
-  const sec = (t, who, note) => `<div class="pcell"><b>${t}</b><div class="m">${note}</div><div>${who}</div></div>`;
-  const tbl = c.regions.map((r) => `<h4 style="margin:12px 0 4px">${esc(title(r))} test admins ${c.editable.includes(r) ? `<button class="btn sm sec" data-act="pilSpread" data-school="${c.school}" data-region="${r}" style="margin-left:6px">Spread over grades</button>` : ''}</h4><div class="tbl"><table><thead><tr><th>Name</th><th>Role</th><th>Grade to test</th></tr></thead><tbody>${c.staff[r].volunteers.map((v) => `<tr class="${S.who?.id === v.id ? 'me' : ''}"><td><b>${esc(v.name)}</b>${S.who?.id === v.id ? ' ' + chip('You', 'gold') : ''}</td><td>${esc(v.position)}</td><td>${c.editable.includes(r) ? `<select data-pg="${c.school}:${v.id}" aria-label="Grade for ${esc(v.name)}"><option value="">Not set</option>${[1, 2, 3].map((g) => `<option value="${g}" ${v.grade === g ? 'selected' : ''}>Grade ${g}</option>`).join('')}</select>` : v.grade ? 'Grade ' + v.grade : '<span class="m">not set yet</span>'}</td></tr>`).join('') || '<tr><td colspan="3" class="empty">No test admins in the roster for this region.</td></tr>'}</tbody></table></div>`).join('');
+  const me = S.who?.id;
+  const rcRows = rcs.map((p) => { const lead = p.id === c.lead; return `<tr class="${me === p.id ? 'me' : ''}"><td><b>${esc(p.name)}</b> <span class="m">${esc(title(p.r))}</span>${me === p.id ? ' ' + chip('You', 'gold') : ''}</td><td>${lead ? chip('Leads the whole activity', 'good') : c.can_set_lead ? `<button class="btn sm sec" data-act="pilLead" data-school="${c.school}" data-staff="${p.id}">Make lead</button> <span class="m">Supports the lead and oversees sampling and tests in</span>` : '<span class="m">Supports the lead and oversees sampling and tests in</span>'}</td><td>${lead ? '<span class="m">also supports</span> ' : ''}${gsel('ps', c.school, p.id, p.support, c.editable.includes(p.r), 'Grade for ' + p.name)}</td></tr>`; }).join('');
+  const arcRows = arcs.map((p) => `<tr class="${me === p.id ? 'me' : ''}"><td><b>${esc(p.name)}</b> <span class="m">${esc(title(p.r))}</span>${me === p.id ? ' ' + chip('You', 'gold') : ''}</td><td class="m">Oversees the sampling and administers tests as needed</td><td><span class="m">also tests</span> ${gsel('ps', c.school, p.id, p.support, c.editable.includes(p.r), 'Grade for ' + p.name)}</td></tr>`).join('');
+  const tbl = c.regions.map((r) => `<h4 style="margin:12px 0 4px">${esc(title(r))} test admins ${c.editable.includes(r) ? `<button class="btn sm sec" data-act="pilSpread" data-school="${c.school}" data-region="${r}" style="margin-left:6px">Spread over grades</button>` : ''}</h4><div class="tbl"><table><thead><tr><th>Name</th><th>Role</th><th>Grade</th></tr></thead><tbody>${c.staff[r].volunteers.map((v) => `<tr class="${me === v.id ? 'me' : ''}"><td><b>${esc(v.name)}</b>${me === v.id ? ' ' + chip('You', 'gold') : ''}</td><td class="m">Leads the attendance check and the sampling for their grade, and tests it</td><td>${c.editable.includes(r) ? `<select data-pg="${c.school}:${v.id}" aria-label="Grade for ${esc(v.name)}"><option value="">Not set</option>${[1, 2, 3].map((g) => `<option value="${g}" ${v.grade === g ? 'selected' : ''}>Grade ${g}</option>`).join('')}</select>` : v.grade ? 'Grade ' + v.grade : '<span class="m">not set yet</span>'}</td></tr>`).join('') || '<tr><td colspan="3" class="empty">No test admins in the roster for this region.</td></tr>'}</tbody></table></div>`).join('');
   return `<div class="card" style="margin-top:12px;${c.mine ? 'border-left:4px solid var(--gold)' : ''}"><h3 style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap"><span>${esc(title(c.name))} ${c.mine ? chip('your school', 'gold') : ''}</span><span class="m" style="font-weight:400">${esc(c.regions.map(title).join(' + '))}${c.start ? ' · ' + esc(c.start) : ''}</span></h3>
-  <div class="pgrid">${sec('Oversee', rcs.map((p) => `${esc(p.name)} <span class="m">(${esc(title(p.r))})</span>`).join('<br>') || '–', 'Both RCs oversee everything and talk to the head teacher. They do not administer assessments.')}${sec('Sampling and coaching', arcs.map((p) => `${esc(p.name)} <span class="m">(${esc(title(p.r))})</span>`).join('<br>') || '–', 'Both ARCs coordinate the sampling and train the new test admins on the spot.')}</div>
+  <h4 style="margin:8px 0 4px">The two RCs</h4><div class="tbl"><table><thead><tr><th>Name</th><th>Role</th><th>Grade</th></tr></thead><tbody>${rcRows}</tbody></table></div>
+  <h4 style="margin:12px 0 4px">The two ARCs</h4><div class="tbl"><table><thead><tr><th>Name</th><th>Role</th><th>Grade</th></tr></thead><tbody>${arcRows}</tbody></table></div>
   <div class="m" style="margin:10px 0 2px"><b>Test admins by grade:</b> Grade 1 · ${cnt[1]} &nbsp; Grade 2 · ${cnt[2]} &nbsp; Grade 3 · ${cnt[3]} &nbsp; ${cnt[0] ? `<span class="pill warn">${cnt[0]} not set</span>` : '<span class="pill good">all set</span>'}</div>
   ${open ? tbl : `<details class="fd"><summary>Test admins (${all.length})</summary>${tbl}</details>`}</div>`;
 }
 function viewPilot() {
   const P = S.pil; if (!P) return '<div class="empty">Loading…</div>'; if (P.err) return `<div class="banner bad">${esc(P.err)}</div>`; const d = P.data; if (!d) return '<div class="empty">Loading…</div>';
   const mine = d.schools.filter((c) => c.mine), rest = d.schools.filter((c) => !c.mine);
-  return `<div class="pagehead"><div><h2>Pilot day</h2><p>${esc(dayName(d.day))}: two regional teams meet at each of the five Dodoma pilot schools. The two RCs oversee and talk to the head teacher, the two ARCs coordinate the sampling and train the new test admins, and all test admins run the assessments in the grades their RC plans.</p></div></div>
+  return `<div class="pagehead"><div><h2>Pilot day</h2><p>${esc(dayName(d.day))}: two regional teams meet at each of the five Dodoma pilot schools. One RC leads the whole activity; the other RC supports the lead and oversees sampling and tests in one grade. The two ARCs oversee the sampling and administer tests as needed. RCs and ARCs can also help with testing to save time. Every new test admin leads the attendance check and the sampling for their grade, coached by the ARCs and RCs.</p></div></div>
   ${mine.map((c) => pilotCard(c, true)).join('')}${rest.length ? `<h3 style="margin:18px 0 0">${mine.length ? 'The other pilot schools' : 'The pilot schools'}</h3>${rest.map((c) => pilotCard(c, !mine.length)).join('')}` : ''}`;
 }
 async function pilotAction(a, t) {
-  try { if (a === 'pilSpread') await api('/api/pilot', { method: 'POST', body: { action: 'spread', school: t.dataset.school, region: t.dataset.region } }); await loadPilot(); }
+  try { if (a === 'pilSpread') await api('/api/pilot', { method: 'POST', body: { action: 'spread', school: t.dataset.school, region: t.dataset.region } }); else if (a === 'pilLead') await api('/api/pilot', { method: 'POST', body: { action: 'lead', school: t.dataset.school, staff_id: t.dataset.staff } }); await loadPilot(); }
   catch (e) { alert(e.message); await loadPilot(); }
 }
 
@@ -1539,7 +1546,7 @@ async function loadMsgs() { try { const d = await api('/api/admin/messages'); S.
 function msRead() {
   const D = (S.msg.draft ||= msBlank()); const g = (id) => document.getElementById(id); if (!g('mcSubj')) return D;
   D.subject = g('mcSubj').value; D.body = g('mcBody').value; D.name = g('mcName')?.value || D.name;
-  D.channels = { email: g('mcEmail').checked, push: g('mcPush').checked, news: g('mcNews').checked };
+  D.channels = { email: g('mcEmail').checked, push: g('mcPush').checked, news: g('mcNews').checked }; D.cc_hq = g('mcCc') ? g('mcCc').checked : D.cc_hq;
   D.audience = { roles: ['hq', 'rc', 'arc', 'volunteer'].filter((r) => g('mcR-' + r)?.checked), regions: [...document.querySelectorAll('[data-mreg]')].filter((x) => x.checked).map((x) => x.dataset.mreg), people: [...document.querySelectorAll('[data-mpe]')].filter((x) => x.checked).map((x) => x.dataset.mpe) };
   const t = document.querySelector('input[name=mcWhen]:checked')?.value || 'now';
   D.schedule = { type: t, at: g('mcAt').value, time: g('mcTime').value || '08:00', days: [...document.querySelectorAll('[data-mday]')].filter((x) => x.checked).map((x) => Number(x.dataset.mday)), from: g('mcFrom').value, until: g('mcUntil').value };
@@ -1570,6 +1577,7 @@ function msCompose() {
   <div class="mf"><label>Subject<input id="mcSubj" value="${esc(D.subject)}" placeholder="What is it about?"></label></div>
   <div class="mf"><label>Message<textarea id="mcBody" rows="8" placeholder="Write it as you would speak to the person.">${esc(D.body)}</textarea></label><div class="m" style="margin-top:4px">Fields filled for each person: ${chips}</div></div>
   <div class="mf"><b>How</b><div>${['email:Email', 'push:Phone alert', 'news:News feed'].map((x) => { const [k, nme] = x.split(':'); return `<label class="cb"><input type="checkbox" id="mc${k[0].toUpperCase() + k.slice(1)}" ${D.channels[k] ? 'checked' : ''}> ${nme}</label>`; }).join(' ')}</div></div>
+  <div class="mf"><label class="cb"><input type="checkbox" id="mcCc" ${D.cc_hq === false ? '' : 'checked'}> Copy Michael, Mundo and Joram on each email</label></div>
   <div class="mf"><b>Who</b><div>${roleBox}</div>
   <details class="fd"><summary>Regions (everyone if none ticked)</summary><div>${regBox}</div></details><details class="fd"><summary>Add named people (emails)${D.audience.people.length ? ' · ' + D.audience.people.length + ' chosen' : ''}</summary><div style="columns:2;min-width:0">${peBox}</div></details>
   <div class="m" style="margin-top:6px">Email goes to <b>${n}</b> address${n === 1 ? '' : 'es'} on the email list.</div></div>
@@ -1829,6 +1837,31 @@ async function selectTab(k) {
   S.tab = k; S.selVisit = null; if (S.tab === 'messages') { render(); await loadMsgs(); } if (S.tab === 'clean') { render(); await loadClean(); } if (S.tab === 'payments') { await loadPayments();  return; } if (S.tab === 'plan') { await loadPlan(); } if (S.tab === 'phones') { S.ph = null; render(); await loadPhones(); } if (S.tab === 'practice') { S.pr = null; render(); await loadPractice(); } if (S.tab === 'news') { await openNews(); } if (S.tab === 'reports') { render(); await openReports(); } if (S.tab === 'admin') await loadAdmin(); render();
 }
 
+// ---------- refresh: a button and pull-down; also picks up a new version of the app ----------
+const sigOf = (t) => { let h = 0; for (let i = 0; i < t.length; i++) h = (Math.imul(31, h) + t.charCodeAt(i)) | 0; return t.length + ':' + h; };
+async function appSig() { try { const r = await fetch('/app.js', { cache: 'no-store' }); return r.ok ? sigOf(await r.text()) : null; } catch { return null; } }
+function toast(msg) { let t = document.getElementById('toast'); if (!t) { t = document.createElement('div'); t.id = 'toast'; document.body.appendChild(t); } t.textContent = msg; t.className = 'show'; clearTimeout(t._h); t._h = setTimeout(() => { t.className = ''; }, 2200); }
+async function refreshApp() {
+  if (S.refreshing) return; S.refreshing = true; const b = document.getElementById('rfb'); if (b) b.classList.add('spin');
+  try {
+    try { const reg = await navigator.serviceWorker?.getRegistration(); if (reg) await reg.update(); } catch { /* offline: carry on */ }
+    const now = await appSig();
+    if (now && S.sig && now !== S.sig) { toast('New version found. Loading it…'); setTimeout(() => location.reload(), 500); return; }
+    if (now && !S.sig) S.sig = now;
+    await selectTab(S.tab); await go(); try { await loadNews(); } catch { /* the tab shows what it has */ }
+    toast('Up to date');
+  } catch { toast('Could not refresh. Check the connection.'); }
+  finally { S.refreshing = false; const b2 = document.getElementById('rfb'); if (b2) b2.classList.remove('spin'); }
+}
+appSig().then((x) => { S.sig = x; });
+(() => { // pull down at the top of the page to refresh
+  let y0 = null, dy = 0; const bar = () => { let p = document.getElementById('ptr'); if (!p) { p = document.createElement('div'); p.id = 'ptr'; p.innerHTML = '<span></span>'; document.body.appendChild(p); } return p; };
+  const skip = (t) => t.closest && t.closest('select,input,textarea,.tbl,.aipanel,#drawer,details[open] summary+*,iframe');
+  document.addEventListener('touchstart', (e) => { y0 = window.scrollY <= 0 && e.touches.length === 1 && !skip(e.target) ? e.touches[0].clientY : null; dy = 0; }, { passive: true });
+  document.addEventListener('touchmove', (e) => { if (y0 === null) return; dy = e.touches[0].clientY - y0; if (dy <= 0) { bar().style.transform = 'translateY(-60px)'; return; } const p = bar(); p.style.transform = `translateY(${Math.min(dy, 110) - 60}px)`; p.classList.toggle('ready', dy > 80); }, { passive: true });
+  document.addEventListener('touchend', () => { if (y0 === null) return; const p = document.getElementById('ptr'); if (p) { p.style.transform = 'translateY(-60px)'; p.classList.remove('ready'); } if (dy > 80) refreshApp(); y0 = null; dy = 0; }, { passive: true });
+})();
+
 document.addEventListener('click', async (e) => {
   if (!e.target.closest('#msheet,[data-act=moreMenu]')) { const m = document.getElementById('msheet'); if (m && !m.hidden) m.hidden = true; }
   if (!e.target.closest('.umw')) { const m = document.getElementById('um'); if (m && !m.hidden) m.hidden = true; }
@@ -1848,6 +1881,10 @@ document.addEventListener('click', async (e) => {
     else if (a === 'showLogin') loginScreen();
     else if (a === 'tblReset') { const T = S.tbl[t.dataset.id]; if (T) { T.f = {}; T.q = ''; store.set(memKey('t:' + t.dataset.id), null); } render(); }
     else if (a === 'moreMenu') { const m = document.getElementById('msheet'); if (m) m.hidden = !m.hidden; }
+    else if (a === 'refresh') await refreshApp();
+    else if (a === 'fuPrev') { S.adm.preview = await api('/api/admin/followup'); render(); }
+    else if (a === 'fuTest') { const to = ($('#testTo').value || '').trim(); if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(to)) { S.testMsg = 'Type a valid email address first.'; render(); return; } store.set('kf_test_to', to); try { const r = await api('/api/admin/followup', { method: 'POST', body: { action: 'test', to } }); S.testMsg = 'Follow-up test sent to ' + to + '. ' + r.note; } catch (e) { S.testMsg = e.message; } render(); }
+    else if (a === 'fuSend') { try { const c = await api('/api/admin/followup', { method: 'POST', body: { action: 'count' } }); if (!confirm(`Send the onboarding follow-up now to ${c.recipients} coordinators? Each email contains the person's own access code, and ${c.cc} HQ people are copied on each one.`)) return; S.testMsg = 'Sending…'; render(); const r = await api('/api/admin/followup', { method: 'POST', body: { action: 'send' } }); S.testMsg = `Sent ${r.results.filter((x) => x.sent).length} of ${r.results.length}.${r.results.some((x) => x.error) ? ' Problems: ' + r.results.filter((x) => x.error).map((x) => x.email + ': ' + x.error).join('; ') : ''}`; } catch (e) { S.testMsg = e.message; } render(); }
     else if (a === 'umenu') { const m = document.getElementById('um'); if (m) m.hidden = !m.hidden; }
     else if (a === 'searchToggle') { const g = document.getElementById('gswrap'); g.classList.toggle('open'); if (g.classList.contains('open')) document.getElementById('gs').focus(); }
     else if (a === 'alerts') await toggleAlerts();
@@ -1981,6 +2018,7 @@ document.addEventListener('change', async (e) => {
   const tf = e.target.dataset?.tf; if (tf) { const [id, k] = tf.split(':'); S.tbl[id].f[k] = e.target.value; tblSave(id); render(); return; }
   const qf = e.target.dataset?.qf; if (qf) { S.qf[qf] = e.target.value; store.set(memKey('qf'), JSON.stringify(S.qf)); render(); return; }
   if (e.target.id === 'startSel') { store.set('kf_start:' + roleKey() + ':' + (S.who.id ?? S.who.name), e.target.value || null); return; }
+  if (e.target.dataset?.ps) { const [school, sid] = e.target.dataset.ps.split(':'); try { await api('/api/pilot', { method: 'POST', body: { action: 'support', school, staff_id: sid, grade: e.target.value || null } }); } catch (er) { alert(er.message); } await loadPilot(); return; }
   if (e.target.dataset?.pg) { const [school, sid] = e.target.dataset.pg.split(':'); try { await api('/api/pilot', { method: 'POST', body: { action: 'grade', school, staff_id: sid, grade: e.target.value || null } }); } catch (er) { alert(er.message); } await loadPilot(); return; }
   if (e.target.id === 'payYear') { await loadPayments(e.target.value); return; }
   if (e.target.id === 'viewAsSel') { await setViewAs(e.target.value); return; }

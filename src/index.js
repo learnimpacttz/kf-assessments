@@ -4,6 +4,7 @@ import { ownWork, teamBlock, coordinatorOverview } from './own.js';
 import { buildCalendar, markCalendarDirty, syncCalendar, calendarStatus, setCalSync, loadCalSync } from './calendar.js';
 import { pupilRecords } from './pupils.js';
 import { pilotView, pilotSet } from './pilot.js';
+import { qrPng } from './qr.js';
 import { codFromYear } from './paymentdata.js';
 import { INFRA_WINNERS } from './data/infra_winners.js';
 import { attachList, attachFetch, attachDelete, storageView } from './attachments.js';
@@ -16,7 +17,7 @@ import { buildBrief, aiBrief } from './brief.js';
 import { ask as askAssistant, draftReportText } from './assistant.js';
 import { TEMPLATES, buildReport, listReports, getReport, saveReport, deleteReport } from './reports.js';
 import { loadHq, hqChange, hqList, hqByCode, codeFor, levelGate, applySettings, settingsView, saveSettings, logActivity, readActivity, activityLabel, BRAND, assistantName } from './hq.js';
-import { emailSchedule, hqPersonalCodeEmail, morningDigest, eveningGap, loadRecipients, saveRecipients, runDigests, maybeRunScheduledDigests, sendMail, onboardingEmail, runOnboarding, hqOnboardingEmail, reminderEmail, runReminders } from './digest.js';
+import { emailSchedule, hqPersonalCodeEmail, morningDigest, eveningGap, loadRecipients, saveRecipients, runDigests, maybeRunScheduledDigests, sendMail, onboardingEmail, runOnboarding, followupEmail, runFollowup, hqCc, hqOnboardingEmail, reminderEmail, runReminders } from './digest.js';
 import { loadQueries, decorate, postQuery, flagKey } from './queries.js';
 import { identify, staffCodes, canSeeRegion } from './auth.js';
 import { forecast, atRiskSchools } from './predict.js';
@@ -132,6 +133,7 @@ export default {
     await applySettings(env);
 
     try {
+      if (path === '/api/qr.png') { const png = await qrPng(env.SITE_URL || 'https://kf-assessments.learnimpacttz.workers.dev'); return new Response(png, { headers: { 'content-type': 'image/png', 'cache-control': 'public, max-age=86400' } }); }
       if (path === '/api/config') {
         return json({
           brand: { ...BRAND, assistant: assistantName() },
@@ -488,6 +490,14 @@ export default {
           try { await sendMail(env, p.email, await hqOnboardingEmail(env, p.name || 'colleague', site, Boolean(p.copy))); out.push({ email: p.email, sent: true }); } catch (e) { out.push({ email: p.email, error: String(e && e.message) }); }
         }
         return json({ results: out });
+      }
+      if (path === '/api/admin/followup') {
+        const b = method === 'POST' ? await request.json().catch(() => ({})) : {}; const site = env.SITE_URL || url.origin;
+        if (method !== 'POST' || b.action === 'preview') { const m = await followupEmail(env, { region: (b.region || url.searchParams.get('region') || 'TANGA').toUpperCase(), role: 'rc' }, site, { preview: true }); return json(m || { subject: 'No match', html: '<p>No person.</p>', text: '' }); }
+        if (b.action === 'test') { if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(b.to || '')) return err('Give one valid email address'); const r = await runFollowup(env, { dry: false, to: b.to }); return json({ results: r, note: 'Sent to you only, with a real access code. Delete after checking.' }); }
+        if (b.action === 'count') return json({ recipients: (await runFollowup(env, { dry: true })).length, cc: (await hqCc(env)).length });
+        if (b.action === 'send') { const r = await runFollowup(env, { dry: false }); await logActivity(env, who, 'Sent the onboarding follow-up email', `${r.filter((x) => x.sent).length} sent`); return json({ results: r }); }
+        return err('Unknown action');
       }
       if (path === '/api/admin/onboarding-preview') {
         const rec = await loadRecipients(env);

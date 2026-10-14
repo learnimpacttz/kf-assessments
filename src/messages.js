@@ -2,7 +2,7 @@
 // Templates are editable. The built-in automatic emails (morning brief, end-of-day check, reminders) are listed here
 // too: HQ can switch them off, change the time and add a note at the top. Every send is logged.
 import { kv } from './store.js';
-import { loadRecipients, sendMail } from './digest.js';
+import { loadRecipients, sendMail, hqCc } from './digest.js';
 import { pushTo } from './push.js';
 import { saveNews, publish, polish } from './news.js';
 import { BRAND } from './hq.js';
@@ -62,7 +62,7 @@ export async function runJob(env, job, { by } = {}) {
   if (ch.email) {
     const to = pick(job, rec, today); const out = { people: to.length, sent: 0, errors: [] };
     if (!sendingOn(env)) out.errors.push('Email sending is switched off in this system');
-    else for (const p of to) { try { await sendMail(env, p.email, { subject: render(job.subject, p, today), html: html(job, p, today, siteOf(env)), text: render(job.body, p, today) }); out.sent++; } catch (e) { out.errors.push(`${p.email}: ${String(e.message || e).slice(0, 80)}`); } }
+    else { const ccAll = job.cc_hq === false ? [] : await hqCc(env); for (const p of to) { try { const cc = ccAll.filter((e) => e !== p.email); await sendMail(env, p.email, { subject: render(job.subject, p, today), html: html(job, p, today, siteOf(env)), text: render(job.body, p, today), ...(cc.length ? { cc } : {}) }); out.sent++; } catch (e) { out.errors.push(`${p.email}: ${String(e.message || e).slice(0, 80)}`); } } }
     res.email = out; res.channels.push('email');
   }
   const roles = new Set(job.audience?.roles || []); const regs = new Set((job.audience?.regions || []).map((r) => String(r).toUpperCase()));
@@ -108,7 +108,7 @@ const cleanJob = (b, who, old = {}) => {
   const s = b.schedule || {}; const type = ['now', 'once', 'repeat'].includes(s.type) ? s.type : 'now';
   const A = b.audience || {}; const ch = b.channels || {};
   return { name: String(b.name || b.subject || 'Message').slice(0, 80), subject: String(b.subject || '').slice(0, 140), body: String(b.body || '').slice(0, 5000),
-    channels: { email: Boolean(ch.email), push: Boolean(ch.push), news: Boolean(ch.news) },
+    channels: { email: Boolean(ch.email), push: Boolean(ch.push), news: Boolean(ch.news) }, cc_hq: b.cc_hq !== false,
     audience: { roles: (A.roles || []).filter((r) => ['hq', 'rc', 'arc', 'volunteer'].includes(r)), regions: (A.regions || []).filter((r) => REGIONS.includes(String(r).toUpperCase())).map((r) => String(r).toUpperCase()), people: (A.people || []).map((e) => String(e).toLowerCase()).slice(0, 100) },
     schedule: { type, at: type === 'once' && s.at ? new Date(Date.parse(s.at)).toISOString() : null, time: /^\d\d:\d\d$/.test(s.time || '') ? s.time : '08:00', days: (s.days || [1, 2, 3, 4, 5]).map(Number).filter((x) => x >= 0 && x <= 6), from: /^\d{4}-\d\d-\d\d$/.test(s.from || '') ? s.from : null, until: /^\d{4}-\d\d-\d\d$/.test(s.until || '') ? s.until : null } };
 };

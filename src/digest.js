@@ -11,6 +11,7 @@ import { loadQueries, flagKey, decorate, overdueQueries } from './queries.js';
 import { ownWork } from './own.js';
 import { BRAND } from './hq.js';
 import { builtinCfg } from './messages.js';
+import { qrPng } from './qr.js';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const title = (s) => String(s || '').toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
@@ -391,4 +392,35 @@ export async function hqPersonalCodeEmail(env, user, code, siteUrl) {
 <p>Open <a href="${esc(siteUrl)}" style="color:#354062">${esc(siteUrl)}</a>, type the code once, and the device remembers it. On a phone, add the page to the home screen.</p>`;
   const html = layout(`${BRAND.platform} · Your personal access code`, 'HQ access', body, 'Sent automatically by the LearnImpact KiuFunza field dashboard. Keep this email private because it contains your code.');
   return { subject: `${BRAND.platform} · Automated update · Your personal access code`, html, text: `AUTOMATED UPDATE - no reply needed\n${BRAND.platform}: ${siteUrl}\nYour personal code: ${code}\nLevel: ${user.level}. Keep it private.` };
+}
+
+// ---------- follow-up to the onboarding email: QR code, link, install on the phone ----------
+const b64png = (u8) => { let b = ''; for (let i = 0; i < u8.length; i += 0x8000) b += String.fromCharCode(...u8.subarray(i, i + 0x8000)); return btoa(b); };
+export async function hqCc(env, exclude = '') { const rec = await loadRecipients(env); return Object.entries(rec).filter(([e, r]) => r.role === 'hq' && r.active !== false && e !== String(exclude).toLowerCase()).map(([e]) => e); }
+export async function followupEmail(env, recipient, siteUrl, { preview = false } = {}) {
+  const base = await onboardingEmail(env, recipient, siteUrl); if (!base) return null;
+  const png = await qrPng(siteUrl); const img = preview ? `data:image/png;base64,${b64png(png)}` : 'cid:kfqr';
+  const block = `<div style="background:#fff7e0;border:1px solid #FFC650;border-radius:8px;padding:12px 14px;margin:0 0 14px">
+<p style="margin:0 0 6px"><b>Follow-up: it is now easier to open the dashboard</b></p>
+<p style="margin:0 0 8px">You can now open the dashboard by scanning this QR code with your phone camera, or by tapping the link. You can also install it on your phone like an app, so you do not need to open a link each time.</p>
+<table role="presentation" style="margin:6px 0"><tr><td style="padding-right:14px"><img src="${img}" width="150" height="150" alt="QR code for the dashboard" style="display:block;border:1px solid #e3e6ee"></td><td style="font-size:14px;vertical-align:top"><a href="${esc(siteUrl)}" style="color:#354062;font-weight:700">${esc(siteUrl)}</a><br><span style="color:#5A6478;font-size:12.5px">Your personal access code below is the same as before.</span></td></tr></table>
+<p style="margin:10px 0 2px"><b>Install on Android (Chrome)</b></p>
+<ol style="margin:2px 0 8px;padding-left:20px"><li>Open the link or scan the QR code in <b>Chrome</b>.</li><li>Enter your access code.</li><li>Tap the menu <b>&#8942;</b> (three dots, top right), then <b>Install app</b> (or <b>Add to Home screen</b>), then <b>Install</b>.</li><li>Find the <b>KiuFunza</b> icon on your home screen or in your apps, and open it from there.</li></ol>
+<p style="margin:6px 0 2px"><b>Install on iPhone (Safari)</b></p>
+<ol style="margin:2px 0 8px;padding-left:20px"><li>Open the link in <b>Safari</b> (not inside WhatsApp or another app).</li><li>Tap <b>Share</b>, then <b>Add to Home Screen</b>, then <b>Add</b>.</li></ol>
+<p style="margin:6px 0 0;font-size:13px;color:#5A6478">To get the latest updates, tap the refresh icon at the top of the app, or pull the page down. Turn on alerts with the bell icon.</p></div>`;
+  const html = base.html.replace(/(<p>Dear [^<]*<\/p>)/, `$1${block}`);
+  return { subject: 'KiuFunza 4 · Follow-up · Open the dashboard with a QR code and install it on your phone', html, text: `FOLLOW-UP\nOpen the dashboard: ${siteUrl}\nScan the QR code in the email, or tap the link. You can install it on your phone: Android (Chrome) menu > Install app; iPhone (Safari) Share > Add to Home Screen.\n\n` + base.text, attachments: preview ? undefined : [{ filename: 'kiufunza-qr.png', content: b64png(png), content_type: 'image/png', content_id: 'kfqr' }] };
+}
+export async function runFollowup(env, { dry = true, only = null, to = null } = {}) {
+  const siteUrl = env.SITE_URL || 'https://kf-assessments.learnimpacttz.workers.dev'; const recipients = await loadRecipients(env);
+  const sendOk = !dry && env.EMAIL_ENABLED === 'true' && env.EMAIL_FROM && (env.RESEND_API_KEY || env.EMAIL); const results = [];
+  for (const [email, r] of Object.entries(recipients)) {
+    if (!['rc', 'arc'].includes(r.role) || r.active === false) continue; if (only && email !== only) continue;
+    const msg = await followupEmail(env, r, siteUrl); if (!msg) { results.push({ email, skipped: 'no matching person in the roster' }); continue; }
+    if (!sendOk) { results.push({ email, preview: true }); continue; }
+    const cc = await hqCc(env, email); // Michael, Mundo and Joram are copied on every follow-up
+    try { await sendMail(env, to || email, { ...msg, ...(to ? { subject: '[TEST] ' + msg.subject } : { cc }) }); results.push({ email: to || email, sent: true, cc: to ? [] : cc.length }); if (to) break; } catch (e) { results.push({ email, error: String(e && e.message) }); }
+  }
+  return results;
 }
