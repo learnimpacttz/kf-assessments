@@ -48,7 +48,12 @@ export async function pilotSet(env, who, b) {
     const g = Number(b.grade); if (![1, 2, 3].includes(g)) return { error: 'Grade must be 1, 2 or 3' };
     const sl = (d.sampling[b.school] ||= {});
     if (b.staff_id === null || b.staff_id === '') delete sl[g];
-    else { const s = STAFF.find((x) => x.id === Number(b.staff_id)); if (!s || s.role !== 'volunteer' || !regs.includes(s.region)) return { error: 'Choose a test admin from the two teams.' }; if (d.grades[b.school]?.[s.id] !== g) return { error: 'Set that person to test Grade ' + g + ' first.' }; sl[g] = s.id; changes.push([s, g]); }
+    else { const s = STAFF.find((x) => x.id === Number(b.staff_id)); if (!s || s.role !== 'volunteer' || !regs.includes(s.region)) return { error: 'Choose a test admin from the two teams.' }; const cur = d.grades[b.school]?.[s.id];
+      if (cur && cur !== g) return { error: s.name.split(' ')[0] + ' tests Grade ' + cur + '. Choose someone on Grade ' + g + ', or change their grade first.' };
+      if (!cur) { // no grade yet: naming them as sampling lead puts them on this grade (only for people whose region the user can edit)
+        if (!((who.role === 'hq' && (who.level || 'admin') !== 'viewer') || ((who.role === 'rc' || who.role === 'arc') && who.region === s.region))) return { error: 'Ask the RC of ' + s.region.toLowerCase() + ' to set ' + s.name.split(' ')[0] + "'s grade first." };
+        (d.grades[b.school] ||= {})[s.id] = g; }
+      sl[g] = s.id; changes.push([s, g]); }
   } else if (b.action === 'lead') { // which RC leads the whole activity
     const s = STAFF.find((x) => x.id === Number(b.staff_id)); if (!s || s.role !== 'rc' || !regs.includes(s.region)) return { error: 'The lead must be one of the two RCs at this school.' };
     if (!((who.role === 'hq' && (who.level || 'admin') !== 'viewer') || (who.role === 'rc' && regs.includes(who.region)))) return { error: 'Only the RCs at this school (or HQ) name the lead.', status: 403 };
