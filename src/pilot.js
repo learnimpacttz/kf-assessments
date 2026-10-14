@@ -58,9 +58,11 @@ export async function pilotSet(env, who, b) {
     if (!canRegion(s.region)) return { error: 'Only the RC or ARC of ' + s.region.toLowerCase() + ' can set this.', status: 403 };
     const g = b.grade === null || b.grade === '' ? null : Number(b.grade); if (g !== null && ![1, 2, 3].includes(g)) return { error: 'Grade must be 1, 2 or 3' };
     const sp = (d.support[b.school] ||= {}); if (g === null) delete sp[s.id]; else sp[s.id] = g; changes.push([s, g]);
-  } else if (b.action === 'spread') { // share one region's test admins across the three grades
+  } else if (b.action === 'spread') { // fill in the test admins of one region who have no grade yet; grades already set are never changed
     const r = String(b.region || '').toUpperCase(); if (!regs.includes(r)) return { error: 'That region is not at this school.' }; if (!canRegion(r)) return { error: 'Not allowed', status: 403 };
-    const vols = STAFF.filter((x) => x.active && x.region === r && x.role === 'volunteer'); vols.forEach((s, i) => { sc[s.id] = (i % 3) + 1; changes.push([s, (i % 3) + 1]); });
+    const vols = STAFF.filter((x) => x.active && x.region === r && x.role === 'volunteer'); const used = { 1: 0, 2: 0, 3: 0 };
+    for (const rr of regs) for (const x of STAFF.filter((y) => y.active && y.region === rr && y.role === 'volunteer')) if (sc[x.id]) used[sc[x.id]]++;
+    for (const s2 of vols.filter((x) => !sc[x.id])) { const g = [1, 2, 3].sort((a, b2) => used[a] - used[b2] || a - b2)[0]; sc[s2.id] = g; used[g]++; changes.push([s2, g]); }
   } else return { error: 'Unknown action' };
   tidy(d, b.school); d.updated = new Date().toISOString(); d.log = [{ at: d.updated, by: who.name, school: b.school, action: b.action, n: changes.length }, ...(d.log || [])].slice(0, 100);
   await kv(env).put(KEY, d);
