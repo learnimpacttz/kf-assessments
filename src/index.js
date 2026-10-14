@@ -3,6 +3,7 @@ import { listNews, manageNews, react as reactNews, saveNews, deleteNews, pinNews
 import { ownWork, teamBlock, coordinatorOverview } from './own.js';
 import { buildCalendar, markCalendarDirty, syncCalendar, calendarStatus, setCalSync, loadCalSync } from './calendar.js';
 import { pupilRecords } from './pupils.js';
+import { pilotView, pilotSet } from './pilot.js';
 import { codFromYear } from './paymentdata.js';
 import { INFRA_WINNERS } from './data/infra_winners.js';
 import { attachList, attachFetch, attachDelete, storageView } from './attachments.js';
@@ -436,6 +437,7 @@ export default {
         }
       }
 
+      if (path === '/api/pilot') { try { if (method === 'POST') { const r = await pilotSet(env, who, await request.json().catch(() => ({}))); return r.error ? err(r.error, r.status || 422) : json(r); } return json(await pilotView(env, who)); } catch (e) { return err(String(e.message || e), 502); } }
       if (path === '/api/pupils') { try { const r = await pupilRecords(env, who, Object.fromEntries(url.searchParams)); return r.error ? err(r.error, r.status || 422) : json(r); } catch (e) { return err(String(e.message || e), 502); } }
       if (path.startsWith('/api/deletions')) {
         if (!(who.role === 'hq' || who.role === 'rc' || who.role === 'arc')) return err('Not allowed', 403);

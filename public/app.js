@@ -1155,12 +1155,12 @@ function applyBrand() {
 // ---------- shell ----------
 const TABS = {
   public: [['progress', 'Progress'], ['compare', 'Compare']],
-  volunteer: [['day', 'My day'], ['news', 'News'], ['work', 'My work'], ['queries', 'My queries'], ['stats', 'My stats'], ['phones', 'Phones'], ['pupils', 'Pupil records'], ['compare', 'Compare'], ['practice', 'Practice (Mafunzo)'], ['help', 'Help']],
-  rc: [['region', 'Region'], ['news', 'News'], ['plan', 'Plan & calendar'], ['team', 'My team'], ['allq', 'Queries'], ['phones', 'Phones'], ['compare', 'Compare'], ['reports', 'Reports'], ['clean', 'Data cleaning'], ['explore', 'Data explorer'], ['practice', 'Practice (Mafunzo)'], ['help', 'Help']],
-  hq: [['today', 'Today'], ['hq', 'HQ'], ['news', 'News'], ['messages', 'Write and schedule'], ['clean', 'Data cleaning'], ['regions', 'Regions & plans'], ['plan', 'Plan & calendar'], ['people', 'People'], ['allq', 'Queries'], ['phones', 'Phones'], ['compare', 'Compare'], ['reports', 'Reports'], ['payments', 'Payments'], ['payments', 'Payments'], ['explore', 'Data explorer'], ['admin', 'Admin'], ['help', 'Help'], ['practice', 'Practice (Mafunzo)']],
+  volunteer: [['day', 'My day'], ['pilot', 'Pilot day'], ['news', 'News'], ['work', 'My work'], ['queries', 'My queries'], ['stats', 'My stats'], ['phones', 'Phones'], ['pupils', 'Pupil records'], ['compare', 'Compare'], ['practice', 'Practice (Mafunzo)'], ['help', 'Help']],
+  rc: [['region', 'Region'], ['news', 'News'], ['plan', 'Plan & calendar'], ['team', 'My team'], ['pilot', 'Pilot day'], ['allq', 'Queries'], ['phones', 'Phones'], ['compare', 'Compare'], ['reports', 'Reports'], ['clean', 'Data cleaning'], ['explore', 'Data explorer'], ['practice', 'Practice (Mafunzo)'], ['help', 'Help']],
+  hq: [['today', 'Today'], ['hq', 'HQ'], ['news', 'News'], ['messages', 'Write and schedule'], ['clean', 'Data cleaning'], ['regions', 'Regions & plans'], ['plan', 'Plan & calendar'], ['pilot', 'Pilot day'], ['people', 'People'], ['allq', 'Queries'], ['phones', 'Phones'], ['compare', 'Compare'], ['reports', 'Reports'], ['payments', 'Payments'], ['payments', 'Payments'], ['explore', 'Data explorer'], ['admin', 'Admin'], ['help', 'Help'], ['practice', 'Practice (Mafunzo)']],
 };
-const GROUPS = { rc: [['Home', ['region', 'news']], ['Plan', ['plan', 'team']], ['Checks', ['allq', 'clean', 'phones', 'compare', 'explore']], ['Reports', ['reports']], ['More', ['practice', 'help']]], volunteer: [['Today', ['day', 'news']], ['My work', ['work', 'queries', 'stats']], ['Team', ['phones', 'pupils', 'compare']], ['More', ['practice', 'help']]] };
-const HQ_GROUPS = [['Today', ['today']], ['Field', ['hq', 'regions', 'plan', 'people', 'practice']], ['Checks', ['allq', 'clean', 'phones', 'compare', 'explore']], ['Messages', ['news', 'messages']], ['Reports', ['reports', 'payments']], ['Admin', ['admin']], ['Help', ['help']]];
+const GROUPS = { rc: [['Home', ['region', 'news']], ['Plan', ['plan', 'team', 'pilot']], ['Checks', ['allq', 'clean', 'phones', 'compare', 'explore']], ['Reports', ['reports']], ['More', ['practice', 'help']]], volunteer: [['Today', ['day', 'pilot', 'news']], ['My work', ['work', 'queries', 'stats']], ['Team', ['phones', 'pupils', 'compare']], ['More', ['practice', 'help']]] };
+const HQ_GROUPS = [['Today', ['today']], ['Field', ['hq', 'regions', 'plan', 'pilot', 'people', 'practice']], ['Checks', ['allq', 'clean', 'phones', 'compare', 'explore']], ['Messages', ['news', 'messages']], ['Reports', ['reports', 'payments']], ['Admin', ['admin']], ['Help', ['help']]];
 const REPORTS_READY = true;
 const LEVEL_TXT = { admin: 'Admin', editor: 'Editor', viewer: 'Viewer' };
 const hqLevel = () => (S.who?.role === 'hq' ? S.who.level || 'admin' : null);
@@ -1173,7 +1173,7 @@ function tabAllowed(k) {
   return true;
 }
 const roleKey = () => (!S.who ? 'public' : S.who.role === 'arc' ? 'rc' : S.who.role);
-const VIEWS = { progress: viewProgress, compare: viewCompare, day: viewDay, work: viewWork, queries: viewQueries, stats: viewStats, region: viewRegion, plan: viewPlan, team: viewTeam, explore: viewExplore, hq: viewHQ, regions: viewRegionsHQ, people: viewPeopleHQ, admin: viewAdmin, allq: viewAllQueries, phones: viewPhones, practice: viewPractice, news: viewNews, payments: viewPayments, pupils: viewPupils, messages: viewMessages, reports: viewReports, clean: viewClean, today: viewToday, help: viewHelp };
+const VIEWS = { progress: viewProgress, compare: viewCompare, day: viewDay, work: viewWork, queries: viewQueries, stats: viewStats, region: viewRegion, plan: viewPlan, team: viewTeam, explore: viewExplore, hq: viewHQ, regions: viewRegionsHQ, people: viewPeopleHQ, admin: viewAdmin, allq: viewAllQueries, phones: viewPhones, practice: viewPractice, news: viewNews, pilot: viewPilot, payments: viewPayments, pupils: viewPupils, messages: viewMessages, reports: viewReports, clean: viewClean, today: viewToday, help: viewHelp };
 
 // Admin is long: each card folds away so you can jump to what you need. The first card stays open; your choices are remembered.
 function enhanceCollapsible() {
@@ -1227,6 +1227,16 @@ function whoHtml() {
   <button class="mbtn" data-act="alerts">${esc(alertsLabel())}</button>
   <button class="mbtn out" data-act="logout">Sign out</button></div></div>`;
 }
+function pilotBanner() {
+  if (!S.who || S.viewAs || !['volunteer', 'rc', 'arc'].includes(S.who.role)) return '';
+  if (!S.pil) { S.pil = { loading: true }; loadPilot(); return ''; }
+  const d = S.pil.data; if (!d) return ''; const c = d.schools.find((x) => x.mine); if (!c) return '';
+  const me = S.who; let line;
+  if (me.role === 'volunteer') { const v = c.staff[me.region].volunteers.find((x) => x.id === me.id); line = v && v.grade ? `You test <b>Grade ${v.grade}</b>.` : 'Your RC will tell you the grade you test.'; }
+  else if (me.role === 'rc') line = 'You <b>oversee</b> and talk to the head teacher. You do not administer assessments.';
+  else line = 'You <b>coordinate the sampling</b> and train the new test admins.';
+  return `<div class="banner" style="background:var(--gold);color:var(--on-gold)"><b>Pilot day, ${esc(dayName(d.day))}:</b> ${esc(title(c.name))} with ${esc(c.regions.filter((r) => r !== me.region).map(title).join(''))}${c.start ? ' · starts ' + esc(c.start) : ''}. ${line} <a href="#pilot" data-tab="pilot"><b>Open Pilot day</b></a></div>`;
+}
 function render() {
   const tabs = TABS[roleKey()].filter(([k]) => tabAllowed(k));
   if (!tabs.find((t) => t[0] === S.tab)) { const st = startKey(); S.tab = st && tabs.find((t) => t[0] === st) ? st : tabs[0][0]; if (S.tab !== tabs[0][0] && !S.viewAs) { const want = S.tab; setTimeout(() => { if (S.tab === want) selectTab(want); }, 0); } }
@@ -1252,7 +1262,7 @@ function render() {
   }
   const un = S.tab !== 'news' && S.who && !S.viewAs ? unreadNews()[0] : null;
   const newsBanner = un ? `<div class="banner" style="background:var(--surface2)"><b>News:</b> ${esc(un.title)} <a href="#news" data-tab="news"><b>Read</b></a></div>` : '';
-  $('#app').innerHTML = previewBanner() + planBanner + newsBanner + VIEWS[S.tab]();
+  $('#app').innerHTML = previewBanner() + planBanner + (S.tab === 'pilot' ? '' : pilotBanner()) + newsBanner + VIEWS[S.tab]();
   $('#gswrap').hidden = !S.who;
   enhanceCollapsible();
   aiRender();
@@ -1422,6 +1432,30 @@ function payCsv() {
   const d = S.pay?.data; if (!d) return; const q = (v) => '"' + String(v ?? '').replace(/"/g, '""') + '"';
   const lines = [['School code', 'School', 'Region', 'Group', 'Pass rate', 'Teacher pay TZS', 'Head teacher pool TZS', 'Head teachers', 'Per head teacher TZS', 'Grades ready'].map(q).join(',')].concat(d.schools.map((s) => [s.id, s.name, title(s.region), s.arm, s.pass_rate == null ? '' : s.pass_rate.toFixed(4), s.total, s.ht_pot, s.head_teachers, s.ht_each ?? '', s.grades_ready].map(q).join(',')));
   const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' })); a.download = `cod-by-school-${d.year}.csv`; a.click();
+}
+
+// ---------- Pilot day: who does what at each Dodoma pilot school ----------
+async function loadPilot() { try { S.pil = { ...(S.pil || {}), data: await api('/api/pilot'), err: null }; } catch (e) { S.pil = { ...(S.pil || {}), err: e.message }; } render(); }
+function pilotCard(c, open) {
+  const names = (l) => l.map((p) => esc(p.name)).join(', ') || '–';
+  const rcs = c.regions.flatMap((r) => c.staff[r].rc.map((p) => ({ ...p, r }))); const arcs = c.regions.flatMap((r) => c.staff[r].arc.map((p) => ({ ...p, r })));
+  const all = c.regions.flatMap((r) => c.staff[r].volunteers); const cnt = { 1: 0, 2: 0, 3: 0, 0: 0 }; all.forEach((v) => { cnt[v.grade || 0]++; });
+  const sec = (t, who, note) => `<div class="pcell"><b>${t}</b><div class="m">${note}</div><div>${who}</div></div>`;
+  const tbl = c.regions.map((r) => `<h4 style="margin:12px 0 4px">${esc(title(r))} test admins ${c.editable.includes(r) ? `<button class="btn sm sec" data-act="pilSpread" data-school="${c.school}" data-region="${r}" style="margin-left:6px">Spread over grades</button>` : ''}</h4><div class="tbl"><table><thead><tr><th>Name</th><th>Role</th><th>Grade to test</th></tr></thead><tbody>${c.staff[r].volunteers.map((v) => `<tr class="${S.who?.id === v.id ? 'me' : ''}"><td><b>${esc(v.name)}</b>${S.who?.id === v.id ? ' ' + chip('You', 'gold') : ''}</td><td>${esc(v.position)}</td><td>${c.editable.includes(r) ? `<select data-pg="${c.school}:${v.id}" aria-label="Grade for ${esc(v.name)}"><option value="">Not set</option>${[1, 2, 3].map((g) => `<option value="${g}" ${v.grade === g ? 'selected' : ''}>Grade ${g}</option>`).join('')}</select>` : v.grade ? 'Grade ' + v.grade : '<span class="m">not set yet</span>'}</td></tr>`).join('') || '<tr><td colspan="3" class="empty">No test admins in the roster for this region.</td></tr>'}</tbody></table></div>`).join('');
+  return `<div class="card" style="margin-top:12px;${c.mine ? 'border-left:4px solid var(--gold)' : ''}"><h3 style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap"><span>${esc(title(c.name))} ${c.mine ? chip('your school', 'gold') : ''}</span><span class="m" style="font-weight:400">${esc(c.regions.map(title).join(' + '))}${c.start ? ' · ' + esc(c.start) : ''}</span></h3>
+  <div class="pgrid">${sec('Oversee', rcs.map((p) => `${esc(p.name)} <span class="m">(${esc(title(p.r))})</span>`).join('<br>') || '–', 'Both RCs oversee everything and talk to the head teacher. They do not administer assessments.')}${sec('Sampling and coaching', arcs.map((p) => `${esc(p.name)} <span class="m">(${esc(title(p.r))})</span>`).join('<br>') || '–', 'Both ARCs coordinate the sampling and train the new test admins on the spot.')}</div>
+  <div class="m" style="margin:10px 0 2px"><b>Test admins by grade:</b> Grade 1 · ${cnt[1]} &nbsp; Grade 2 · ${cnt[2]} &nbsp; Grade 3 · ${cnt[3]} &nbsp; ${cnt[0] ? `<span class="pill warn">${cnt[0]} not set</span>` : '<span class="pill good">all set</span>'}</div>
+  ${open ? tbl : `<details class="fd"><summary>Test admins (${all.length})</summary>${tbl}</details>`}</div>`;
+}
+function viewPilot() {
+  const P = S.pil; if (!P) return '<div class="empty">Loading…</div>'; if (P.err) return `<div class="banner bad">${esc(P.err)}</div>`; const d = P.data; if (!d) return '<div class="empty">Loading…</div>';
+  const mine = d.schools.filter((c) => c.mine), rest = d.schools.filter((c) => !c.mine);
+  return `<div class="pagehead"><div><h2>Pilot day</h2><p>${esc(dayName(d.day))}: two regional teams meet at each of the five Dodoma pilot schools. The two RCs oversee and talk to the head teacher, the two ARCs coordinate the sampling and train the new test admins, and all test admins run the assessments in the grades their RC plans.</p></div></div>
+  ${mine.map((c) => pilotCard(c, true)).join('')}${rest.length ? `<h3 style="margin:18px 0 0">${mine.length ? 'The other pilot schools' : 'The pilot schools'}</h3>${rest.map((c) => pilotCard(c, !mine.length)).join('')}` : ''}`;
+}
+async function pilotAction(a, t) {
+  try { if (a === 'pilSpread') await api('/api/pilot', { method: 'POST', body: { action: 'spread', school: t.dataset.school, region: t.dataset.region } }); await loadPilot(); }
+  catch (e) { alert(e.message); await loadPilot(); }
 }
 
 // ---------- Admin: KoBo storage and deleting photos ----------
@@ -1791,6 +1825,7 @@ async function go() {
 }
 
 async function selectTab(k) {
+  if (k === 'pilot') { S.tab = k; render(); await loadPilot(); return; }
   S.tab = k; S.selVisit = null; if (S.tab === 'messages') { render(); await loadMsgs(); } if (S.tab === 'clean') { render(); await loadClean(); } if (S.tab === 'payments') { await loadPayments();  return; } if (S.tab === 'plan') { await loadPlan(); } if (S.tab === 'phones') { S.ph = null; render(); await loadPhones(); } if (S.tab === 'practice') { S.pr = null; render(); await loadPractice(); } if (S.tab === 'news') { await openNews(); } if (S.tab === 'reports') { render(); await openReports(); } if (S.tab === 'admin') await loadAdmin(); render();
 }
 
@@ -1825,6 +1860,7 @@ document.addEventListener('click', async (e) => {
     else if (/^rep[A-Z]/.test(a)) await repAction(a, t);
     else if (a === 'goMineQ') { S.qf = { q: '', type: '', sev: '', region: '', st: 'mine' }; S.tab = 'allq'; render(); }
     else if (a === 'payCsv') payCsv();
+    else if (/^pil[A-Z]/.test(a)) await pilotAction(a, t);
     else if (/^pu[A-Z]/.test(a)) await pupilAction(a);
     else if (/^dl[A-Z]/.test(a)) await cleanAction(a, t);
     else if (/^ms[A-Z]/.test(a)) await msAction(a, t);
@@ -1945,6 +1981,7 @@ document.addEventListener('change', async (e) => {
   const tf = e.target.dataset?.tf; if (tf) { const [id, k] = tf.split(':'); S.tbl[id].f[k] = e.target.value; tblSave(id); render(); return; }
   const qf = e.target.dataset?.qf; if (qf) { S.qf[qf] = e.target.value; store.set(memKey('qf'), JSON.stringify(S.qf)); render(); return; }
   if (e.target.id === 'startSel') { store.set('kf_start:' + roleKey() + ':' + (S.who.id ?? S.who.name), e.target.value || null); return; }
+  if (e.target.dataset?.pg) { const [school, sid] = e.target.dataset.pg.split(':'); try { await api('/api/pilot', { method: 'POST', body: { action: 'grade', school, staff_id: sid, grade: e.target.value || null } }); } catch (er) { alert(er.message); } await loadPilot(); return; }
   if (e.target.id === 'payYear') { await loadPayments(e.target.value); return; }
   if (e.target.id === 'viewAsSel') { await setViewAs(e.target.value); return; }
   if (e.target.id === 'yearSel') { S.year = e.target.value; S.allSchools = null; S.workCache = {}; S.linked = null; await go(); }

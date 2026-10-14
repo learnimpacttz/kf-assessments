@@ -202,3 +202,6 @@ td.chips{white-space:normal;line-height:2.1}td.chips .chip{white-space:normal;te
  .aibtn{bottom:calc(76px + env(safe-area-inset-bottom,0px))}.aipanel{bottom:calc(72px + env(safe-area-inset-bottom,0px));height:min(560px,calc(100vh - 150px))}
  header.top{padding-bottom:5px}
 }
+
+.pgrid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:6px}@media(max-width:640px){.pgrid{grid-template-columns:1fr}}.pcell{background:var(--surface2);border-radius:10px;padding:10px 12px}.pcell b{display:block}
+tr.me td{background:var(--gold-bg,#fdf0cf)}

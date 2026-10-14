@@ -81,7 +81,7 @@ export function levelGate(who, method, path) {
   }
   if (read) return null;
   if (/^\/api\/(news\/react|push\/|assistant|reports\/preview|login)/.test(path)) return null;
-  if (lv === 'editor' && /^\/api\/(reports\/(save|delete)|query|deletions)/.test(path)) return null;
+  if (lv === 'editor' && /^\/api\/(reports\/(save|delete)|query|deletions|pilot)/.test(path)) return null;
   return lv === 'editor' ? 'Editors can write messages and reports and reply to queries. Ask an Admin for anything else.' : 'Viewers can read and download only.';
 }
 
@@ -138,6 +138,7 @@ export function activityLabel(path, body) {
     [/^\/api\/admin\/roster$/, () => 'Changed the staff roster (' + (a || 'edit') + ')', () => body.name || body.kobo_name || ''],
     [/^\/api\/admin\/recipients$/, () => 'Saved the email list', () => (body.rows || []).length + ' people'],
     [/^\/api\/admin\/attach$/, () => 'Deleted files from a KoBo project (records kept)', () => body.asset || ''],
+    [/^\/api\/pilot$/, () => (a === 'spread' ? 'Spread test admins over the pilot grades' : 'Set a pilot grade'), () => String(body.school || '')],
     [/^\/api\/deletions$/, () => ({ suggest: 'Suggested deleting records', initiate: 'Initiated a deletion request', delete: 'DELETED records from KoBo', reject: 'Rejected a deletion request', send_back: 'Sent back a deletion request', resubmit: 'Resubmitted a deletion request', withdraw: 'Withdrew a deletion request', comment: 'Commented on a deletion request' }[a] ?? 'Changed a deletion request'), () => (body.ids ? body.ids.length + ' records' : body.id || '')],
     [/^\/api\/admin\/messages$/, () => ({ job_send: 'Sent a message', job_save: 'Saved or scheduled a message', job_run: 'Sent a scheduled message now', job_pause: 'Paused a message', job_resume: 'Resumed a message', job_approve: 'Approved a repeating message', job_delete: 'Deleted a message', template_save: 'Saved a message template', template_delete: 'Deleted a template', builtin_save: 'Changed a built-in email', test: 'Sent a test email', polish: null, view: null, count: null, preview: null }[a] ?? 'Changed messages'), () => body.subject || body.name || body.id || ''],
     [/^\/api\/admin\/news$/, () => ({ send: 'Sent a message', publish: 'Sent a message', save: 'Saved a message', delete: 'Deleted a message', pin: 'Pinned a message', polish: null }[a] ?? 'Changed a message'), () => body.title || ''],
