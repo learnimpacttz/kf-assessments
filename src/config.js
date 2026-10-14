@@ -89,7 +89,7 @@ export function staffForKoboName(n) {
 }
 
 export function targetPerGrade(region) {
-  return region === 'DODOMA' ? DODOMA_TARGET_PER_GRADE : TARGET_PER_GRADE;
+  return region === 'DODOMA' || region === PRACTICE_REGION ? DODOMA_TARGET_PER_GRADE : TARGET_PER_GRADE; // the pilot day and the training schools use 40 per grade, like a real pilot day
 }
 
 // ---- dates (East Africa Time, UTC+3, no DST) ----
