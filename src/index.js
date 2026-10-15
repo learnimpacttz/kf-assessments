@@ -2,7 +2,7 @@ import { koboForm } from './koboforms.js';
 import { listNews, manageNews, react as reactNews, saveNews, deleteNews, pinNews, publish as publishNews, runDueNews, checkMilestones, polish as polishNews } from './news.js';
 import { ownWork, teamBlock, coordinatorOverview } from './own.js';
 import { buildCalendar, markCalendarDirty, syncCalendar, calendarStatus, setCalSync, loadCalSync } from './calendar.js';
-import { pupilRecords } from './pupils.js';
+import { pupilRecords, workFiles } from './pupils.js';
 import { pilotView, pilotSet, PILOT_ALLOC } from './pilot.js';
 import { qrPng } from './qr.js';
 import { codFromYear } from './paymentdata.js';
@@ -448,6 +448,7 @@ export default {
           // live results from KoBo for the pilot schools (real 2026 data): sampling in, pupils tested per grade
           try { const { sum } = await loadSummary(env, '2026'); if (sum) for (const c of v.schools) { const r = sum.schools?.[c.school]; if (r) c.live = { g: r.g, started: r.started, first: r.first, last: r.last, admins: (r.admins || []).length }; } } catch { /* the page works without live numbers */ }
           return json(v); } catch (e) { return err(String(e.message || e), 502); } }
+      if (path === '/api/work/files') { try { const r = await workFiles(env, who, Object.fromEntries(url.searchParams)); return r.error ? err(r.error, r.status || 422) : json(r); } catch (e) { return err(String(e.message || e), 502); } }
       if (path === '/api/pupils') { try { const r = await pupilRecords(env, who, Object.fromEntries(url.searchParams)); return r.error ? err(r.error, r.status || 422) : json(r); } catch (e) { return err(String(e.message || e), 502); } }
       if (path.startsWith('/api/deletions')) {
         if (!(who.role === 'hq' || who.role === 'rc' || who.role === 'arc')) return err('Not allowed', 403);

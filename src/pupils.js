@@ -1,6 +1,6 @@
 // Pupil-level list for the field team: every student record with its key information (no pupil names), so people can
 // look at and count what has been recorded. Read straight from KoBo for the chosen school, region and dates.
-import { SCHOOL_BY_ID, SCHOOLS_BY_REGION, devCode } from './config.js';
+import { SCHOOL_BY_ID, SCHOOLS_BY_REGION, devCode, staffForKoboName } from './config.js';
 
 const sfx = (r, s) => { for (const k in r) if (k === s || k.endsWith('/' + s)) return r[k]; return undefined; };
 const FIELDS = ['_id', 'today', 'group_intro/date', 'id_data/school', 'id_data/grade', 'id_data/enumerator', 'stuid', 'stu_info/rand_nr', 'stu_avail', 'start', 'end', 'end_note_gr/testtime_rounded', 'testtime_rounded', 'deviceid', '_submission_time'];
@@ -32,4 +32,21 @@ export async function pupilRecords(env, who, p) {
   out.sort((a, b) => (a.date + a.school + a.grade + a.at).localeCompare(b.date + b.school + b.grade + b.at));
   const by = (k) => { const m = {}; for (const r of out) m[r[k] || '–'] = (m[r[k] || '–'] || 0) + 1; return Object.entries(m).sort((a, b) => b[1] - a[1]); };
   return { total: out.length, kobo_total: total, capped: rows.length >= CAP, records: out.slice(0, 1500), summary: { present: out.filter((r) => r.present === 'present').length, absent: out.filter((r) => r.present === 'absent').length, by_grade: by('grade'), by_enumerator: by('enumerator').slice(0, 40), by_date: by('date').slice(0, 40) } };
+}
+
+// Everything one test admin sent for one school on one day: the sampling forms and a line for every pupil file (numbers only, no names).
+// A person sees their own; an RC or ARC sees their region's people; HQ sees all. Works for the Dodoma pilot schools too.
+export async function workFiles(env, who, p) {
+  const name = String(p.name || '').trim(), school = String(p.school || ''), date = String(p.date || '');
+  if (!name || !SCHOOL_BY_ID[school] || !/^\d{4}-\d\d-\d\d$/.test(date)) return { error: 'Choose a person, a school and a day.' };
+  const st = staffForKoboName(name);
+  if (who.role === 'volunteer' ? !(st && st.id === who.id) : who.role !== 'hq' && !(['rc', 'arc'].includes(who.role) && st && st.region === who.region)) return { error: 'These are not your files.', status: 403 };
+  const srv = `https://${env.KOBO_SERVER || 'kf.kobotoolbox.org'}`; const H = { Authorization: `Token ${env.KOBO_TOKEN}` };
+  const q = encodeURIComponent(JSON.stringify({ 'id_data/school': school, today: date }));
+  const read = async (asset, fields) => { if (!asset) return []; const base = `${srv}/api/v2/assets/${asset}/data/?format=json&limit=1000&query=${q}`; for (const f of [true, false]) { const r = await fetch(base + (f && fields ? `&fields=${encodeURIComponent(JSON.stringify(fields))}` : ''), { headers: H }); if (r.ok) return (await r.json()).results || []; } throw new Error('KoBo could not be read just now. Try again in a minute.'); };
+  const mine = (r) => String(sfx(r, 'enumerator') || '').trim().toLowerCase() === name.toLowerCase();
+  const [stu, smp] = await Promise.all([read(env.KOBO_ASSET_ID, FIELDS), read(env.KOBO_ASSET_SAMPLING, null)]);
+  const pupils = stu.filter(mine).map((r) => { const tt = sfx(r, 'testtime_rounded'); return { id: r._id, grade: String(sfx(r, 'grade') ?? ''), pupil: r.stuid || r['stu_info/rand_nr'] || sfx(r, 'rand_nr') || '', present: String(r.stu_avail) === '2' ? 'absent' : 'present', at: (r.start || '').slice(11, 16), mins: tt === undefined || tt === '' ? null : Number(tt), sub: (r._submission_time || '').slice(0, 16).replace('T', ' ') }; }).sort((a, b) => (a.grade + a.at).localeCompare(b.grade + b.at));
+  const sampling = smp.filter(mine).map((r) => { let drawn = 0; for (let i = 1; i <= 40; i++) { const v = sfx(r, 'int' + i); if (v !== undefined && v !== null && v !== '') drawn++; } return { id: r._id, grade: String(sfx(r, 'grade_conf') ?? sfx(r, 'grade') ?? ''), register: sfx(r, 'att') === undefined ? null : Number(sfx(r, 'att')), drawn, at: (r.start || '').slice(11, 16), sub: (r._submission_time || '').slice(0, 16).replace('T', ' ') }; }).sort((a, b) => (a.grade + a.at).localeCompare(b.grade + b.at));
+  return { name, school, date, pupils: pupils.slice(0, 600), pupils_total: pupils.length, present: pupils.filter((x) => x.present === 'present').length, absent: pupils.filter((x) => x.present === 'absent').length, sampling };
 }

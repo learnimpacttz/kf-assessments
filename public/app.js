@@ -213,11 +213,33 @@ function viewDay() {
   <h3 style="margin:14px 0 8px">Leo · Today</h3>${todays.length ? todays.map(card).join('') : '<div class="note">No school in the plan for you today. Check with your RC.</div>'}
   <h3 style="margin:18px 0 8px">Zinazofuata · Coming up</h3>${next.length ? next.map((v) => `<div class="sch"><h4>${esc(v.school_name)}</h4><div class="m">${dayName(v.date)} · ${esc(v.start)} · ${esc(title(v.lga))}</div></div>`).join('') : '<div class="note">Nothing planned yet.</div>'}`;
 }
-function viewWork() {
-  const rows = (S.ov.mine.work || []).map((w) => `<tr class="click" data-open="school:${esc(w[1])}"><td>${shortDate(w[0])}</td><td>${esc(schoolName(w[1]))}</td><td class="r">${w[2]}</td><td class="num r">${w[3]}</td><td class="num r">${w[4] ?? '–'}</td></tr>`).join('');
-  return `<div class="pagehead"><div><h2>My work</h2><p>Everything you tested, by day and school. Pupils appear as numbers only.</p></div></div><div class="card"><div class="tbl"><table><thead><tr><th>Day</th><th>School</th><th class="r">Grade</th><th class="r">Tested</th><th class="r">Avg min</th></tr></thead><tbody>${rows || '<tr><td colspan="5" class="empty">Nothing recorded yet.</td></tr>'}</tbody></table></div></div>`;
+// One row per day, school and grade. Tap it to open everything sent for that school and day: the sampling forms and every pupil file (numbers only).
+S.wkOpen = S.wkOpen || {}; S.wkf = S.wkf || {};
+const wkKey = (name, w) => [name, w[1], w[0]].join('|');
+function workRowsHtml(name, rows, o = {}) {
+  const seen = new Set();
+  return rows.map((w) => {
+    const k = wkKey(name, w), open = S.wkOpen[k], first = !seen.has(k); seen.add(k);
+    const row = `<tr class="click wkx ${open ? 'open' : ''}" data-act="wkx" data-name="${esc(name)}" data-school="${esc(w[1])}" data-date="${esc(w[0])}"><td><span class="car">${open ? '▾' : '▸'}</span> ${shortDate(w[0])}</td><td>${esc(o.schoolName ? o.schoolName(w[1]) : schoolName(w[1]))}</td><td class="r">${w[2]}</td><td class="num r">${w[3]}</td><td class="num r">${w[4] ?? '–'}</td></tr>`;
+    return row + (open && first ? `<tr class="wkd"><td colspan="5">${workDetail(k, w)}</td></tr>` : '');
+  }).join('');
 }
-function schoolName(id) { const s = (S.ov.mine?.schools || []).find((x) => x.id === id); return s ? s.name : id; }
+function workDetail(k, w) {
+  const d = S.wkf[k]; if (!d) return '<div class="m">Loading the files…</div>'; if (d.err) return `<div class="need-l">${esc(d.err)}</div>`;
+  const smp = d.sampling.length ? `<div class="tbl"><table><thead><tr><th>Grade</th><th class="r">On register</th><th class="r">Drawn</th><th class="r">Started</th><th>Sent</th></tr></thead><tbody>${d.sampling.map((x) => `<tr><td>Gr ${esc(x.grade)}</td><td class="num r">${x.register ?? '–'}</td><td class="num r">${x.drawn || 'all'}</td><td class="num r">${esc(x.at)}</td><td>${esc(x.sub.slice(5))}</td></tr>`).join('')}</tbody></table></div>` : '<div class="m">No sampling form from you for this school and day.</div>';
+  const pup = d.pupils.length ? `<div class="tbl"><table><thead><tr><th>Pupil no.</th><th>Grade</th><th class="r">Started</th><th class="r">Min</th><th>Here</th><th>Sent</th></tr></thead><tbody>${d.pupils.map((x) => `<tr><td class="num">${esc(String(x.pupil))}</td><td>Gr ${esc(x.grade)}</td><td class="num r">${esc(x.at)}</td><td class="num r">${x.mins ?? '–'}</td><td class="${x.present === 'absent' ? 'need-l' : ''}">${x.present === 'absent' ? 'Absent' : 'Yes'}</td><td>${esc(x.sub.slice(5))}</td></tr>`).join('')}</tbody></table></div>` : '<div class="m">No pupil files from you for this school and day.</div>';
+  return `<div class="wkbox"><h4>Sampling forms (${d.sampling.length})</h4>${smp}<h4>Pupil files (${d.pupils_total}${d.pupils_total ? ` · ${d.present} here, ${d.absent} absent` : ''})</h4>${pup}<p class="m"><a href="#" class="lk" data-open="school:${esc(w[1])}">Open the school</a> · Pupils appear as numbers only.</p></div>`;
+}
+async function workToggle(t) {
+  const w = [t.dataset.date, t.dataset.school]; const k = wkKey(t.dataset.name, w); S.wkOpen[k] = !S.wkOpen[k];
+  if (S.wkOpen[k] && !S.wkf[k]) { render(); try { S.wkf[k] = await api('/api/work/files?name=' + encodeURIComponent(t.dataset.name) + '&school=' + encodeURIComponent(t.dataset.school) + '&date=' + encodeURIComponent(t.dataset.date)); } catch (e) { S.wkf[k] = { err: e.message }; } }
+  render(); if (S.cur && !document.getElementById('drawer')?.hidden) openDetail(S.cur, false);
+}
+function viewWork() {
+  const rows = workRowsHtml(S.ov.mine.me?.name || S.who.name, S.ov.mine.work || []);
+  return `<div class="pagehead"><div><h2>My work</h2><p>Everything you tested, by day and school. Tap a row to open your sampling forms and every pupil file for that day. Pupils appear as numbers only.</p></div></div><div class="card"><div class="tbl"><table><thead><tr><th>Day</th><th>School</th><th class="r">Grade</th><th class="r">Tested</th><th class="r">Avg min</th></tr></thead><tbody>${rows || '<tr><td colspan="5" class="empty">Nothing recorded yet.</td></tr>'}</tbody></table></div></div>`;
+}
+function schoolName(id) { const s = (S.ov.mine?.schools || []).find((x) => x.id === id); return s ? s.name : schoolNameOf(id); }
 function viewQueries() {
   const f = S.ov.mine.flags;
   return `<div class="pagehead"><div><h2>My queries</h2><p>Automatic checks on your records. Write a short, honest response to each one. Your RC or ARC reviews it, then HQ reviews and approves it. You see every step here, and the history stays.</p></div></div><div class="card">${flagList(f.map((x) => ({ ...x, school_name: schoolName(x.school) })), { limit: 50, names: false, closed: true })}</div>`;
@@ -540,7 +562,7 @@ function personCard(name) {
   if (!a) return `<h2>${esc(name)}</h2><p class="m">No tests recorded for this year yet.</p>`;
   const b = S.ov.bands, flags = flagsAll().filter((f) => f.admin === name && isOpen(f));
   const speed = [1, 2, 3].map((g) => { const v = a.by_grade[g]; const span = b[g].p99 * 1.25; return `<div class="m" style="margin-top:8px">Grade ${g}: ${v ?? '–'} min average ${speedChip(v, g)} · normal ${b[g].p3.toFixed(1)}–${b[g].p99.toFixed(0)} min</div><div class="band"><i style="left:${(b[g].p3 / span) * 100}%;width:${((b[g].p99 - b[g].p3) / span) * 100}%"></i>${v != null ? `<b style="left:${Math.min(100, (v / span) * 100)}%"></b>` : ''}</div>`; }).join('');
-  const rows = workOf(name).slice(0, 25).map((w) => `<tr><td>${shortDate(w[0])}</td><td>${lk('school', w[1], schoolNameOf(w[1]))}</td><td class="r">${w[2]}</td><td class="r num">${w[3]}</td><td class="r num">${w[4] ?? '–'}</td></tr>`).join('');
+  const rows = workRowsHtml(name, workOf(name).slice(0, 25), { schoolName: schoolNameOf });
   return `<h2>${esc(a.name)}</h2><p class="m">${esc(roleLabel(a))}${a.region ? ' · ' + lk('region', a.region, title(a.region)) + ' · ' + esc(partnerOf(a.region)) : ''}</p>
   <div class="grid kpis" style="margin-top:12px">${kpi('Pupils tested', fmt(a.tested))}${kpi('Avg test time', (a.avg_min ?? '–') + ' min')}${kpi('Quality', a.quality ?? '–', 'out of 100')}${kpi('Days · schools', a.days + ' · ' + a.schools)}</div>
   <h3 style="margin:16px 0 4px">Test speed</h3>${speed}
@@ -549,7 +571,7 @@ function personCard(name) {
   ${S.daysCache[name]?.length ? `<h3 style="margin:16px 0 4px">Days worked</h3><div class="m"><b>${S.daysCache[name].length}</b> day(s) with tests · first ${shortDate(S.daysCache[name][0][0])} · latest ${shortDate(S.daysCache[name].slice(-1)[0][0])} · ${fmt(S.daysCache[name].reduce((t, d) => t + d[2], 0))} pupils tested. A day counts when at least one test was submitted.</div>` : ''}
   <h3 style="margin:16px 0 4px">Recent work</h3><div class="tbl"><table><thead><tr><th>Day</th><th>School</th><th class="r">Gr</th><th class="r">Tested</th><th class="r">Avg min</th></tr></thead><tbody>${rows || '<tr><td colspan="5" class="empty">No work recorded.</td></tr>'}</tbody></table></div>`;
 }
-const schoolNameOf = (id) => schoolsAll().find((x) => x.id === id)?.name || S.plan?.schools?.find((x) => x.id === id)?.name || id;
+const schoolNameOf = (id) => schoolsAll().find((x) => x.id === id)?.name || S.plan?.schools?.find((x) => x.id === id)?.name || (S.pil?.data?.schools || []).find((x) => x.school === id)?.name || id;
 function schoolCard(id) {
   const s = schoolsAll().find((x) => x.id === id);
   if (!s) return `<h2>School</h2><p class="m">Details are not available for ${esc(id)}.</p>`;
@@ -1969,6 +1991,7 @@ document.addEventListener('click', async (e) => {
     else if (/^rep[A-Z]/.test(a)) await repAction(a, t);
     else if (a === 'goMineQ') { S.qf = { q: '', type: '', sev: '', region: '', st: 'mine' }; S.tab = 'allq'; render(); }
     else if (a === 'payCsv') payCsv();
+    else if (a === 'wkx') await workToggle(t);
     else if (/^pil[A-Z]/.test(a)) await pilotAction(a, t);
     else if (/^pu[A-Z]/.test(a)) await pupilAction(a);
     else if (/^dl[A-Z]/.test(a)) await cleanAction(a, t);

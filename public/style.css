@@ -244,3 +244,7 @@ details.fd>summary.need-l::marker{color:var(--bad)}
 .pres .big2{font:700 26px var(--f-display);margin:4px 0}.pres .big2 small{font-size:14px;font-weight:500;color:var(--ink2)}.pres .okc{color:var(--good);font-weight:600}
 .pflags{margin-top:8px}.pf{display:flex;gap:8px;align-items:flex-start;font-size:13px;padding:3px 0}.pf .st{margin-top:5px}.pflags .btn{margin-top:6px}
 .pf .st{width:8px;height:8px;border-radius:50%;flex:none}
+
+/* expandable work rows */
+.wkx .car{color:var(--ink3);display:inline-block;width:1em}.wkx.open{background:var(--surface2)}.wkd>td{padding:6px 4px 12px!important;background:var(--surface2)}
+.wkbox h4{margin:8px 0 4px}.wkbox .tbl{max-height:320px;overflow:auto}
