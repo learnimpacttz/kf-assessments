@@ -36,7 +36,7 @@ function pick(job, rec, today) {
   const A = job.audience || {}; const roles = new Set(A.roles || []), regs = new Set((A.regions || []).map((r) => String(r).toUpperCase())), people = new Set((A.people || []).map((e) => e.toLowerCase()));
   const out = [];
   for (const [email, r] of Object.entries(rec)) {
-    if (r.active === false) continue; if (r.from && today < r.from) continue;
+    if (r.active === false) continue; // start date no longer blocks hub messages (Michael, 14 Oct)
     const byPerson = people.has(email);
     const byRole = roles.has(r.role) && (r.role === 'hq' || !regs.size || regs.has(r.region));
     if (byPerson || byRole) out.push({ email, name: r.name || '', role: r.role, region: r.region || '' });
