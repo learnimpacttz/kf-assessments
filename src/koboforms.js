@@ -98,6 +98,25 @@ export async function koboForm(env, b) {
   if (b.op === 'usage') { // the account's plan limits and use (read only)
     const out = {}; for (const path of ['service_usage/', 'organizations/orgDsa9DB4pAUdqub5Ev53Ct/asset_usage/']) { const r = await fetch(`${srv}/api/v2/${path}?format=json`, { headers: H }); out[path] = { status: r.status, body: (await r.text()).slice(0, 9000) }; } return out;
   }
+  if (b.op === 'edit_probe') { // read only: do any submissions carry an "edited afterwards" trace? (counts and a few ids and times, no names)
+    if (!known.includes(b.asset)) throw new Error('Only the KiuFunza projects');
+    const q = (o) => encodeURIComponent(JSON.stringify(o)); const out = { asset: b.asset };
+    const base = `${srv}/api/v2/assets/${b.asset}/data/?format=json`;
+    const cnt = async (query) => { const r = await fetch(`${base}&limit=1&query=${q(query)}`, { headers: H }); const d = await r.json().catch(() => ({})); return r.ok ? d.count : `error ${r.status}`; };
+    out.total = await cnt({}); out.with_deprecatedID = await cnt({ 'meta/deprecatedID': { $exists: true } }); out.with_last_edited = await cnt({ _last_edited: { $exists: true, $ne: null } });
+    const r = await fetch(`${base}&limit=3&sort=${q({ _id: -1 })}`, { headers: H }); const d = await r.json().catch(() => ({})); const rec = (d.results || [])[0] || {};
+    out.field_names_that_mention_edit = Object.keys(rec).filter((k) => /edit|deprecat|version|instance|uuid|submitted_by|validation/i.test(k));
+    const s2 = await fetch(`${base}&limit=5&query=${q({ 'meta/deprecatedID': { $exists: true } })}&fields=${encodeURIComponent(JSON.stringify(['_id', 'today', 'start', 'end', '_submission_time', '_last_edited', 'id_data/school', 'end_note_gr/testtime_rounded']))}`, { headers: H }); const e = await s2.json().catch(() => ({}));
+    out.sample_edited = (e.results || []).map((x) => ({ id: x._id, day: x.today, start: x.start, end: x.end, sent: x._submission_time, last_edited: x._last_edited, school: x['id_data/school'], mins: x['end_note_gr/testtime_rounded'] }));
+    return out;
+  }
+  if (b.op === 'edit_scan') { // read only: how many records show signs of being opened and changed after they were finished (counts and a few ids)
+    if (!known.includes(b.asset)) throw new Error('Only the KiuFunza projects');
+    const q = encodeURIComponent(JSON.stringify(b.from ? { today: { $gte: b.from, $lte: b.to || b.from } } : {})); const fields = encodeURIComponent(JSON.stringify(['_id', 'today', 'start', 'end', '_submission_time', 'meta/deprecatedID', 'end_note_gr/testtime_rounded', 'stu_avail']));
+    let url = `${srv}/api/v2/assets/${b.asset}/data/?format=json&limit=1000&fields=${fields}` + (b.from ? `&query=${q}` : `&sort=${encodeURIComponent(JSON.stringify({ _id: -1 }))}`); const o = { n: 0, deprecated: 0, end_after_sent: 0, long_window: 0, examples: [] };
+    for (let i = 0; i < (b.pages || 6) && url; i++) { const r = await fetch(url, { headers: H }); if (!r.ok) { o.error = r.status; break; } const d = await r.json(); for (const x of d.results || []) { o.n++; const s0 = Date.parse(x.start || ''), e0 = Date.parse(x.end || ''), sub = Date.parse((x._submission_time || '') + 'Z'); const tt = Number(x['end_note_gr/testtime_rounded']); const dep = Boolean(x['meta/deprecatedID']); const after = !Number.isNaN(e0) && !Number.isNaN(sub) && e0 - sub > 5 * 60000; const lw = !Number.isNaN(e0) && !Number.isNaN(s0) && tt > 0 && (e0 - s0) / 60000 - tt > 30; if (dep) o.deprecated++; if (after) o.end_after_sent++; if (lw) o.long_window++; if ((dep || after || lw) && o.examples.length < 6) o.examples.push({ id: x._id, day: x.today, start: x.start, end: x.end, sent: x._submission_time, mins: tt || null, dep, after, lw }); } url = d.next || null; }
+    return o;
+  }
   if (b.op === 'attach_stats') { // read only: how much space the attachments of a project take, by type (no content, no names)
     const a = await get(b.asset); let url = `${srv}/api/v2/assets/${a.uid}/data/?format=json&limit=500&fields=${encodeURIComponent('["_id","_attachments"]')}`; const by = {}; let n = 0, files = 0, bytes = 0, withAtt = 0; const forms = await (await fetch(`${srv}/api/v2/assets/${a.uid}/files/?format=json`, { headers: H })).json().catch(() => ({}));
     for (let i = 0; i < 12 && url; i++) { const r = await fetch(url, { headers: H }); const d = await r.json(); for (const x of d.results || []) { n++; const at = x._attachments || []; if (at.length) withAtt++; for (const f of at) { const e = (f.mimetype || 'other').split('/')[0]; const k = by[e] ||= { files: 0, bytes: 0 }; k.files++; k.bytes += Number(f.filesize || 0); files++; bytes += Number(f.filesize || 0); } } url = d.next || null; }

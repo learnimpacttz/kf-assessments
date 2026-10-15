@@ -190,6 +190,7 @@ export function summarize(Y, { year, bands, today, owners = {}, practice = false
     a.fast += fast; a.slow += slow; a.late += c.late; a.far += c.far; a.inBand += inBand;
     a.byGrade[grade].tn += c.tn; a.byGrade[grade].ts += c.ts;
     if (c.sb) mergeSb(a.sb, c.sb);
+    if (c.ed) flags.push({ sev: 'warn', type: 'edited', school: schoolId, grade: +grade, admin: enumerator, date, recs: c.ex?.ed || [], text: `${c.ed} test record(s) were opened and changed after they were finished and sent`, hint: 'Finish each assessment on the phone before moving on and do not reopen a finished record. If something needs correcting, tell your RC. HQ makes the change in KoBo and it is logged.', normal: 'finish it once, never reopen it' });
     if (c.sb && c.sb[2] + c.sb[3] > 0) flags.push({ sev: 'warn', type: 'latesub', school: schoolId, grade: +grade, admin: enumerator, date, text: `${c.sb[2] + c.sb[3]} test record(s) sent 2 or more days after the visit`, hint: 'Send records the same day. Turn on auto send in KoBo Collect so nothing waits on the phone.' });
     (work[enumerator] ||= []).push([date, schoolId, +grade, c.av, c.tn ? r1(c.ts / c.tn) : null]);
     { const dpx = (dayPeople[schoolId + '|' + date] ||= { names: new Set(), devs: new Set(), tdevs: new Set(), per: {} }); dpx.names.add(enumerator); dpx.tests = (dpx.tests || 0) + (c.n || 0); }
@@ -213,6 +214,7 @@ export function summarize(Y, { year, bands, today, owners = {}, practice = false
     const sc = schools[schoolId];
     if (!sc) continue;
     if (sg.att !== null) sc.g[grade].att = sg.att;
+    if (sg.ed) flags.push({ sev: 'warn', type: 'edited', school: schoolId, grade: +grade, admin: sg.enum || '', date: sg.date, recs: (sg.edr || []).map((id) => ['', '', null, '', '', id]), text: `The sampling form (${sg.ed} record${sg.ed > 1 ? 's' : ''}) was opened and changed after it was finished and sent`, hint: 'Finish each form on the phone before moving on and do not reopen a finished record. If something needs correcting, tell your RC. HQ makes the change in KoBo and it is logged.', normal: 'finish it once, never reopen it' });
     if (sg.dev && sg.date) noteDev(sg.dev, sg.devWho || sg.enum || '', schoolId, sg.date, 1);
     if (sg.enum) { adminOf(sg.enum).samp += 1; if (sg.date) { const da = (sc.dayAdmins[sg.date] ||= []); if (!da.includes(sg.enum)) da.push(sg.enum); } }
     if (sg.sb && sg.enum) mergeSb(adminOf(sg.enum).sbs, sg.sb);

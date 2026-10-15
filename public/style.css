@@ -248,3 +248,7 @@ details.fd>summary.need-l::marker{color:var(--bad)}
 /* expandable work rows */
 .wkx .car{color:var(--ink3);display:inline-block;width:1em}.wkx.open{background:var(--surface2)}.wkd>td{padding:6px 4px 12px!important;background:var(--surface2)}
 .wkbox h4{margin:8px 0 4px}.wkbox .tbl{max-height:320px;overflow:auto}
+
+/* every open query is red so it is easy to see; closed ones turn green */
+.flag.openq .st{width:6px;background:var(--bad)}.flag.openq>div>b{color:var(--bad)}
+.flag.doneq .st{width:6px;background:var(--good)}

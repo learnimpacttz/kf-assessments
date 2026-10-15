@@ -71,6 +71,13 @@ function calFields(r) {
 }
 
 const secsOf = (iso) => { const m = /T(\d\d):(\d\d):(\d\d)/.exec(iso || ''); return m ? +m[1] * 3600 + +m[2] * 60 + +m[3] : null; };
+// A record that was opened and changed after it was finished and sent: KoBo keeps the old copy's id (meta/deprecatedID) when it is
+// edited on the web, and the form's end time then falls after the moment the record was sent. (A long gap from start to end alone is normal.)
+export function editedAfterSent(r) {
+  if (r['meta/deprecatedID'] || r.deprecatedID) return true;
+  const e0 = Date.parse(r.end || ''), sub = Date.parse((r._submission_time || '') + (/[zZ]|[+-]\d\d:?\d\d$/.test(r._submission_time || '') ? '' : 'Z'));
+  return !Number.isNaN(e0) && !Number.isNaN(sub) && e0 - sub > 5 * 60000;
+}
 function pushEvent(Y, date, ev) { const day = ((Y.tl ||= {})[date] ||= []); if (day.length < 9000) day.push(ev); }
 
 export function addStudents(state, records) {
@@ -89,6 +96,7 @@ export function addStudents(state, records) {
     c.n += 1;
     c.sub = r._submission_time || c.sub;
     c.sb = addLate(c.sb, lateness(r, date));
+    if (editedAfterSent(r)) { c.ed = (c.ed || 0) + 1; const ed = ((c.ex ||= {}).ed ||= []); if (ed.length < 4) ed.push([r.stuid || '', r['stu_info/rand_nr'] ?? '', null, (r.start || '').slice(11, 16), '', r._id]); }
     // availability: 1 = pupil present and tested, 2 = absent (emergence)
     if (String(r.stu_avail) !== '2') c.av += 1;
 
@@ -184,6 +192,7 @@ export function addSampling(state, records) {
         if (hit) hit[2] = hit[1]; else pushEvent(Y, sg.date, [dev, s0, s0, school, +grade, sg.enum, 's']);
       }
     }
+    if (editedAfterSent(r)) { sg.ed = (sg.ed || 0) + 1; (sg.edr ||= []).length < 4 && sg.edr.push(r._id); }
     sg.sub = r._submission_time || '';
     sg.sb = addLate(sg.sb, lateness(r, sg.date));
     Y.nsamp = (Y.nsamp || 0) + 1;
