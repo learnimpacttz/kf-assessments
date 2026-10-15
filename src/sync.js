@@ -67,6 +67,23 @@ export async function recomputeSummaries(env, years, { allDays = false } = {}) {
 }
 
 // After records are deleted in KoBo the stored totals still count them. Clear that kind's part of each affected year and read it again from KoBo.
+// A faster rebuild: re-read only the records after a given id (everything from 2026 and practice sits at the end of the form),
+// and recompute just those years. The old way started from record 0 and read the whole form (about 40 minutes).
+export async function restartRebuildFrom(env, kind, years, fromId) {
+  for (const y of years) {
+    const Y = await loadYear(env, y); if (!Y) continue;
+    if (kind === 'students') { Y.cells = {}; Y.n = 0; for (const d of Object.keys(Y.tl || {})) Y.tl[d] = Y.tl[d].filter((e) => e[6] !== 't'); }
+    else if (kind === 'sampling') { Y.sg = {}; Y.nsamp = 0; for (const d of Object.keys(Y.tl || {})) Y.tl[d] = Y.tl[d].filter((e) => e[6] !== 's'); }
+    await saveYear(env, y, Y);
+  }
+  await kv(env).put(wmKey(kind), { max_id: Number(fromId) || 0, pages: 0, cursor: null, years: [], last_check: null, records: 0, only: years });
+  await kv(env).put('v2:rebuild', ((await kv(env).get('v2:rebuild')) || []).filter((x) => x.kind !== kind));
+}
+// where a rebuild of these years can start: just before the first record of the earliest year (0 = from the very start when unknown)
+export async function firstIdFor(env, kind, years) {
+  let lo = null; for (const y of years) { const id = await kv(env).get(`v2:minid:${kind}:${y}`); if (id == null) return 0; if (lo === null || id < lo) lo = id; }
+  return lo === null ? 0 : Math.max(0, lo - 1);
+}
 async function startRebuild(env) {
   const rb = (await kv(env).get('v2:rebuild')) || []; if (!rb.length) return;
   const kind = rb[0].kind; const wm0 = await kv(env).get(wmKey(kind)); if (wm0?.cursor || wm0?.only) return; // one at a time
@@ -77,7 +94,7 @@ async function startRebuild(env) {
     else if (kind === 'sampling') { Y.sg = {}; Y.nsamp = 0; for (const d of Object.keys(Y.tl || {})) Y.tl[d] = Y.tl[d].filter((e) => e[6] !== 's'); }
     await saveYear(env, y, Y);
   }
-  await kv(env).put(wmKey(kind), { max_id: 0, pages: 0, cursor: null, years: [], last_check: null, records: 0, only: years });
+  await kv(env).put(wmKey(kind), { max_id: await firstIdFor(env, kind, years), pages: 0, cursor: null, years: [], last_check: null, records: 0, only: years });
   await kv(env).put('v2:rebuild', rb.filter((x) => x.kind !== kind));
 }
 
@@ -86,13 +103,19 @@ async function processPage(env, kind) {
   const assetId = env[cfg.asset];
   const server = env.KOBO_SERVER || 'kf.kobotoolbox.org';
   const wm = (await kv(env).get(wmKey(kind))) || { max_id: 0, pages: 0, cursor: null, years: [], last_check: null, records: 0 };
+  if (!wm.cursor) wm.from0 = (wm.max_id_pass ?? wm.max_id ?? 0) === 0; // a pass that starts at record 0 reads everything
   const page = await fetchKoboPage(server, assetId, env.KOBO_TOKEN, wm.cursor, wm.max_id_pass ?? wm.max_id);
   const yOf = (r) => (kind === 'sampling' ? (isPracticeSchool(r['id_data/school'] || r.school || r['att_gr/school']) ? 'practice' : yearOf(r)) : stateYearOf(r));
+  const yOfRow = yOf;
   const rows = wm.only ? page.results.filter((r) => wm.only.includes(yOf(r))) : page.results; // a rebuild after deletions reads only the affected years
   if (rows.length) {
     const touched = [...new Set(rows.map((r) => (kind === 'sampling' ? (isPracticeSchool(r['id_data/school'] || r.school || r['att_gr/school']) ? 'practice' : yearOf(r)) : stateYearOf(r))).filter(Boolean))];
     const state = await loadState(env, touched);
-    cfg.add(state, rows);
+    const approved = new Set(((await kv(env).get('v2:approvededits')) || []).map(Number)); // records HQ corrected on purpose: not flagged as "changed after sent"
+    cfg.add(state, rows, { approved });
+    // remember the first record of each year in this form, so a later rebuild can start there instead of at record 0 (only from a pass that began at record 0, so the answer is the true first)
+    const low = {}; for (const r of rows) { const y = yOfRow(r); if (y && typeof r._id === 'number' && (low[y] === undefined || r._id < low[y])) low[y] = r._id; }
+    for (const [y, id] of Object.entries(wm.from0 ? low : {})) { const k = `v2:minid:${kind}:${y}`; const cur = await kv(env).get(k); if (cur == null || id < cur) await kv(env).put(k, id); }
     for (const y of touched) if (state.yrs[y]) await saveYear(env, y, state.yrs[y]);
     for (const r of rows) {
       const y = kind === 'sampling' ? (isPracticeSchool(r['id_data/school'] || r.school || r['att_gr/school']) ? 'practice' : yearOf(r)) : stateYearOf(r);
@@ -149,7 +172,7 @@ async function tickInner(env, { force }) {
   for (const kind of Object.keys(KINDS)) {
     if (!configured(env, kind)) continue;
     const wm = await kv(env).get(wmKey(kind));
-    if (wm?.cursor) { if (force) return [{ kind, skipped: 'pass in progress', pages: wm.pages }]; out.push(await processPage(env, kind)); return out; } // the cron carries a pass forward, one page per tick
+    if (wm?.cursor) { if (force) return [{ kind, skipped: 'pass in progress', pages: wm.pages }]; const t0 = Date.now(); let r = await processPage(env, kind); out.push(r); while (wm.only && !r.done && Date.now() - t0 < 15000 && out.length < 6) { r = await processPage(env, kind); out.push(r); } return out; } // the cron carries a pass forward, one page per tick
     const age = wm?.last_check ? now - Date.parse(wm.last_check) : Infinity;
     const every = fieldHours ? 5 * 60 * 1000 : 60 * 60 * 1000;
     if (force || age >= every) { out.push(await processPage(env, kind)); return out; }
@@ -187,4 +210,25 @@ export async function clearPractice(env) {
     const l = await env.DASHBOARD_KV.list({ prefix: 'tl:practice:' });
     for (const k of l.keys) await env.DASHBOARD_KV.delete(k.name);
   }
+}
+
+// Work out, once, the first record of 2026 and of the practice data, so later rebuilds start there instead of at record 0.
+// Record ids grow with time, so a binary search over "the first record after id N" finds it in about 25 small requests.
+export async function seedFirstIds(env) {
+  const out = {};
+  for (const kind of Object.keys(KINDS)) {
+    if (!configured(env, kind)) continue;
+    const server = env.KOBO_SERVER || 'kf.kobotoolbox.org'; const asset = env[KINDS[kind].asset];
+    const yOf = (r) => (kind === 'sampling' ? (isPracticeSchool(r['id_data/school'] || r.school || r['att_gr/school']) ? 'practice' : yearOf(r)) : stateYearOf(r));
+    const isNew = (r) => ['2026', 'practice'].includes(yOf(r));
+    const firstAfter = async (id) => { const url = `https://${server}/api/v2/assets/${asset}/data/?format=json&limit=1&sort=${encodeURIComponent('{"_id":1}')}&query=${encodeURIComponent(JSON.stringify({ _id: { $gt: id } }))}`; const r = await fetch(url, { headers: { Authorization: `Token ${env.KOBO_TOKEN}` } }); if (!r.ok) throw new Error('KoBo ' + r.status); const d = await r.json(); return (d.results || [])[0] || null; };
+    const f = async (id) => { const r = await firstAfter(id); return Boolean(r) && isNew(r); }; // is the first record after this id from 2026 or practice? false for old ids, then true
+    const newest = await (async () => { const r = await fetch(`https://${server}/api/v2/assets/${asset}/data/?format=json&limit=1&sort=${encodeURIComponent('{"_id":-1}')}`, { headers: { Authorization: `Token ${env.KOBO_TOKEN}` } }); const d = await r.json(); return (d.results || [])[0] || null; })();
+    if (!newest || !isNew(newest)) continue;
+    let lo = 0, hi = newest._id - 1; let first = null;
+    if (await f(0)) first = await firstAfter(0);
+    else { while (hi - lo > 1) { const mid = Math.floor((lo + hi) / 2); if (await f(mid)) hi = mid; else lo = mid; } first = await firstAfter(hi); }
+    if (first && isNew(first)) for (const y of ['2026', 'practice']) { await kv(env).put(`v2:minid:${kind}:${y}`, first._id - 1); (out[kind] ||= {})[y] = first._id - 1; }
+  }
+  return out;
 }

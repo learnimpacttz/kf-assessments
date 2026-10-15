@@ -171,6 +171,13 @@ export async function koboForm(env, b) {
       return { ok: pr.status < 300 && !wrong.length, mismatches: wrong, edit_trace: { deprecatedID: after['meta/deprecatedID'] || null, last_edited: after._last_edited || null }, log };
     } finally { const d = await fetch(`${srv}/api/v2/assets/${t.uid}/`, { method: 'DELETE', headers: H }); log.push('cleanup ' + d.status); }
   }
+  if (b.op === 'tail_view') { // read only: the newest records of a form for one day, with the fields that show where they belong (no pupil answers)
+    if (!known.includes(b.asset)) throw new Error('Only the KiuFunza projects');
+    const c0 = await (await fetch(`${srv}/api/v2/assets/${b.asset}/data/?format=json&limit=1`, { headers: H })).json(); const total = c0.count || 0; const n = b.tail || 300;
+    const r = await fetch(`${srv}/api/v2/assets/${b.asset}/data/?format=json&limit=${n}&start=${Math.max(0, total - n)}`, { headers: H }); if (!r.ok) throw new Error('KoBo ' + r.status); const sf = (x, k) => { for (const key in x) if (key === k || key.endsWith('/' + k)) return x[key]; return undefined; };
+    const rows = ((await r.json()).results || []).filter((x) => String(x.today || sf(x, 'date') || '').slice(0, 10) === b.day && (!b.school || sf(x, 'school') === b.school)).map((x) => { let drawn = 0; for (let i = 1; i <= 40; i++) { const v = sf(x, 'int' + i); if (v !== undefined && v !== null && v !== '') drawn++; } return { id: x._id, school: sf(x, 'school'), school_name: sf(x, 'school_name'), region: sf(x, 'region'), lga: sf(x, 'lga'), grade: sf(x, 'grade_conf') ?? sf(x, 'grade'), who: sf(x, 'enumerator'), att: sf(x, 'att'), drawn, start: (x.start || '').slice(11, 16), sent: (x._submission_time || '').slice(11, 16), edited: Boolean(x['meta/deprecatedID']), cal_status: sf(x, 'cal_status'), ...(b.ints ? { ints: Array.from({ length: 40 }, (_, i) => sf(x, 'int' + (i + 1))).filter((v) => v !== undefined && v !== null && v !== '').map(Number).sort((a, c) => a - c) } : {}) }; });
+    return { total, day: b.day, rows };
+  }
   if (b.op === 'edit_scan') { // read only: how many records show signs of being opened and changed after they were finished (counts and a few ids)
     if (!known.includes(b.asset)) throw new Error('Only the KiuFunza projects');
     const q = encodeURIComponent(JSON.stringify(b.from ? { today: { $gte: b.from, $lte: b.to || b.from } } : {})); const fields = encodeURIComponent(JSON.stringify(['_id', 'today', 'start', 'end', '_submission_time', 'meta/deprecatedID', 'end_note_gr/testtime_rounded', 'stu_avail']));

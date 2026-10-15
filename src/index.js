@@ -4,6 +4,7 @@ import { ownWork, teamBlock, coordinatorOverview } from './own.js';
 import { buildCalendar, markCalendarDirty, syncCalendar, calendarStatus, setCalSync, loadCalSync } from './calendar.js';
 import { pupilRecords, workFiles } from './pupils.js';
 import { pilotView, pilotSet, PILOT_ALLOC } from './pilot.js';
+import { findRecords, previewMove, applyMove, correctionsView, correctionCopy } from './corrections.js';
 import { qrPng } from './qr.js';
 import { codFromYear } from './paymentdata.js';
 import { INFRA_WINNERS } from './data/infra_winners.js';
@@ -26,7 +27,7 @@ import { runBackup, buildBackup, restoreBackup, maybeRunScheduledBackup, listBac
 import { setValidation, koboWho, getValidation, clearValidation } from './kobo.js';
 import { fetchKoboPage } from './kobo.js';
 import { subscribe, unsubscribe, takeAlert, hashEndpoint, pushTo, pushStatus, pushReady, runAlerts } from './push.js';
-import { tick, syncStatus, recomputeSummaries, resetAll, resetKind, loadState, loadYear, saveYear, stateYears, clearPractice } from './sync.js';
+import { tick, syncStatus, recomputeSummaries, resetAll, resetKind, loadState, loadYear, saveYear, stateYears, clearPractice, restartRebuildFrom, seedFirstIds } from './sync.js';
 import { getPlan, submitPlan, saveDraft, changeVisit, markNotice, withNotices } from './plan.js';
 import {
   devCode as devCodeOf, REGIONS, PARTNERS, REASONS, DAY_REASONS, PRACTICE_BY_ID, PRACTICE_REGION, PLAN_DEADLINE, FIELD_START, FIELD_END, PILOT_DAY, TRAINING_START, CURRENT_YEAR, STAFF, rosterState, staffForKoboName, SCHOOLS_BY_REGION, SCHOOL_BY_ID, eatToday,
@@ -449,6 +450,16 @@ export default {
           try { const { sum } = await loadSummary(env, '2026'); if (sum) for (const c of v.schools) { const r = sum.schools?.[c.school]; if (r) c.live = { g: r.g, started: r.started, first: r.first, last: r.last, admins: (r.admins || []).length }; } } catch { /* the page works without live numbers */ }
           return json(v); } catch (e) { return err(String(e.message || e), 502); } }
       if (path === '/api/work/files') { try { const r = await workFiles(env, who, Object.fromEntries(url.searchParams)); return r.error ? err(r.error, r.status || 422) : json(r); } catch (e) { return err(String(e.message || e), 502); } }
+      if (path === '/api/corrections') {
+        try {
+          if (method !== 'POST') { const r = await correctionsView(env, who); return r.error ? err(r.error, r.status || 422) : json(r); }
+          const b = await request.json().catch(() => ({}));
+          const r = b.action === 'find' ? await findRecords(env, who, b) : b.action === 'preview' ? await previewMove(env, who, b) : b.action === 'apply' ? await applyMove(env, who, b) : { error: 'Unknown action' };
+          if (b.action === 'apply' && !r.error) await logActivity(env, who, `Moved ${(r.done || []).filter((d) => d.ok).length} record(s) to ${b.target_school}`, b.form);
+          return r.error ? err(r.error, r.status || 422) : json(r);
+        } catch (e) { return err(String(e.message || e), 502); }
+      }
+      if (path === '/api/corrections/copy') { const c = await correctionCopy(env, who, url.searchParams.get('id') || ''); return c ? json(c) : err('Not found or not allowed', 404); }
       if (path === '/api/pupils') { try { const r = await pupilRecords(env, who, Object.fromEntries(url.searchParams)); return r.error ? err(r.error, r.status || 422) : json(r); } catch (e) { return err(String(e.message || e), 502); } }
       if (path.startsWith('/api/deletions')) {
         if (!(who.role === 'hq' || who.role === 'rc' || who.role === 'arc')) return err('Not allowed', 403);
@@ -816,7 +827,9 @@ export default {
         await resetKind(env, b.kind); return json({ ok: true, kind: b.kind });
       }
       if (path === '/api/admin/rebuild' && method === 'POST') { // queue a clean re-read of chosen years of a form (used after corrections made in KoBo)
-        const b = await request.json().catch(() => ({})); if (!['students', 'sampling'].includes(b.kind) || !Array.isArray(b.years) || !b.years.length) return err('Choose a form and years', 422);
+        const b = await request.json().catch(() => ({})); if (b.seed) return json({ ok: true, first_ids: await seedFirstIds(env) });
+        if (!['students', 'sampling'].includes(b.kind) || !Array.isArray(b.years) || !b.years.length) return err('Choose a form and years', 422);
+        if (b.from_id) { await restartRebuildFrom(env, b.kind, b.years.map(String), b.from_id); await logActivity(env, who, 'Restarted a rebuild from record ' + b.from_id + ': ' + b.kind + ' ' + b.years.join(', ')); return json({ ok: true, restarted_from: b.from_id }); }
         const rb = (await kv(env).get('v2:rebuild')) || []; for (const y of b.years.map(String)) if (!rb.find((x) => x.kind === b.kind && x.year === y)) rb.push({ kind: b.kind, year: y }); await kv(env).put('v2:rebuild', rb); await logActivity(env, who, 'Queued a rebuild: ' + b.kind + ' ' + b.years.join(', ')); return json({ ok: true, queued: rb });
       }
       if (path === '/api/admin/recompute' && method === 'POST') { await recomputeSummaries(env, null, { allDays: true }); return json({ ok: true }); }
