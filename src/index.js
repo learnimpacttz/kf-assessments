@@ -815,6 +815,10 @@ export default {
         if (b.kind === 'teachers') for (const y of await stateYears(env)) { const Y = await loadYear(env, y); if (Y && Object.keys(Y.tf || {}).length) { Y.tf = {}; Y.tfp = {}; await saveYear(env, y, Y); } } // teacher aggregates are rebuilt from scratch so nothing is counted twice
         await resetKind(env, b.kind); return json({ ok: true, kind: b.kind });
       }
+      if (path === '/api/admin/rebuild' && method === 'POST') { // queue a clean re-read of chosen years of a form (used after corrections made in KoBo)
+        const b = await request.json().catch(() => ({})); if (!['students', 'sampling'].includes(b.kind) || !Array.isArray(b.years) || !b.years.length) return err('Choose a form and years', 422);
+        const rb = (await kv(env).get('v2:rebuild')) || []; for (const y of b.years.map(String)) if (!rb.find((x) => x.kind === b.kind && x.year === y)) rb.push({ kind: b.kind, year: y }); await kv(env).put('v2:rebuild', rb); await logActivity(env, who, 'Queued a rebuild: ' + b.kind + ' ' + b.years.join(', ')); return json({ ok: true, queued: rb });
+      }
       if (path === '/api/admin/recompute' && method === 'POST') { await recomputeSummaries(env, null, { allDays: true }); return json({ ok: true }); }
       if (path === '/api/admin/full-resync' && method === 'POST') { await resetAll(env); return json({ ok: true, note: 'State cleared. The next ticks re-read every form from the start.' }); }
       if (path === '/api/admin/state-size') { const s = await loadState(env); return json({ years: Object.fromEntries(Object.entries(s.yrs).map(([y, Y]) => [y, { records: Y.n, cells: Object.keys(Y.cells).length, sg: Object.keys(Y.sg).length, teacher_schools: Object.keys(Y.tf).length }])) }); }

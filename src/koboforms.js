@@ -36,7 +36,7 @@ export async function koboForm(env, b) {
         const rows = []; let row = [], cur = '', q = false;
         for (let i = 0; i < text.length; i++) { const c = text[i]; if (q) { if (c === '"') { if (text[i + 1] === '"') { cur += '"'; i++; } else q = false; } else cur += c; } else if (c === '"') q = true; else if (c === ',') { row.push(cur); cur = ''; } else if (c === '\n') { row.push(cur.replace(/\r$/, '')); rows.push(row); row = []; cur = ''; } else cur += c; }
         if (cur || row.length) { row.push(cur); rows.push(row); }
-        const hdr = (rows[0] || []).map((h) => h.replace(/^\uFEFF/, '')); info.columns = hdr.length; info.rows = rows.length - 1; info.ragged = rows.slice(1).filter((r) => r.length !== hdr.length).length;
+        const hdr = (rows[0] || []).map((h) => h.replace(/^\uFEFF/, '')); info.columns = hdr.length; info.blank_headings = hdr.map((h, i) => (h.trim() === '' ? i : -1)).filter((i) => i >= 0); info.header_names = hdr.slice(0, 14); info.rows = rows.length - 1; info.ragged = rows.slice(1).filter((r) => r.length !== hdr.length).length;
         info.cols = {};
         for (const c of b.columns || []) { const i = hdr.indexOf(c); if (i < 0) { info.cols[c] = 'MISSING'; continue; } const v = rows.slice(1).map((r) => r[i] || ''); info.cols[c] = { filled: v.filter((t) => t.trim()).length, of: v.length, min: Math.min(...v.map((t) => t.length)), max: Math.max(...v.map((t) => t.length)) }; }
         if (b.by_prefix && hdr.includes('testid')) { const ti = hdr.indexOf('testid'); const si = (b.columns || []).map((c) => hdr.indexOf(c)).filter((i) => i >= 0 && i !== ti); const g = {}; for (const r of rows.slice(1)) { const k = (r[ti] || '(blank)').slice(0, 6); const e = (g[k] ||= { rows: 0, story: 0 }); e.rows++; if (si.some((i) => (r[i] || '').trim())) e.story++; } info.by_prefix = g; }
@@ -109,6 +109,67 @@ export async function koboForm(env, b) {
     const s2 = await fetch(`${base}&limit=5&query=${q({ 'meta/deprecatedID': { $exists: true } })}&fields=${encodeURIComponent(JSON.stringify(['_id', 'today', 'start', 'end', '_submission_time', '_last_edited', 'id_data/school', 'end_note_gr/testtime_rounded']))}`, { headers: H }); const e = await s2.json().catch(() => ({}));
     out.sample_edited = (e.results || []).map((x) => ({ id: x._id, day: x.today, start: x.start, end: x.end, sent: x._submission_time, last_edited: x._last_edited, school: x['id_data/school'], mins: x['end_note_gr/testtime_rounded'] }));
     return out;
+  }
+  if (b.op === 'mafunzo_preview') { // read only: records sent under a Mafunzo (training) school on a given day, and the pilot school each would belong to
+    if (!known.includes(b.asset)) throw new Error('Only the KiuFunza projects');
+    const day = /^\d{4}-\d\d-\d\d$/.test(b.day || '') ? b.day : ''; if (!day) throw new Error('Choose a day');
+    const q = encodeURIComponent(JSON.stringify({ 'id_data/school': { $in: ['TRAIN001', 'TRAIN002', 'TRAIN003'] }, today: day }));
+    const fields = encodeURIComponent(JSON.stringify(['_id', 'today', 'start', 'end', '_submission_time', 'id_data/school', 'id_data/grade', 'id_data/enumerator', 'stu_info/rand_nr', 'stuid', 'stu_avail', 'deviceid', 'meta/instanceID']));
+    const r = await fetch(`${srv}/api/v2/assets/${b.asset}/data/?format=json&limit=1000&fields=${fields}&query=${q}`, { headers: H }); if (!r.ok) throw new Error('KoBo ' + r.status);
+    const d = await r.json(); return { asset: b.asset, day, count: d.count, records: (d.results || []).map((x) => ({ id: x._id, school: x['id_data/school'], grade: x['id_data/grade'], who: x['id_data/enumerator'], at: (x.start || '').slice(11, 16), sent: (x._submission_time || '').slice(11, 16), pupil: x.stuid || x['stu_info/rand_nr'] || '', present: String(x.stu_avail) === '2' ? 'absent' : 'present' })) };
+  }
+  if (b.op === 'record_compare') { // read only: full records for one person and day (and the fields that differ between two of them), so a correction can be planned exactly
+    if (!known.includes(b.asset)) throw new Error('Only the KiuFunza projects');
+    const c0 = await (await fetch(`${srv}/api/v2/assets/${b.asset}/data/?format=json&limit=1`, { headers: H })).json(); const total = c0.count || 0; // the newest records sit at the end: read the last few hundred, no heavy query
+    const tailR = await fetch(`${srv}/api/v2/assets/${b.asset}/data/?format=json&limit=${b.tail || 500}&start=${Math.max(0, total - (b.tail || 500))}`, { headers: H }); if (!tailR.ok) throw new Error('KoBo ' + tailR.status); const tail = ((await tailR.json()).results || []).filter((x) => String(x.today || x['group_intro/date'] || '').slice(0, 10) === b.day);
+    const A = { count: total, results: tail.filter((x) => String(x['id_data/enumerator'] || '') === b.who_a) }, B = { results: b.who_b ? tail.filter((x) => String(x['id_data/enumerator'] || '') === b.who_b) : [] };
+    const recA = A.results || [], recB = (B.results || [])[0] || null;
+    const mafunzo = recA.filter((x) => /^TRAIN/.test(String(x['id_data/school'] || '')));
+    const strip = (x) => Object.fromEntries(Object.entries(x).filter(([k]) => !/^(_|meta|formhub|__)/.test(k)));
+    const one = mafunzo[0] ? strip(mafunzo[0]) : null; const ref = recB ? strip(recB) : null; const diff = {};
+    if (one && ref) for (const k of new Set([...Object.keys(one), ...Object.keys(ref)])) if (JSON.stringify(one[k]) !== JSON.stringify(ref[k]) && !/(testtime|^k\d|start|end|rand_nr|stuid|today|date|deviceid|_g_|a\d\d\d|set)/i.test(k)) diff[k] = { mafunzo: one[k] ?? null, chihikwi: ref[k] ?? null };
+    const target = b.target_school ? tail.filter((x) => x['id_data/school'] === b.target_school && String(x['id_data/grade']) === String(b.target_grade || '1')).map((x) => ({ id: x._id, stuid: x.stuid, rand: x['stu_info/rand_nr'], who: x['id_data/enumerator'] })) : null;
+    return { target_records: target, ref_stuid: recB ? recB.stuid : null, ref_keys_sample: recB ? Object.keys(recB).filter((k) => /stuid|rand|age|name|conf/i.test(k)).slice(0, 20) : null, count_a: A.count, mafunzo: mafunzo.map((x) => ({ id: x._id, school: x['id_data/school'], grade: x['id_data/grade'], start: x.start, stuid: x.stuid, rand: x['stu_info/rand_nr'], uuid: x['meta/instanceID'] })), differing_fields: diff, ref_id: recB?._id || null };
+  }
+  // ---- approved correction (15 Oct 2026): the 7 pilot-day records Evodia Mwashilindi sent under Mafunzo belong to Chihikwi, Dodoma ----
+  const FIX_IDS = [894307652, 894307668, 894307682, 894307700, 894307713, 894307725, 894307741]; const FIX_REF = 894250356; // a Chihikwi record from the same day, the model for the school's own fields
+  const fixAsset = env.KOBO_ASSET_ID;
+  const one = async (asset, id) => { const r = await fetch(`${srv}/api/v2/assets/${asset}/data/${id}/?format=json`, { headers: H }); if (!r.ok) throw new Error(`KoBo ${r.status} reading record ${id}`); return r.json(); };
+  const bulk = async (asset, ids, data) => { const r = await fetch(`${srv}/api/v2/assets/${asset}/data/bulk/`, { method: 'PATCH', headers: { ...H, ...J }, body: JSON.stringify({ payload: { submission_ids: ids, data } }) }); const t = await r.text(); return { status: r.status, body: t.slice(0, 400) }; };
+  const planFor = (rec, ref) => { const g = String(rec['id_data/grade']); const rl = String(rec.rand_long || ('000' + (rec['stu_info/rand_nr'] || '')).slice(-3));
+    const copy = ['id_data/school_name', 'stu_info/schoolname_conf', 'mne_text', 'id_data/cal_planned', 'region_label', 'lga_label', 'mne', 'ward', 'arm', 'latitude', 'longitude', 'gps2'];
+    const d = { 'id_data/region': 'DODOMA', 'id_data/lga': 'DODOMA(M)', 'id_data/school': 'PS0302089', stuid: '2026PS0302089' + g + rl }; for (const k of copy) if (ref[k] !== undefined) d[k] = ref[k]; return d; };
+  if (b.op === 'fix_backup') { // read only: the 7 originals exactly as they are now (kept on the computer before anything is changed)
+    const recs = []; for (const id of FIX_IDS) recs.push(await one(fixAsset, id)); const ref = await one(fixAsset, FIX_REF);
+    return { saved_at: new Date().toISOString(), records: recs, reference: ref, plan: Object.fromEntries(recs.map((r) => [r._id, planFor(r, ref)])) };
+  }
+  if (b.op === 'fix_apply') { // writes ONLY the 7 approved records, with the plan above; b.ids may be a subset (first one first), then verifies by reading back
+    if (b.confirm !== 'approved-by-michael-2026-10-15') throw new Error('Not confirmed');
+    const ids = (b.ids || []).map(Number); if (!ids.length || ids.some((i) => !FIX_IDS.includes(i))) throw new Error('Only the 7 approved records can be corrected');
+    const ref = await one(fixAsset, FIX_REF); const out = [];
+    for (const id of ids) {
+      const rec = await one(fixAsset, id); if (!/^TRAIN/.test(String(rec['id_data/school'] || '')) && rec['id_data/school'] !== 'PS0302089') throw new Error(`Record ${id} is not a Mafunzo record any more; stopping`);
+      const data = planFor(rec, ref); const r = await bulk(fixAsset, [id], data); const after = await one(fixAsset, id);
+      const wrong = Object.entries(data).filter(([k, v]) => String(after[k] ?? '') !== String(v)).map(([k, v]) => ({ field: k, wanted: v, got: after[k] ?? null }));
+      out.push({ id, patch: r.status, mismatches: wrong, school_now: after['id_data/school'], stuid_now: after.stuid }); if (r.status >= 300 || wrong.length) break; // stop at the first problem
+    }
+    return { done: out };
+  }
+  if (b.op === 'fix_rehearse') { // the same calls on a throwaway project with one made-up record shaped like the real ones (some fields empty, some missing)
+    const created = await fetch(`${srv}/api/v2/assets/`, { method: 'POST', headers: { ...H, ...J }, body: JSON.stringify({ clone_from: fixAsset, name: 'ZZ_TEST correction rehearsal', asset_type: 'survey' }) }); // a copy of the real Students form
+    const t = await created.json().catch(() => ({})); if (!created.ok) throw new Error('create ' + created.status + JSON.stringify(t).slice(0, 200));
+    await kv(env).put('v2:kobotest', [...tests, t.uid]); const log = [];
+    try {
+      const t1 = await get(t.uid); const dp = await fetch(`${srv}/api/v2/assets/${t.uid}/deployment/`, { method: 'POST', headers: { ...H, ...J }, body: JSON.stringify({ active: true, version_id: t1.version_id }) }); log.push('deploy ' + dp.status + ' ' + (dp.status >= 300 ? (await dp.text()).slice(0, 300) : '')); const a = await get(t.uid);
+      const kc = (a.deployment__identifier || '').split('/forms/')[0].replace(/\/[^/]+$/, ''); const idStr = (a.deployment__identifier || '').split('/forms/')[1] || a.uid;
+      const xml = `<?xml version='1.0' ?><data id="${idStr}" version="${a.deployed_version_id || a.version_id}"><id_data><region>TRAINING</region><lga>TRAINING_LGA</lga><school>TRAIN001</school><school_name>SHULE YA MAFUNZO 1</school_name><enumerator>ZZ Tester</enumerator></id_data><stuid>2026TRAIN0011034</stuid><region_label/><mne_text>PRACTICE</mne_text><meta><instanceID>uuid:${crypto.randomUUID()}</instanceID></meta></data>`; // lga_label is left out on purpose
+      const fd = new FormData(); fd.append('xml_submission_file', new Blob([xml], { type: 'text/xml' }), 'sub.xml'); const sr = await fetch(`${srv.replace('kf.', 'kc.')}/submission`, { method: 'POST', headers: H, body: fd }); log.push('submit ' + sr.status);
+      await new Promise((x) => setTimeout(x, 4000)); const lr = await fetch(`${srv}/api/v2/assets/${t.uid}/data/?format=json`, { headers: H }); const ld = await lr.json(); const id = (ld.results || [])[0]?._id; log.push('record ' + id); if (!id) return { ok: false, log };
+      const data = { 'id_data/region': 'DODOMA', 'id_data/lga': 'DODOMA(M)', 'id_data/school': 'PS0302089', 'id_data/school_name': 'CHIHIKWI', stuid: '2026PS03020891034', region_label: 'DODOMA', lga_label: 'DODOMA(M)', mne_text: 'Pilot school' };
+      const pr = await bulk(t.uid, [id], data); log.push('patch ' + pr.status + ' ' + pr.body);
+      await new Promise((x) => setTimeout(x, 2000)); const after = await one(t.uid, id); const wrong = Object.entries(data).filter(([k, v]) => String(after[k] ?? '') !== String(v)).map(([k, v]) => ({ field: k, wanted: v, got: after[k] ?? null }));
+      return { ok: pr.status < 300 && !wrong.length, mismatches: wrong, edit_trace: { deprecatedID: after['meta/deprecatedID'] || null, last_edited: after._last_edited || null }, log };
+    } finally { const d = await fetch(`${srv}/api/v2/assets/${t.uid}/`, { method: 'DELETE', headers: H }); log.push('cleanup ' + d.status); }
   }
   if (b.op === 'edit_scan') { // read only: how many records show signs of being opened and changed after they were finished (counts and a few ids)
     if (!known.includes(b.asset)) throw new Error('Only the KiuFunza projects');

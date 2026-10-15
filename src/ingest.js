@@ -73,7 +73,10 @@ function calFields(r) {
 const secsOf = (iso) => { const m = /T(\d\d):(\d\d):(\d\d)/.exec(iso || ''); return m ? +m[1] * 3600 + +m[2] * 60 + +m[3] : null; };
 // A record that was opened and changed after it was finished and sent: KoBo keeps the old copy's id (meta/deprecatedID) when it is
 // edited on the web, and the form's end time then falls after the moment the record was sent. (A long gap from start to end alone is normal.)
+// records HQ corrected on purpose, with the owner's approval (see CORRECTION_2026-10-15_Evodia_7_originals.json); they are not flagged
+const APPROVED_EDITS = new Set([894307652, 894307668, 894307682, 894307700, 894307713, 894307725, 894307741]);
 export function editedAfterSent(r) {
+  if (APPROVED_EDITS.has(Number(r._id))) return false;
   if (r['meta/deprecatedID'] || r.deprecatedID) return true;
   const e0 = Date.parse(r.end || ''), sub = Date.parse((r._submission_time || '') + (/[zZ]|[+-]\d\d:?\d\d$/.test(r._submission_time || '') ? '' : 'Z'));
   return !Number.isNaN(e0) && !Number.isNaN(sub) && e0 - sub > 5 * 60000;
