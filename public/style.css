@@ -234,3 +234,9 @@ details.fd>summary.need-l::marker{color:var(--bad)}
 /* connection dot: green online, red offline */
 .net{width:10px;height:10px;border-radius:50%;flex:none;background:var(--good);box-shadow:0 0 0 2px rgba(255,255,255,.35);margin-left:-2px}
 .net:not(.on){background:var(--bad)}
+
+/* pilot live results */
+.plive{border:1px solid var(--line);border-radius:10px;padding:8px 10px;margin:8px 0}.plive .lh{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.lgs{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:6px}.lg{font-size:12.5px;min-width:0}.lg b{display:block}.lg .ok{color:var(--good);font-weight:600}
+.plivetot{margin-top:12px}.plivetot .lh{display:flex;justify-content:space-between;gap:8px}.plivetot .big{font:700 28px var(--f-display);margin:4px 0}.plivetot .big small{font-size:14px;font-weight:500;color:var(--ink2)}
+@media(max-width:520px){.lgs{grid-template-columns:1fr}}

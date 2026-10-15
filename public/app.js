@@ -1278,11 +1278,13 @@ function viewToday() {
   const mine = flags.filter((f) => f.qk && qAbility(f).review);
   const waitingResp = flags.filter((f) => f.qk && ['open', 'rework'].includes(wfOf(f).stage || 'open') && isOpen(f));
   const inReview = flags.filter((f) => f.qk && ['team', 'hq1', 'final'].includes(wfOf(f).stage));
-  const noPlan = o.regions.filter((r) => (o.plans[r.region] || {}).status !== 'locked');
+  const noPlan = o.regions.filter((r) => r.region !== 'DODOMA' && (o.plans[r.region] || {}).status !== 'locked'); // the Dodoma pilot has its own plan
   const bad = flags.filter((f) => isOpen(f) && f.sev === 'bad' && !f.qk).length;
   const nextNews = (S.newsAdmin?.items || []).filter((i) => i.publish_at && !i.published_at && Date.parse(i.publish_at) > Date.now()).sort((a, b) => Date.parse(a.publish_at) - Date.parse(b.publish_at))[0];
   const item = (cls, title0, text, tab, btn) => `<div class="tdrow"><i class="st ${cls}"></i><div style="flex:1;min-width:0"><b class="${cls === 'bad' ? 'need-l' : ''}">${title0}</b><span>${text}</span></div>${tab ? (tab === 'allq' && btn === 'Open queries' ? `<button class="btn sm ${cls === 'good' ? 'sec' : ''}" data-act="goMineQ">${btn}</button>` : `<button class="btn sm ${cls === 'good' ? 'sec' : ''}" data-tab="${tab}">${btn}</button>`) : ''}</div>`;
+  const pil = o.regions.find((r) => r.region === 'DODOMA'); const pilTested = pil ? pil.tested || 0 : 0;
   const rows = [
+    o.today === '2026-10-15' || pilTested ? item(pilTested ? 'good' : 'warn', `Pilot day, live: ${pilTested} of ${pil?.target || 600} pupils tested`, 'Real data from the five Dodoma schools. Sampling and tests update every minute.', 'pilot', 'Pilot day') : '',
     item(mine.length ? 'bad' : 'good', mine.length ? `${mine.length} query response${mine.length > 1 ? 's' : ''} waiting for your review` : 'No query waiting for your review', 'Responses reach you after the team review. Approve, send back, or edit and approve.', 'allq', 'Open queries'),
     item(waitingResp.length ? 'warn' : 'good', `${waitingResp.length} quer${waitingResp.length === 1 ? 'y' : 'ies'} waiting for a response, ${inReview.length} in review`, 'Responses come first from the test admin, or from the RC or ARC.', 'allq', 'See all'),
     item(noPlan.length ? 'warn' : 'good', noPlan.length ? `${noPlan.length} region${noPlan.length > 1 ? 's' : ''} without a submitted plan` : 'All regions have submitted their plan', noPlan.length ? noPlan.map((r) => esc(title(r.region))).join(', ') + '. The plan deadline is Fri 16 Oct. Notices and the calendar file depend on it.' : 'The calendar file can now be switched on in Admin.', 'regions', 'Regions and plans'),
@@ -1292,7 +1294,7 @@ function viewToday() {
   const quick = [['reports', 'Reports and downloads'], ['phones', 'Phones today'], ['explore', 'Data explorer'], ['help', 'Help and guides']].filter(([k]) => tabAllowed(k)).map(([k, t]) => `<button class="btn sm sec" data-tab="${k}">${t}</button>`).join(' ');
   const g = o.national;
   return `${dataBanner()}<div class="pagehead"><div><h2>Today</h2><p>${esc(dayName(new Date(Date.now() + 3 * 3600e3).toISOString().slice(0, 10)))} · what needs you, in order</p></div></div>
-  <div class="grid kpis">${kpi('Schools complete', `${fmt(g.done)}<small> / ${fmt(g.schools)}</small>`, pc(g.done, g.schools) + '%', 'regions')}${kpi('Pupils tested', fmt(g.tested), 'of ' + fmt(g.target), 'compare')}${kpi('For your review', fmt(mine.length), 'queries', 'allq')}${kpi('Plans missing', fmt(noPlan.length), 'of ' + o.regions.length + ' regions', 'regions')}</div>
+  <div class="grid kpis">${kpi('Schools complete', `${fmt(g.done)}<small> / ${fmt(g.schools)}</small>`, pc(g.done, g.schools) + '%', 'regions')}${kpi('Pupils tested', fmt(g.tested), 'of ' + fmt(g.target), 'compare')}${kpi('For your review', fmt(mine.length), 'queries', 'allq')}${kpi('Plans missing', fmt(noPlan.length), 'of ' + (o.regions.length - (o.regions.some((r) => r.region === 'DODOMA') ? 1 : 0)) + ' regions', 'regions')}</div>
   <div class="card" style="margin-top:14px"><h3>Needs you</h3><div class="sub">Green means nothing to do. Open an item to act on it.</div>${rows}</div>
   <div class="card" style="margin-top:14px"><h3>Go to</h3><div style="display:flex;gap:8px;flex-wrap:wrap">${quick}</div>${S.cfg?.brand?.assistant ? `<p class="m" style="margin-top:10px">Not sure where to look? Press <b>Ask assistant</b> (gold button, bottom right) and ask in plain words.</p>` : ''}</div>`;
 }
@@ -1451,6 +1453,13 @@ function pilotProgress(c) {
 const pilOpen = (k, dflt) => ((S.pilOpen || {})[k] ?? dflt);
 document.addEventListener('toggle', (e) => { const k = e.target?.dataset?.pk; if (k) (S.pilOpen ||= {})[k] = e.target.open; }, true);
 const pbar = (pc) => `<div class="pbar"><i style="width:${pc}%"></i></div>`;
+// live results for a pilot school: per grade, is the sampling in and how many pupils are tested (target 40)
+function pilotLive(c) {
+  const L = c.live; const gs = [1, 2, 3].map((g) => { const x = (L && L.g && L.g[g]) || {}; return { g, n: x.n || 0, att: x.att, target: x.target || 40 }; });
+  const tested = gs.reduce((a, x) => a + x.n, 0), target = gs.reduce((a, x) => a + x.target, 0), samp = gs.filter((x) => x.att != null).length;
+  const cell = (x) => `<div class="lg"><b>Gr ${x.g}</b><div class="${x.att != null ? 'ok' : 'need-l'}">${x.att != null ? '✓ Sampling in · ' + x.att + ' on register' : 'Sampling not in yet'}</div><div>${x.n} of ${x.target} tested</div>${pbar(Math.min(100, Math.round((100 * x.n) / x.target)))}</div>`;
+  return { tested, target, samp, html: `<div class="plive"><div class="lh"><b>Live from KoBo</b><span class="m">${tested} of ${target} tested · sampling in ${samp} of 3</span></div><div class="lgs">${gs.map(cell).join('')}</div></div>` };
+}
 function pilotBody(c) {
   const gsel = (kind, sid, id, cur, ok, label) => (ok ? `<select data-${kind}="${sid}:${id}" aria-label="${esc(label)}"><option value="">None</option>${[1, 2, 3].map((g) => `<option value="${g}" ${cur === g ? 'selected' : ''}>Gr ${g}</option>`).join('')}</select>` : cur ? 'Gr ' + cur : '–');
   const rcs = c.regions.flatMap((r) => c.staff[r].rc.map((p) => ({ ...p, r }))); const arcs = c.regions.flatMap((r) => c.staff[r].arc.map((p) => ({ ...p, r })));
@@ -1478,15 +1487,20 @@ function pilotBody(c) {
   const s3 = step(3, P.sl === 3, 'Sampling and testing, grade by grade', `<div class="m">Each grade has a sampling lead. Test admins can also run the sampling, but only in the grade they test.</div>${[1, 2, 3].map(gradeCard).join('')}`);
   const rcRows = rcs.map((p) => { const lead = p.id === c.lead; return prow(p, lead ? chip('Lead RC', 'good') : 'Assistant RC · oversees', gsel('ps', c.school, p.id, p.support, c.editable.includes(p.r), 'Grade for ' + p.name)); }).join('');
   const arcRows2 = arcs.map((p) => prow(p, Object.entries(SL).filter(([, id]) => id === p.id).map(([g]) => 'Leads sampling Gr ' + g).join('') || 'Sampling · tests if needed', gsel('ps', c.school, p.id, p.support, c.editable.includes(p.r), 'Grade for ' + p.name))).join('');
-  return `<div class="pnext ${P.next === 'All set' ? 'ok' : ''}"><b>${P.next === 'All set' ? '✓ All set' : 'Next: ' + esc(P.next)}</b><div>${P.done} of ${P.total} done</div>${pbar(P.pct)}</div>${s1}${s2}${s3}
+  return `${pilotLive(c).html}<div class="pnext ${P.next === 'All set' ? 'ok' : ''}"><b>${P.next === 'All set' ? '✓ All set' : 'Next: ' + esc(P.next)}</b><div>${P.done} of ${P.total} done</div>${pbar(P.pct)}</div>${s1}${s2}${s3}
   <details class="fd" data-pk="rc:${c.school}" ${pilOpen('rc:' + c.school, false) ? 'open' : ''}><summary>RCs and ARCs: grade they also oversee or test (${rcs.length + arcs.length})</summary><h4 style="margin:6px 0 2px">RCs</h4>${rcRows}<h4 style="margin:8px 0 2px">ARCs</h4>${arcRows2}</details>`;
 }
 function pilotMine(c) { return `<div class="card pilot" style="margin-top:12px;border-left:4px solid var(--gold)"><h3 style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap"><span>${esc(title(c.name))} ${chip('your school', 'gold')}</span><span class="m" style="font-weight:400">${esc(c.regions.map(title).join(' + '))}${c.start ? ' · ' + esc(c.start) : ''}</span></h3>${pilotBody(c)}</div>`; }
-function pilotFold(c, open) { const P = pilotProgress(c); return `<details class="card pilot pfold" style="margin-top:8px" data-pk="fold:${c.school}" ${pilOpen('fold:' + c.school, open) ? 'open' : ''}><summary><div class="psum"><b>${esc(title(c.name))}</b><span class="m">${esc(c.regions.map(title).join(' + '))}</span></div><div class="pmeta"><span class="m ${P.next === 'All set' ? '' : 'need-l'}">${P.next === 'All set' ? '✓ all set' : P.done + ' of ' + P.total + ' · tap to fill'}</span>${pbar(P.pct)}</div></summary>${pilotBody(c)}</details>`; }
+function pilotFold(c, open) { const P = pilotProgress(c); const LV = pilotLive(c); return `<details class="card pilot pfold" style="margin-top:8px" data-pk="fold:${c.school}" ${pilOpen('fold:' + c.school, open) ? 'open' : ''}><summary><div class="psum"><b>${esc(title(c.name))}</b><span class="m">${esc(c.regions.map(title).join(' + '))} · ${LV.tested}/${LV.target} tested</span></div><div class="pmeta"><span class="m ${P.next === 'All set' ? '' : 'need-l'}">${P.next === 'All set' ? '✓ all set' : P.done + ' of ' + P.total + ' · tap to fill'}</span>${pbar(P.pct)}</div></summary>${pilotBody(c)}</details>`; }
+function pilotTotal(d) {
+  const all = d.schools.map(pilotLive); const t = all.reduce((a, x) => a + x.tested, 0), tg = all.reduce((a, x) => a + x.target, 0), sp = all.reduce((a, x) => a + x.samp, 0);
+  return `<div class="card plivetot"><div class="lh"><b>Pilot day, live</b><span class="m">Updates every minute</span></div><div class="big">${t}<small> of ${tg} pupils tested</small></div>${pbar(Math.min(100, Math.round((100 * t) / (tg || 1))))}<div class="m">Sampling in for ${sp} of ${all.length * 3} school grades.</div></div>`;
+}
 function viewPilot() {
   const P = S.pil; if (!P) return '<div class="empty">Loading…</div>'; if (P.err) return `<div class="banner bad">${esc(P.err)}</div>`; const d = P.data; if (!d) return '<div class="empty">Loading…</div>';
   const mine = d.schools.filter((c) => c.mine), rest = roleKey() !== 'hq' ? [] : d.schools.filter((c) => !c.mine); // field staff see only their own school; HQ sees all five
   return `<div class="pagehead"><div><h2>Pilot day</h2><p>${esc(dayName(d.day))}: two regional teams at each school.</p><ul class="brief"><li><b>Lead RC</b> leads the day. The <b>assistant RC</b> supports, oversees one grade and can lead the sampling in one grade.</li><li>Each grade has a <b>sampling lead</b>: an ARC or the assistant RC.</li><li><b>Test admins</b> test one grade. Some also run the sampling in that same grade, guided by the ARC. ARCs can run the sampling too.</li></ul></div></div>
+  ${pilotTotal(d)}
   ${mine.map(pilotMine).join('')}${!mine.length && roleKey() !== 'hq' ? '<div class="card" style="margin-top:12px"><b class="need-l">We could not find your pilot school.</b><div class="m">Every RC, ARC and volunteer is placed at one. Tell HQ so your record can be checked.</div></div>' : ''}${rest.length ? `<h3 style="margin:18px 0 0">${mine.length ? 'The other pilot schools' : 'The five pilot schools'}</h3>${rest.map((c) => pilotFold(c, false)).join('')}` : ''}`;
 }
 async function pilotAction(a, t) {
@@ -1852,6 +1866,7 @@ async function loadAdmin() {
   api('/api/admin/forms').then((r) => { S.forms = r; adminPaint(); }).catch(() => {});
 }
 
+if (!window.__pilTimer) window.__pilTimer = setInterval(() => { const a = document.activeElement; if (S.who && !document.hidden && S.tab === 'pilot' && !(a && /^(SELECT|INPUT|TEXTAREA)$/.test(a.tagName))) loadPilot(); }, 60000);
 if (!window.__newsTimer) window.__newsTimer = setInterval(() => { if (S.who && !document.hidden) loadNews(); }, 180000);
 async function go() {
   const exm = /^#explore\/(\w+)$/.exec(location.hash);

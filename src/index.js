@@ -439,7 +439,10 @@ export default {
         }
       }
 
-      if (path === '/api/pilot') { try { if (method === 'POST') { const r = await pilotSet(env, who, await request.json().catch(() => ({}))); return r.error ? err(r.error, r.status || 422) : json(r); } return json(await pilotView(env, who)); } catch (e) { return err(String(e.message || e), 502); } }
+      if (path === '/api/pilot') { try { if (method === 'POST') { const r = await pilotSet(env, who, await request.json().catch(() => ({}))); return r.error ? err(r.error, r.status || 422) : json(r); } const v = await pilotView(env, who);
+          // live results from KoBo for the pilot schools (real 2026 data): sampling in, pupils tested per grade
+          try { const { sum } = await loadSummary(env, '2026'); if (sum) for (const c of v.schools) { const r = sum.schools?.[c.school]; if (r) c.live = { g: r.g, started: r.started, first: r.first, last: r.last, admins: (r.admins || []).length }; } } catch { /* the page works without live numbers */ }
+          return json(v); } catch (e) { return err(String(e.message || e), 502); } }
       if (path === '/api/pupils') { try { const r = await pupilRecords(env, who, Object.fromEntries(url.searchParams)); return r.error ? err(r.error, r.status || 422) : json(r); } catch (e) { return err(String(e.message || e), 502); } }
       if (path.startsWith('/api/deletions')) {
         if (!(who.role === 'hq' || who.role === 'rc' || who.role === 'arc')) return err('Not allowed', 403);
