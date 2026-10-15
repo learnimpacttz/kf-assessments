@@ -4,7 +4,7 @@ import { ownWork, teamBlock, coordinatorOverview } from './own.js';
 import { buildCalendar, markCalendarDirty, syncCalendar, calendarStatus, setCalSync, loadCalSync } from './calendar.js';
 import { pupilRecords, workFiles } from './pupils.js';
 import { pilotView, pilotSet, PILOT_ALLOC } from './pilot.js';
-import { findRecords, previewMove, applyMove, correctionsView, correctionCopy } from './corrections.js';
+import { findRecords as findToMove, previewMove, applyMove, correctionsView, correctionCopy } from './corrections.js';
 import { qrPng } from './qr.js';
 import { codFromYear } from './paymentdata.js';
 import { INFRA_WINNERS } from './data/infra_winners.js';
@@ -454,7 +454,7 @@ export default {
         try {
           if (method !== 'POST') { const r = await correctionsView(env, who); return r.error ? err(r.error, r.status || 422) : json(r); }
           const b = await request.json().catch(() => ({}));
-          const r = b.action === 'find' ? await findRecords(env, who, b) : b.action === 'preview' ? await previewMove(env, who, b) : b.action === 'apply' ? await applyMove(env, who, b) : { error: 'Unknown action' };
+          const r = b.action === 'find' ? await findToMove(env, who, b) : b.action === 'preview' ? await previewMove(env, who, b) : b.action === 'apply' ? await applyMove(env, who, b) : { error: 'Unknown action' };
           if (b.action === 'apply' && !r.error) await logActivity(env, who, `Moved ${(r.done || []).filter((d) => d.ok).length} record(s) to ${b.target_school}`, b.form);
           return r.error ? err(r.error, r.status || 422) : json(r);
         } catch (e) { return err(String(e.message || e), 502); }
