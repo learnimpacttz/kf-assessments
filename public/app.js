@@ -1479,9 +1479,9 @@ document.addEventListener('toggle', (e) => { const k = e.target?.dataset?.pk; if
 const pbar = (pc) => `<div class="pbar"><i style="width:${pc}%"></i></div>`;
 // live results for a pilot school: per grade, is the sampling in and how many pupils are tested (target 40)
 function pilotLive(c) {
-  const L = c.live; const gs = [1, 2, 3].map((g) => { const x = (L && L.g && L.g[g]) || {}; return { g, n: x.n || 0, att: x.att, target: x.target || 40 }; });
+  const L = c.live; const gs = [1, 2, 3].map((g) => { const x = (L && L.g && L.g[g]) || {}; return { g, n: x.av ?? x.n ?? 0, att: x.att, target: x.target ?? 40 }; }); // target = the smaller of 40 and the pupils present on the sampling day; tested = present pupils tested
   const tested = gs.reduce((a, x) => a + x.n, 0), target = gs.reduce((a, x) => a + x.target, 0), samp = gs.filter((x) => x.att != null).length;
-  const cell = (x) => `<div class="lg"><b>Gr ${x.g}</b><div class="${x.att != null ? 'ok' : 'need-l'}">${x.att != null ? '✓ Sampling in · ' + x.att + ' on register' : 'Sampling not in yet'}</div><div>${x.n} of ${x.target} tested</div>${pbar(Math.min(100, Math.round((100 * x.n) / x.target)))}</div>`;
+  const cell = (x) => `<div class="lg"><b>Gr ${x.g}</b><div class="${x.att != null ? 'ok' : 'need-l'}">${x.att != null ? '✓ Sampling in · ' + x.att + ' on register' : 'Sampling not in yet'}</div><div>${x.n} of ${x.target} tested</div>${pbar(x.target ? Math.min(100, Math.round((100 * x.n) / x.target)) : 100)}</div>`;
   return { tested, target, samp, html: `<div class="plive"><div class="lh"><b>Live from KoBo</b><span class="m">${tested} of ${target} tested · sampling in ${samp} of 3</span></div><div class="lgs">${gs.map(cell).join('')}</div></div>` };
 }
 // "Your pilot results": the person's own pilot tests, minutes per test against the usual range, and their checks.
