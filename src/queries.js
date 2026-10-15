@@ -2,6 +2,7 @@
 // same check on the same school/grade/day keeps its thread across re-computation.
 import { kv } from './store.js';
 import { workingDaysBetween, SCHOOL_BY_ID, PRACTICE_BY_ID, STAFF, staffForKoboName } from './config.js';
+import { PILOT_ALLOC } from './pilot.js';
 
 export const flagKey = (f) => [f.type, f.school, f.grade || 0, f.date || '', f.admin || ''].join('|');
 const KEY = 'v2:queries';
@@ -36,7 +37,8 @@ export function decorate(flags, queries) {
 
 // who the response belongs to: the person the query is about, or the region's coordinators when it is about nobody in particular
 function responderInfo(key) {
-  const info = parseKey(key); const st = info.admin ? staffForKoboName(info.admin) : null; const region = SCHOOL_BY_ID[info.school]?.region || (PRACTICE_BY_ID[info.school] ? 'TRAINING' : null);
+  const info = parseKey(key); const st = info.admin ? staffForKoboName(info.admin) : null; let region = SCHOOL_BY_ID[info.school]?.region || (PRACTICE_BY_ID[info.school] ? 'TRAINING' : null);
+  if (PILOT_ALLOC[info.school] && st?.region) region = st.region; // pilot day: the person's own regional team handles the query, as in a live school
   return { info, st, region };
 }
 const isCoord = (who, region) => (who.role === 'rc' || who.role === 'arc') && (who.region === region || region === 'TRAINING'); // anyone may practise the chain in the TRAINING schools

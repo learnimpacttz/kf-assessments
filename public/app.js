@@ -1460,6 +1460,34 @@ function pilotLive(c) {
   const cell = (x) => `<div class="lg"><b>Gr ${x.g}</b><div class="${x.att != null ? 'ok' : 'need-l'}">${x.att != null ? '✓ Sampling in · ' + x.att + ' on register' : 'Sampling not in yet'}</div><div>${x.n} of ${x.target} tested</div>${pbar(Math.min(100, Math.round((100 * x.n) / x.target)))}</div>`;
   return { tested, target, samp, html: `<div class="plive"><div class="lh"><b>Live from KoBo</b><span class="m">${tested} of ${target} tested · sampling in ${samp} of 3</span></div><div class="lgs">${gs.map(cell).join('')}</div></div>` };
 }
+// "Your pilot results": the person's own pilot tests, minutes per test against the usual range, and their checks.
+// RCs and ARCs see the same for each member of their regional team at this school.
+function pilotResults(c) {
+  const o = S.ov, me = S.who; if (!o || o.status !== 'ok' || o.year !== '2026' || !o.mine || !me || roleKey() === 'hq') return '';
+  const coord = roleKey() === 'rc'; const admins = o.mine.admins || (o.mine.me ? [o.mine.me] : []);
+  const nameOf = (staffId) => (admins.find((a) => a.staff_id === staffId) || {}).name;
+  const rowsFor = (adminName) => (coord ? (o.mine.work_all || {})[adminName] : o.mine.work) || [];
+  const stat = (adminName) => {
+    const w = rowsFor(adminName).filter((r) => r[1] === c.school); const n = w.reduce((a, r) => a + r[3], 0);
+    const tm = w.filter((r) => r[4] != null); const tn = tm.reduce((a, r) => a + r[3], 0); const avg = tn ? tm.reduce((a, r) => a + r[3] * r[4], 0) / tn : null;
+    const g = w.length ? w.slice().sort((x, y) => y[3] - x[3])[0][2] : null; const b = g && o.bands ? o.bands[g] : null;
+    let verdict = '', cls = '';
+    if (avg != null && b) { if (avg < b.p10) { verdict = `a little fast, usual ${b.p10.toFixed(1)} to ${b.p90.toFixed(1)} min`; cls = 'need-l'; } else if (avg > b.p90) { verdict = `a little slow, usual ${b.p10.toFixed(1)} to ${b.p90.toFixed(1)} min`; cls = 'need-l'; } else { verdict = `in the usual range (${b.p10.toFixed(1)} to ${b.p90.toFixed(1)} min)`; cls = 'okc'; } }
+    return { n, avg, g, verdict, cls };
+  };
+  const flags = (o.mine.flags || []).filter((f) => f.school === c.school);
+  const flagLine = flags.length ? `<div class="pflags">${flags.slice(0, 4).map((f) => `<div class="pf"><i class="st ${f.sev === 'bad' ? 'bad' : 'warn'}"></i><span>${esc(f.text)}</span></div>`).join('')}<button class="btn sm" data-tab="${coord ? 'allq' : 'queries'}">Open ${flags.length} check${flags.length > 1 ? 's' : ''}</button></div>` : '<div class="m">No checks on your pilot records. Good.</div>';
+  let body;
+  if (coord) {
+    const team = (c.staff[me.region] ? [...c.staff[me.region].rc, ...c.staff[me.region].arc, ...c.staff[me.region].volunteers] : []);
+    const rows = team.map((p) => { const an = nameOf(p.id) || p.name; const st = stat(an); const fl = flags.filter((f) => String(f.admin || '').split(' and ').includes(an)).length; return `<tr><td>${esc(p.name.split(' ')[0])} ${esc((p.name.split(' ').slice(1).join(' ') || '').slice(0, 1))}.</td><td class="r">${p.grade ? 'Gr ' + p.grade : '–'}</td><td class="num r">${st.n}</td><td class="num r ${st.cls}">${st.avg != null ? st.avg.toFixed(1) : '–'}</td><td class="r ${fl ? 'need-l' : ''}">${fl || '–'}</td></tr>`; }).join('');
+    body = `<div class="tbl"><table><thead><tr><th>Name</th><th class="r">Grade</th><th class="r">Pupils</th><th class="r">Min</th><th class="r">Flags</th></tr></thead><tbody>${rows}</tbody></table></div>${flagLine}`;
+  } else {
+    const st = stat(o.mine.me?.name || me.name);
+    body = st.n ? `<div class="big2">${st.n}<small> pupils tested${st.g ? ' · Gr ' + st.g : ''}</small></div><div>Average ${st.avg != null ? st.avg.toFixed(1) + ' min per test' : '–'}${st.verdict ? ': <span class="' + st.cls + '">' + st.verdict + '</span>' : ''}.</div>${flagLine}` : '<div class="m">Your tests will show here a few minutes after you submit them.</div>';
+  }
+  return `<div class="plive pres"><div class="lh"><b>Your pilot results</b><span class="m">Real data, same checks as a live school</span></div>${body}</div>`;
+}
 function pilotBody(c) {
   const gsel = (kind, sid, id, cur, ok, label) => (ok ? `<select data-${kind}="${sid}:${id}" aria-label="${esc(label)}"><option value="">None</option>${[1, 2, 3].map((g) => `<option value="${g}" ${cur === g ? 'selected' : ''}>Gr ${g}</option>`).join('')}</select>` : cur ? 'Gr ' + cur : '–');
   const rcs = c.regions.flatMap((r) => c.staff[r].rc.map((p) => ({ ...p, r }))); const arcs = c.regions.flatMap((r) => c.staff[r].arc.map((p) => ({ ...p, r })));
@@ -1487,7 +1515,7 @@ function pilotBody(c) {
   const s3 = step(3, P.sl === 3, 'Sampling and testing, grade by grade', `<div class="m">Each grade has a sampling lead. Test admins can also run the sampling, but only in the grade they test.</div>${[1, 2, 3].map(gradeCard).join('')}`);
   const rcRows = rcs.map((p) => { const lead = p.id === c.lead; return prow(p, lead ? chip('Lead RC', 'good') : 'Assistant RC · oversees', gsel('ps', c.school, p.id, p.support, c.editable.includes(p.r), 'Grade for ' + p.name)); }).join('');
   const arcRows2 = arcs.map((p) => prow(p, Object.entries(SL).filter(([, id]) => id === p.id).map(([g]) => 'Leads sampling Gr ' + g).join('') || 'Sampling · tests if needed', gsel('ps', c.school, p.id, p.support, c.editable.includes(p.r), 'Grade for ' + p.name))).join('');
-  return `${pilotLive(c).html}<div class="pnext ${P.next === 'All set' ? 'ok' : ''}"><b>${P.next === 'All set' ? '✓ All set' : 'Next: ' + esc(P.next)}</b><div>${P.done} of ${P.total} done</div>${pbar(P.pct)}</div>${s1}${s2}${s3}
+  return `${pilotLive(c).html}${c.mine ? pilotResults(c) : ''}<div class="pnext ${P.next === 'All set' ? 'ok' : ''}"><b>${P.next === 'All set' ? '✓ All set' : 'Next: ' + esc(P.next)}</b><div>${P.done} of ${P.total} done</div>${pbar(P.pct)}</div>${s1}${s2}${s3}
   <details class="fd" data-pk="rc:${c.school}" ${pilOpen('rc:' + c.school, false) ? 'open' : ''}><summary>RCs and ARCs: grade they also oversee or test (${rcs.length + arcs.length})</summary><h4 style="margin:6px 0 2px">RCs</h4>${rcRows}<h4 style="margin:8px 0 2px">ARCs</h4>${arcRows2}</details>`;
 }
 function pilotMine(c) { return `<div class="card pilot" style="margin-top:12px;border-left:4px solid var(--gold)"><h3 style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap"><span>${esc(title(c.name))} ${chip('your school', 'gold')}</span><span class="m" style="font-weight:400">${esc(c.regions.map(title).join(' + '))}${c.start ? ' · ' + esc(c.start) : ''}</span></h3>${pilotBody(c)}</div>`; }
@@ -1866,7 +1894,7 @@ async function loadAdmin() {
   api('/api/admin/forms').then((r) => { S.forms = r; adminPaint(); }).catch(() => {});
 }
 
-if (!window.__pilTimer) window.__pilTimer = setInterval(() => { const a = document.activeElement; if (S.who && !document.hidden && S.tab === 'pilot' && !(a && /^(SELECT|INPUT|TEXTAREA)$/.test(a.tagName))) loadPilot(); }, 60000);
+if (!window.__pilTimer) window.__pilTimer = setInterval(() => { const a = document.activeElement; if (S.who && !document.hidden && S.tab === 'pilot' && !(a && /^(SELECT|INPUT|TEXTAREA)$/.test(a.tagName))) { api('/api/overview' + (S.year ? '?year=' + S.year : '')).then((ov) => { if (ov && ov.status === 'ok') { S.ov = ov; S.pub = ov; } }).catch(() => {}).finally(loadPilot); } }, 60000);
 if (!window.__newsTimer) window.__newsTimer = setInterval(() => { if (S.who && !document.hidden) loadNews(); }, 180000);
 async function go() {
   const exm = /^#explore\/(\w+)$/.exec(location.hash);

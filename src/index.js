@@ -3,7 +3,7 @@ import { listNews, manageNews, react as reactNews, saveNews, deleteNews, pinNews
 import { ownWork, teamBlock, coordinatorOverview } from './own.js';
 import { buildCalendar, markCalendarDirty, syncCalendar, calendarStatus, setCalSync, loadCalSync } from './calendar.js';
 import { pupilRecords } from './pupils.js';
-import { pilotView, pilotSet } from './pilot.js';
+import { pilotView, pilotSet, PILOT_ALLOC } from './pilot.js';
 import { qrPng } from './qr.js';
 import { codFromYear } from './paymentdata.js';
 import { INFRA_WINNERS } from './data/infra_winners.js';
@@ -93,9 +93,14 @@ function regionBundle(sum, region, who, queries = {}) {
   const flags = decorate(sum.flags.filter((f) => SCHOOL_BY_ID[f.school]?.region === region).map((f) => ({ ...f, school_name: SCHOOL_BY_ID[f.school]?.name, region, lga: SCHOOL_BY_ID[f.school]?.lga, ward: SCHOOL_BY_ID[f.school]?.ward })), queries);
   const staff = STAFF.filter((s) => s.active && s.region === region).map((s) => ({ id: s.id, name: s.name, position: s.position, role: s.role }));
   const work = Object.fromEntries(admins.map((a) => [a.name, sum.work[a.name] || []]));
-  return { region: sum.regions[region], schools, admins, flags, staff, work_all: work };
+  return { region: sum.regions[region], schools, admins, flags: [...flags, ...pilotFlags(sum, queries, region)], staff, work_all: work };
 }
 
+// pilot-day flags (real 2026 data at the five Dodoma schools) belong to the regional team of the person they are about
+function pilotFlags(sum, queries, region) {
+  const names = new Set(sum.admins.filter((a) => a.region === region).map((a) => a.name));
+  return decorate(sum.flags.filter((f) => PILOT_ALLOC[f.school] && String(f.admin || '').split(' and ').some((n) => names.has(n))).map((f) => ({ ...f, school_name: SCHOOL_BY_ID[f.school]?.name, region: SCHOOL_BY_ID[f.school]?.region, lga: SCHOOL_BY_ID[f.school]?.lga, ward: SCHOOL_BY_ID[f.school]?.ward, pilot: true })), queries);
+}
 export { Store } from './store.js';
 
 // phone alerts for the next person in the chain
@@ -274,7 +279,7 @@ export default {
         const body = await request.json();
         const school = String(body.key || '').split('|')[1];
         const sch = SCHOOL_BY_ID[school] || PRACTICE_BY_ID[school];
-        if (!sch || (!sch.practice && !canSeeRegion(who, sch.region))) return err('Not your region', 403); // practice schools are open to everyone
+        if (!sch || (!sch.practice && !canSeeRegion(who, sch.region) && !(PILOT_ALLOC[school] || []).includes(who.region))) return err('Not your region', 403); // practice schools are open to everyone
         const r = await postQuery(env, who, body);
         if (r.error) return err(r.error, r.status || 400);
         if (r.notify) { const job = notifyQuery(env, r.notify).catch(() => {}); if (ctx && ctx.waitUntil) ctx.waitUntil(job); else await job; }

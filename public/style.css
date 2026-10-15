@@ -240,3 +240,7 @@ details.fd>summary.need-l::marker{color:var(--bad)}
 .lgs{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:6px}.lg{font-size:12.5px;min-width:0}.lg b{display:block}.lg .ok{color:var(--good);font-weight:600}
 .plivetot{margin-top:12px}.plivetot .lh{display:flex;justify-content:space-between;gap:8px}.plivetot .big{font:700 28px var(--f-display);margin:4px 0}.plivetot .big small{font-size:14px;font-weight:500;color:var(--ink2)}
 @media(max-width:520px){.lgs{grid-template-columns:1fr}}
+
+.pres .big2{font:700 26px var(--f-display);margin:4px 0}.pres .big2 small{font-size:14px;font-weight:500;color:var(--ink2)}.pres .okc{color:var(--good);font-weight:600}
+.pflags{margin-top:8px}.pf{display:flex;gap:8px;align-items:flex-start;font-size:13px;padding:3px 0}.pf .st{margin-top:5px}.pflags .btn{margin-top:6px}
+.pf .st{width:8px;height:8px;border-radius:50%;flex:none}

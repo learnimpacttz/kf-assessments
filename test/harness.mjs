@@ -58,6 +58,11 @@ for (const region of REGIONS) {
   const n = { TANGA: 11, SINGIDA: 12, MARA: 3, MTWARA: 2 }[region] ?? 6;
   for (let i = 0; i < Math.min(n, cnt); i++) { const day = 19 + Math.floor(i / 3) + (i >= 12 ? 2 : 0); const { recs, samp } = visit('2026', region, i, `2026-10-${String(day).padStart(2, '0')}`); addStudents(state, recs); addSampling(state, samp); }
 }
+// pilot day (15 Oct): Tanga volunteers test at Chihikwi; one volunteer rushes Grade 2 so the "fast" check fires
+{
+  const vols = STAFF.filter((x) => x.active && x.region === 'TANGA' && x.role === 'volunteer'); let rid = 960000;
+  vols.forEach((v, vi) => { const g = [1, 2, 3, 3][vi] || 1; for (let i = 1; i <= 8; i++) { const rushed = vi === 1; const date = '2026-10-15'; addStudents(state, [{ _id: rid++, year: '2026', today: date, 'group_intro/date': date, 'id_data/school': 'PS0302089', 'id_data/grade': String(g), 'id_data/enumerator': v.name, 'stu_info/rand_nr': String(rid), deviceid: 'collect:' + v.name.replace(/\s/g, ''), start: `${date}T09:${String(10 + i).padStart(2, '0')}:00+03:00`, 'end_note_gr/testtime_rounded': String(rushed ? 1.5 : (g * 2.6 + 3).toFixed(1)), stu_avail: '1', _submission_time: date + 'T10:30:00' }]); } });
+}
 // phone behaviour scenarios on 2026-10-22 (Tanga): each phone is built to trigger exactly one check, plus one normal phone
 {
   const A = SCHOOLS_BY_REGION.TANGA[0].id, B = SCHOOLS_BY_REGION.TANGA[1].id; let rid = 950000;
