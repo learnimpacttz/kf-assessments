@@ -253,6 +253,6 @@ details.fd>summary.need-l::marker{color:var(--bad)}
 .flag.openq .st{width:6px;background:var(--bad)}.flag.openq>div>b{color:var(--bad)}
 .flag.doneq .st{width:6px;background:var(--good)}
 
-.flag .ft{font-style:normal;font-weight:600;color:#2A6F86}
+.flag span.ft{font-weight:600;color:#2A6F86}
 :root[data-theme="dark"] .flag .ft{color:#7FD0E4}
 @media(prefers-color-scheme:dark){:root:not([data-theme="light"]) .flag .ft{color:#7FD0E4}}
