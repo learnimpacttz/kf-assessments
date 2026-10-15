@@ -390,7 +390,7 @@ export default {
         const events = (doc?.events || []).filter((e) => inScope(e.sc));
         const codes = new Set(events.map((e) => e.c));
         const phones = (doc?.phones || []).filter((p) => p.schools.some(inScope)).map((p) => ({ ...p, schools: p.schools.filter(inScope).map((sc) => ({ id: sc, name: SI(sc)?.name?.trim() })) }));
-        const DEVT = new Set(['devoverlap', 'devtravel', 'devswitch', 'devnames', 'namedevs', 'devshare', 'headcount', 'devowner']);
+        const DEVT = new Set(['devoverlap', 'devtravel', 'devswitch', 'devnames', 'namedevs', 'nameoverlap', 'devpeople', 'devshare', 'headcount', 'devowner']);
         const flags = (sum?.flags || []).filter((f) => DEVT.has(f.type) && f.date === date && inScope(f.school))  .map((f) => ({ ...f, school_name: SI(f.school)?.name, region: SI(f.school)?.region, lga: SI(f.school)?.lga }));
         const bySchool = {};
         for (const e of events) (bySchool[e.sc] ||= new Set()).add(e.c);

@@ -80,7 +80,7 @@ export function analyseDay(date, events) {
     const code = devCodeOf(dev);
     // 1. overlapping tests on one phone: a phone can only run one test at a time
     const over = [];
-    for (let i = 0; i < list.length; i++) for (let j = i + 1; j < list.length && list[j][1] < list[i][2]; j++) if (list[i][2] - list[j][1] > 60 && !(list[i][6] === 's' && list[j][6] === 's')) over.push([list[i], list[j]]);
+    for (let i = 0; i < list.length; i++) for (let j = i + 1; j < list.length && list[j][1] < list[i][2]; j++) if (list[i][2] - list[j][1] > 30 && !(list[i][6] === 's' && list[j][6] === 's') && !(list[i][5] && list[i][5] === list[j][5])) over.push([list[i], list[j]]); // the same person overlapping is caught per person below
     if (over.length) add('devoverlap', 'warn', dev, over.slice(0, 4).flat(), `Phone ${code} recorded ${over.length} pair(s) of tests that overlap in time, for example ${hms(over[0][0][1])}-${hms(over[0][0][2])} and ${hms(over[0][1][1])}-${hms(over[0][1][2])}`, 'One phone cannot run two tests at once. Check whether records were edited or entered twice.', 'one test at a time');
     // 2. the phone appears at different schools within a short time
     const trav = [];
@@ -90,15 +90,26 @@ export function analyseDay(date, events) {
     const sw = {};
     for (let i = 2; i < list.length; i++) { const [p2, p1, c] = [list[i - 2], list[i - 1], list[i]]; if (c[3] === p1[3] && p1[3] === p2[3] && c[4] === p2[4] && c[4] !== p1[4] && c[1] - p2[2] < 30 * 60) (sw[c[3]] ||= []).push([p2, p1, c]); }
     for (const [school, runs] of Object.entries(sw)) if (runs.length >= 2) add('devswitch', 'warn', dev, runs.slice(0, 2).flat(), `Phone ${code} went back and forth between grades ${runs.length} times at ${sname(school)}`, 'Each person usually works one class. Ask who was testing which class.', 'one class at a time');
-    // 4. several different names on the phone in quick succession
-    const nm = [];
-    for (let i = 1; i < list.length; i++) if (list[i][5] && list[i - 1][5] && list[i][5] !== list[i - 1][5] && list[i][1] - list[i - 1][2] < 10 * 60) nm.push([list[i - 1], list[i]]);
-    if (nm.length >= 2) add('devnames', 'warn', dev, nm.slice(0, 3).flat(), `Phone ${code} was used under different names ${nm.length} times within minutes: ${[...new Set(nm.flat().map((x) => x[5]))].join(', ')}`, 'Each person should use their own phone and their own name.', 'one name per phone');
+    // 4. one phone used under more than one name on the same day, at any time and at any school (people swapping, even hours apart)
+    const named = list.filter((e) => e[5]); const who = [...new Set(named.map((e) => e[5]))];
+    if (who.length >= 2) {
+      const seq = []; for (const e of named) if (seq[seq.length - 1] !== e[5]) seq.push(e[5]);
+      const back = seq.length > who.length; // A, then B, then A again: the phone keeps changing hands
+      const span = who.map((n) => { const m = named.filter((e) => e[5] === n); return `${n} ${hms(Math.min(...m.map((e) => e[1])))}-${hms(Math.max(...m.map((e) => e[2])))}`; }).join('; ');
+      add('devpeople', back ? 'bad' : 'warn', dev, who.flatMap((n) => { const m = named.filter((e) => e[5] === n); return m.length > 1 ? [m[0], m[m.length - 1]] : m; }), `Phone ${code} was used under ${who.length} names on the same day: ${span}${back ? ', switching back and forth' : ''}`, 'Each person should use their own phone and their own name. When two people share a phone we cannot tell who tested which child.', 'one name per phone');
+    }
   }
-  // 5. one person on two phones at the same time
+  // 5a. one person with two tests running at the same time (same phone or different phones, same school or not)
+  const overlapped = new Set();
+  for (const [who, list] of Object.entries(byName)) {
+    const t = list.filter((e) => e[6] === 't').sort((a, b) => a[1] - b[1]); const pairs = [];
+    for (let i = 0; i < t.length; i++) for (let j = i + 1; j < t.length && t[j][1] < t[i][2]; j++) if (t[i][2] - t[j][1] > 30) pairs.push([t[i], t[j]]);
+    if (pairs.length) { overlapped.add(who); const ph = new Set(pairs.flat().map((e) => e[0])); add('nameoverlap', pairs.length >= 3 ? 'bad' : 'warn', who, pairs.slice(0, 4).flat(), `${who} has ${pairs.length} pair(s) of tests that overlap in time, for example ${hms(pairs[0][0][1])}-${hms(pairs[0][0][2])} and ${hms(pairs[0][1][1])}-${hms(pairs[0][1][2])}${ph.size > 1 ? ', on ' + ph.size + ' different phones' : ' on one phone'}`, 'One person can test only one child at a time. Overlapping times can mean records were typed in afterwards, copied, or another person used this name.', 'one test at a time'); }
+  }
+  // 5b. one person on two phones at the same time
   for (const [who, list] of Object.entries(byName)) {
     const devs = [...new Set(list.map((e) => e[0]))];
-    if (devs.length < 2) continue;
+    if (devs.length < 2 || overlapped.has(who)) continue; // a real overlap is already flagged for this person above
     list.sort((a, b) => a[1] - b[1]);
     const clash = [];
     for (let i = 0; i < list.length; i++) for (let j = i + 1; j < list.length && list[j][1] < list[i][2] + 120; j++) if (list[i][0] !== list[j][0] && list[i][3] !== undefined) clash.push([list[i], list[j]]);
@@ -295,7 +306,7 @@ export function summarize(Y, { year, bands, today, owners = {}, practice = false
   }
   for (const [key, names] of Object.entries(dayDev)) {
     const [date, dev, schoolId] = key.split('|'); if (!schools[schoolId]) continue;
-    if (names.size >= 2) flags.push({ sev: 'warn', type: 'devshare', school: schoolId, admin: [...names].join(' and '), date, text: `One phone (${devCode(dev)}) was used under ${names.size} names on the same day: ${[...names].join(', ')}`, hint: 'Each person should use their own phone. Confirm who tested.', normal: 'one name per phone' });
+    // (more than one name on a phone is now judged for the whole day in analyseDay: type devpeople)
     const ownerId = owners[dev];
     if (ownerId != null) for (const nm of names) { const st = staffForKoboName(nm); if (st && st.id !== ownerId) { const own = STAFF.find((x) => x.id === ownerId); flags.push({ sev: 'bad', type: 'devowner', school: schoolId, admin: nm, date, text: `${nm} submitted from the phone registered to ${own ? own.name : 'another person'} (${devCode(dev)})`, hint: 'Check whether the phone was lent or the wrong name was chosen.', normal: 'own phone' }); } }
   }
