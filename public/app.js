@@ -72,7 +72,7 @@ function qAbility(f) {
   if (S.viewAs || !me.role) return out;
   if (st === 'open' || st === 'rework') { out.respond = me.role === 'volunteer' ? Boolean(f.admin) && f.admin === me.name : (me.role === 'rc' || me.role === 'arc') && !f.vol; out.remind = (me.role === 'rc' || me.role === 'arc') && Boolean(f.vol); }
   else if (st === 'team') out.review = (me.role === 'rc' || me.role === 'arc') && !(w.response && w.response.by_id === me.id);
-  else if (st === 'hq1') out.review = me.role === 'hq' && (me.review_level || 0) >= 2;
+  else if (st === 'hq1') out.review = me.role === 'hq' && (me.review_level || 0) >= 2 && !/mundo/i.test(me.name || '');
   else if (st === 'final') out.review = me.role === 'hq' && (me.review_level || 0) >= 3 && !H.some((h) => h.level === 'hq1' && h.action !== 'rejected' && h.by_id === me.hq_id);
   return out;
 }
@@ -91,7 +91,7 @@ function chainHtml(f) {
   }).join('<i>›</i>');
   const resp = w.response ? `<div class="resp"><b>Response</b> by ${esc(w.response.by)}${w.response.on_behalf_of ? ' for ' + esc(w.response.on_behalf_of) : ''} · ${fmtAt(w.response.at)}${w.response.edited_by ? ` · <span class="pill warn">edited by ${esc(w.response.edited_by)}</span>` : ''}<br>${esc(w.response.text)}</div>` : '';
   const back = st === 'rework' && w.rework_note ? `<div class="resp bad"><b>Sent back:</b> ${esc(w.rework_note)}</div>` : '';
-  const hist = H.length ? `<details class="fd"><summary>History (${H.length})</summary>${H.map((h) => `<div class="hrow"><b>${esc(h.by)}</b> <span class="m">${esc(h.role || '')} · ${fmtAt(h.at)}</span> ${esc(ACT_TXT[h.action] || h.action)}${h.on_behalf_of ? ' for ' + esc(h.on_behalf_of) : ''}${h.text ? `<div class="m">${esc(h.text)}</div>` : ''}${h.before ? `<div class="m">Was: ${esc(h.before)}</div>` : ''}</div>`).join('')}${S.who && S.who.role === 'hq' && hqLevel() === 'admin' && st !== 'approved' ? `<button class="btn sm ghost" data-act="qClose" data-k="${esc(f.qk)}">Close without the chain (Admin)</button>` : ''}</details>` : '';
+  const hist = H.length ? `<details class="fd"><summary>History (${H.length})</summary>${H.map((h) => `<div class="hrow"><b>${esc(h.by)}</b> <span class="m">${esc(h.role || '')} · ${fmtAt(h.at)}</span> ${esc(ACT_TXT[h.action] || h.action)}${h.on_behalf_of ? ' for ' + esc(h.on_behalf_of) : ''}${h.text ? `<div class="m">${esc(h.text)}</div>` : ''}${h.before ? `<div class="m">Was: ${esc(h.before)}</div>` : ''}</div>`).join('')}${S.who && S.who.role === 'hq' && hqLevel() === 'admin' && !/mundo|joram/i.test(S.who.name || '') && st !== 'approved' ? `<button class="btn sm ghost" data-act="qClose" data-k="${esc(f.qk)}">Close without the chain (Admin)</button>` : ''}</details>` : '';
   return `<div class="chain" title="${esc(STAGE_TXT[st])}">${steps}</div><div class="m" style="margin:4px 0"><b>${esc(STAGE_TXT[st])}</b></div>${resp}${back}${hist}`;
 }
 function qActions(f) {

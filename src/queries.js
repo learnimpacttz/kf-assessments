@@ -24,6 +24,7 @@ export const loadQueries = async (env) => (await kv(env).get(KEY)) || {};
 export const STAGES = { open: 'Waiting for the response', rework: 'Sent back for rework', team: 'Team review (RC or ARC)', hq1: 'First HQ review', final: 'Final approval', approved: 'Approved and closed' };
 export const STEP_LABEL = { team: 'Team review', hq1: 'First HQ review', final: 'Final approval' };
 const parseKey = (key) => { const [type, school, grade, date, admin] = String(key).split('|'); return { type, school, grade, date, admin: admin || '' }; };
+const isMundo = (who) => who.role === 'hq' && (who.hq_id === 'h1' || /mundo/i.test(who.name || ''));
 const stageOf = (q) => (q && q.wf && q.wf.stage) || 'open';
 const MAXH = 40;
 
@@ -54,7 +55,7 @@ function canRespond(who, ri) {
 function canReview(who, stage, q, ri) {
   const authorId = q.wf?.response?.by_id;
   if (stage === 'team') return isCoord(who, ri.region) && who.id !== authorId;
-  if (stage === 'hq1') return who.role === 'hq' && (who.review_level || 0) >= 2 && who.hq_id !== authorId;
+  if (stage === 'hq1') return who.role === 'hq' && (who.review_level || 0) >= 2 && !isMundo(who) && who.hq_id !== authorId; // first HQ review is Joram's step; Mundo approves at the end
   if (stage === 'final') { const prior = (q.wf?.history || []).filter((h) => h.level === 'hq1' && h.action !== 'rejected').map((h) => h.by_id); return who.role === 'hq' && (who.review_level || 0) >= 3 && !prior.includes(who.hq_id) && who.hq_id !== authorId; }
   return false;
 }
@@ -99,7 +100,7 @@ export async function postQuery(env, who, { key, text, action, decision, note })
     q.thread.push({ by: who.name, role: who.role, text: `Reminder sent to ${ri.st.name} to respond`, at: now });
     notify = { to_stage: 'remind', region: ri.region, responder_id: ri.st.id, reviewer: who.name };
   } else if (action === 'resolve') {
-    if (!(who.role === 'hq' && (who.level || 'admin') === 'admin')) return { error: 'Only an HQ Admin can close a query without the review chain. Use the chain: response, review, approval.', status: 403 };
+    if (!(who.role === 'hq' && (who.level || 'admin') === 'admin') || isMundo(who) || /joram/i.test(who.name || '')) return { error: 'Only an HQ Admin outside the review chain can close a query without the review chain. Use the chain: response, review, approval.', status: 403 };
     q.status = 'resolved'; q.wf = { ...(q.wf || {}), stage: 'approved', history: q.wf?.history || [] }; push(q, who, 'admin', 'closed', text || 'Closed by an Admin without the review chain', stageOf(q), 'approved');
   } else { // a plain comment: kept in the thread, does not move the chain
     const t = String(text || '').trim(); if (!t) return { error: 'Write a comment first', status: 422 };
