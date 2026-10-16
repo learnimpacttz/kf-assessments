@@ -1,5 +1,5 @@
 import { koboForm } from './koboforms.js';
-import { listNews, manageNews, react as reactNews, saveNews, deleteNews, pinNews, publish as publishNews, runDueNews, checkMilestones, polish as polishNews } from './news.js';
+import { listNews, manageNews, react as reactNews, markSeen, saveNews, deleteNews, pinNews, publish as publishNews, runDueNews, checkMilestones, polish as polishNews } from './news.js';
 import { ownWork, teamBlock, coordinatorOverview } from './own.js';
 import { buildCalendar, markCalendarDirty, syncCalendar, calendarStatus, setCalSync, loadCalSync } from './calendar.js';
 import { pupilRecords, workFiles } from './pupils.js';
@@ -261,6 +261,7 @@ export default {
         if (path === '/api/reports/delete' && method === 'POST') { const r = await deleteReport(env, who, b.id); return r.error ? err(r.error, r.status || 422) : json(r); }
       }
       if (path === '/api/news' && method === 'GET') return json(await listNews(env, who));
+      if (path === '/api/news/seen' && method === 'POST') { const b = await request.json().catch(() => ({})); return json(await markSeen(env, who, b.ids)); }
       if (path === '/api/news/react' && method === 'POST') { const b = await request.json().catch(() => ({})); const r = await reactNews(env, who, b.id, b.emoji); return r.error ? err(r.error, r.status || 400) : json(r); }
       if (path === '/api/push/subscribe' && method === 'POST') {
         const b = await request.json();

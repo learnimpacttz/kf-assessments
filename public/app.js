@@ -1083,6 +1083,7 @@ function updateNewsBadge() {
 async function openNews() {
   S.newsPrev = newsSeen();
   await loadNews();
+  if (!S.viewAs && S.news?.items?.length) { try { await api('/api/news/seen', { method: 'POST', body: { ids: S.news.items.map((i) => i.id) } }); } catch {} }
   if (S.who.role === 'hq' && hqLevel() !== 'viewer') { try { S.newsAdmin = await api('/api/admin/news'); } catch (e) { S.nwMsg = e.message; } }
   const latest = S.news?.latest || ''; if (latest) store.set('kf_news_seen', latest);
 }
@@ -1090,7 +1091,7 @@ const nl2br = (t) => esc(t).replace(/\n/g, '<br>');
 const KIND_CLS = { announcement: 'navy', goodwill: 'gold', reminder: 'warn', congrats: 'good', update: 'teal' };
 function reactBar(i, hq) {
   const em = S.news?.emoji || ['👍', '👏', '🎉', '❤️'];
-  return `<div class="rxbar">${em.map((e) => { const n = (i.counts || {})[e] || 0; const who = hq && i.names && i.names[e] ? ` title="${esc(i.names[e].join(', '))}"` : ''; return `<button class="rx ${i.mine === e ? 'on' : ''}" data-act="react" data-id="${esc(i.id)}" data-e="${e}"${who}>${e}${n ? ' <b>' + n + '</b>' : ''}</button>`; }).join('')}</div>${(i.reacted || []).length ? `<details class="fd rxwho"><summary>Who reacted (${i.reacted.length})</summary>${i.reacted.map((x) => `<div class="hrow"><span style="font-size:16px">${x.e}</span> <b>${esc(x.n)}</b> <span class="m">${esc([x.p, x.r && x.r !== 'HQ' ? title(x.r) : x.r].filter(Boolean).join(' · '))}${x.at ? ' · ' + fmtAt(x.at) : ''}</span></div>`).join('')}</details>` : ''}`;
+  return `<div class="rxbar">${em.map((e) => { const n = (i.counts || {})[e] || 0; const who = hq && i.names && i.names[e] ? ` title="${esc(i.names[e].join(', '))}"` : ''; return `<button class="rx ${i.mine === e ? 'on' : ''}" data-act="react" data-id="${esc(i.id)}" data-e="${e}"${who}>${e}${n ? ' <b>' + n + '</b>' : ''}</button>`; }).join('')}</div>${(i.seen || []).length ? `<details class="fd rxwho"><summary>Seen by (${i.seen.length})</summary>${i.seen.map((x) => `<div class="hrow"><b>${esc(x.n)}</b> <span class="m">${esc([x.p, x.r && x.r !== 'HQ' ? title(x.r) : x.r].filter(Boolean).join(' · '))}${x.at ? ' · ' + fmtAt(x.at) : ''}</span></div>`).join('')}</details>` : ''}${(i.reacted || []).length ? `<details class="fd rxwho"><summary>Who reacted (${i.reacted.length})</summary>${i.reacted.map((x) => `<div class="hrow"><span style="font-size:16px">${x.e}</span> <b>${esc(x.n)}</b> <span class="m">${esc([x.p, x.r && x.r !== 'HQ' ? title(x.r) : x.r].filter(Boolean).join(' · '))}${x.at ? ' · ' + fmtAt(x.at) : ''}</span></div>`).join('')}</details>` : ''}`;
 }
 function newsCard(i, hq) {
   const isNew = i.sent_at && i.sent_at > (S.newsPrev || '') && !hq;

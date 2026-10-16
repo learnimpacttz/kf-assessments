@@ -80,7 +80,7 @@ export function levelGate(who, method, path) {
     return 'Admin access is needed for this.';
   }
   if (read) return null;
-  if (/^\/api\/(news\/react|push\/|assistant|reports\/preview|login)/.test(path)) return null;
+  if (/^\/api\/(news\/(react|seen)|push\/|assistant|reports\/preview|login)/.test(path)) return null;
   if (lv === 'editor' && /^\/api\/(reports\/(save|delete)|query|deletions|pilot)/.test(path)) return null;
   return lv === 'editor' ? 'Editors can write messages and reports and reply to queries. Ask an Admin for anything else.' : 'Viewers can read and download only.';
 }
