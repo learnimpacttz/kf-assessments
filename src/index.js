@@ -426,11 +426,13 @@ export default {
         if (!canSeeRegion(who, region)) return err('Not your region', 403);
         const today = eatToday();
         const { sum } = await loadSummary(env, CURRENT_YEAR); // the real 2026 visits, never the rehearsal year
+        const enrolMap = sum ? Object.fromEntries(Object.values(sum.schools).filter((s) => s.region === region && s.tch?.enrol).map((s) => [s.id, s.tch.enrol])) : {}; // baseline enrolment by grade [girls, boys, total]
+        const withEnrol = (p) => ({ ...p, visits: p.visits.map((v) => ({ ...v, enrol: enrolMap[v.school] || null })) });
         const visitDates = sum ? Object.fromEntries(Object.values(sum.schools).filter((s) => s.region === region).map((s) => [s.id, s.dates])) : {};
 
         if (method === 'GET') {
           const plan = await getPlan(env, region);
-          return json({ plan: withNotices(plan, today, visitDates), schools: (SCHOOLS_BY_REGION[region] || []).map((s) => ({ id: s.id, name: s.name, lga: s.lga, mne: s.mne, arm: s.arm })), staff: STAFF.filter((s) => s.active && s.region === region).map((s) => ({ name: s.name, position: s.position })), today });
+          return json({ plan: withEnrol(withNotices(plan, today, visitDates)), schools: (SCHOOLS_BY_REGION[region] || []).map((s) => ({ id: s.id, enrol: enrolMap[s.id] || null, name: s.name, lga: s.lga, mne: s.mne, arm: s.arm })), staff: STAFF.filter((s) => s.active && s.region === region).map((s) => ({ name: s.name, position: s.position })), today });
         }
         if (method === 'POST') {
           if (who.role !== 'rc' && who.role !== 'arc' && who.role !== 'hq') return err('Only coordinators can change the plan', 403);
@@ -443,7 +445,7 @@ export default {
           else return err('Unknown action');
           if (r.error) return err(r.error, r.status || 400, { errors: r.errors });
           if (body.action === 'submit' || body.action === 'change') await markCalendarDirty(env); // the phone calendar file is refreshed shortly if HQ has switched that on
-          return json({ plan: withNotices(r.plan, today, visitDates) });
+          return json({ plan: withEnrol(withNotices(r.plan, today, visitDates)) });
         }
       }
 
