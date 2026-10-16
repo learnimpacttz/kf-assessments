@@ -37,10 +37,10 @@ const regionOk = (item, who) => !item.regions?.length || who.role === 'hq' || it
 const toOk = (item, who) => who.role === 'hq' || item.to === 'all' || (item.to === 'coordinators' && (who.role === 'rc' || who.role === 'arc')) || (item.to === 'volunteers' && who.role === 'volunteer');
 const myId = (who) => String(who.id ?? 'hq');
 function shape(item, who, hq) {
-  const counts = {}; let mine = null; const names = {};
-  for (const [uidk, r] of Object.entries(item.rx || {})) { counts[r.e] = (counts[r.e] || 0) + 1; if (uidk === myId(who)) mine = r.e; if (hq) (names[r.e] ||= []).push(r.n); }
+  const counts = {}; let mine = null; const names = {}; const rxList = [];
+  for (const [uidk, r] of Object.entries(item.rx || {})) { counts[r.e] = (counts[r.e] || 0) + 1; if (uidk === myId(who)) mine = r.e; if (hq) { (names[r.e] ||= []).push(r.n); rxList.push({ e: r.e, n: r.n, r: r.r || '', p: r.p || '', at: r.at || '' }); } }
   const out = { id: item.id, kind: item.kind, kind_label: KINDS[item.kind] || 'Announcement', title: item.title, body: item.body, pinned: item.pinned, sent_at: item.sent_at, counts, mine, auto: item.auto };
-  if (hq) Object.assign(out, { status: item.status, publish_at: item.publish_at, to: item.to, regions: item.regions, push: item.push, by: item.by, names, seed: item.seed || null, created_at: item.created_at });
+  if (hq) Object.assign(out, { status: item.status, publish_at: item.publish_at, to: item.to, regions: item.regions, push: item.push, by: item.by, names, reacted: rxList.sort((a, b) => String(b.at).localeCompare(String(a.at))), seed: item.seed || null, created_at: item.created_at });
   return out;
 }
 const order = (a, b) => (b.pinned - a.pinned) || ((b.sent_at || b.publish_at || b.created_at || '') > (a.sent_at || a.publish_at || a.created_at || '') ? 1 : -1);
@@ -62,7 +62,7 @@ export async function react(env, who, id, emoji) {
   const d = await load(env); const item = d.items.find((i) => i.id === id && i.status === 'sent');
   if (!item || !toOk(item, who) || !regionOk(item, who)) return { error: 'Not found', status: 404 };
   item.rx ||= {}; const k = myId(who);
-  if (item.rx[k]?.e === emoji) delete item.rx[k]; else item.rx[k] = { e: emoji, n: who.name || 'HQ' };
+  if (item.rx[k]?.e === emoji) delete item.rx[k]; else item.rx[k] = { e: emoji, n: who.name || 'HQ', r: who.region || (who.role === 'hq' ? 'HQ' : ''), p: who.position || (who.role === 'hq' ? 'HQ' : who.role || ''), at: new Date().toISOString() };
   await save(env, d); return { ok: true, item: shape(item, who, false) };
 }
 
