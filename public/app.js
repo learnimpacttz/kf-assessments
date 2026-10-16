@@ -1090,7 +1090,7 @@ const nl2br = (t) => esc(t).replace(/\n/g, '<br>');
 const KIND_CLS = { announcement: 'navy', goodwill: 'gold', reminder: 'warn', congrats: 'good', update: 'teal' };
 function reactBar(i, hq) {
   const em = S.news?.emoji || ['👍', '👏', '🎉', '❤️'];
-  return `<div class="rxbar">${em.map((e) => { const n = (i.counts || {})[e] || 0; const who = hq && i.names && i.names[e] ? ` title="${esc(i.names[e].join(', '))}"` : ''; return `<button class="rx ${i.mine === e ? 'on' : ''}" data-act="react" data-id="${esc(i.id)}" data-e="${e}"${who}>${e}${n ? ' <b>' + n + '</b>' : ''}</button>`; }).join('')}</div>${hq && (i.reacted || []).length ? `<details class="fd rxwho"><summary>Who reacted (${i.reacted.length})</summary>${i.reacted.map((x) => `<div class="hrow"><span style="font-size:16px">${x.e}</span> <b>${esc(x.n)}</b> <span class="m">${esc([x.p, x.r && x.r !== 'HQ' ? title(x.r) : x.r].filter(Boolean).join(' · '))}${x.at ? ' · ' + fmtAt(x.at) : ''}</span></div>`).join('')}</details>` : ''}`;
+  return `<div class="rxbar">${em.map((e) => { const n = (i.counts || {})[e] || 0; const who = hq && i.names && i.names[e] ? ` title="${esc(i.names[e].join(', '))}"` : ''; return `<button class="rx ${i.mine === e ? 'on' : ''}" data-act="react" data-id="${esc(i.id)}" data-e="${e}"${who}>${e}${n ? ' <b>' + n + '</b>' : ''}</button>`; }).join('')}</div>${(i.reacted || []).length ? `<details class="fd rxwho"><summary>Who reacted (${i.reacted.length})</summary>${i.reacted.map((x) => `<div class="hrow"><span style="font-size:16px">${x.e}</span> <b>${esc(x.n)}</b> <span class="m">${esc([x.p, x.r && x.r !== 'HQ' ? title(x.r) : x.r].filter(Boolean).join(' · '))}${x.at ? ' · ' + fmtAt(x.at) : ''}</span></div>`).join('')}</details>` : ''}`;
 }
 function newsCard(i, hq) {
   const isNew = i.sent_at && i.sent_at > (S.newsPrev || '') && !hq;
@@ -1120,7 +1120,7 @@ const eatIso = (v) => (v ? new Date(v.length === 16 ? v + ':00+03:00' : v).toISO
 function viewNews() {
   const hq = S.who.role === 'hq' && hqLevel() !== 'viewer'; const N = S.news;
   if (hq) {
-    const A = S.newsAdmin; const all = A ? A.items : []; const view = S.nwView || 'read'; const waiting = all.filter((i) => i.status !== 'sent'); const sent = N ? N.items : all.filter((i) => i.status === 'sent');
+    const A = S.newsAdmin; const all = A ? A.items : []; const view = S.nwView || 'read'; const waiting = all.filter((i) => i.status !== 'sent'); const sent = A ? all.filter((i) => i.status === 'sent') : N ? N.items : null;
     const bar = `<div class="sel" style="margin:6px 0 12px"><button class="btn sm ${view === 'read' ? '' : 'sec'}" data-act="nwView" data-v="read">Read</button><button class="btn sm ${view === 'manage' ? '' : 'sec'}" data-act="nwView" data-v="manage">Scheduled and drafts${waiting.length ? ' (' + waiting.length + ')' : ''}</button><button class="btn sm sec" data-tab="messages" style="margin-left:auto">Write a message</button></div>`;
     const head = `<div class="pagehead"><div><h2>News</h2><p>Messages from HQ to the team. People can react with a thumbs up, a clap, a party or a heart. To write a new message, use Write a message.</p></div></div>${bar}`;
     if (S.nwDraft) return `${head}${composer()}`;
