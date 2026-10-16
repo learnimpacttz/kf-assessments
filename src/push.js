@@ -160,7 +160,7 @@ export async function runAlerts(env, slot, sum) {
       const vs = plan.visits.filter((v) => v.date === tomorrow);
       if (!vs.length) continue;
       if (!(await once(env, `tomorrow:${r}:${tomorrow}`))) continue;
-      results.push({ r, tomorrow: vs.length, ...(await pushTo(env, (w) => w.region === r, { title: 'Kesho · Tomorrow', body: vs.map((v) => `${SCHOOL_BY_ID[v.school]?.name} ${v.start}`).join(' · '), url: site })) });
+      results.push({ r, tomorrow: vs.length, ...(await pushTo(env, (w) => w.region === r, { title: Date.parse(tomorrow) - Date.parse(today) === 864e5 ? 'Kesho · Tomorrow' : 'Siku ijayo · Next school day, ' + tomorrow, body: vs.map((v) => `${SCHOOL_BY_ID[v.school]?.name} ${v.start}`).join(' · '), url: site })) });
     }
   }
   return results;

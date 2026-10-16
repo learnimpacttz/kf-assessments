@@ -256,3 +256,6 @@ details.fd>summary.need-l::marker{color:var(--bad)}
 .flag span.ft{font-weight:400;color:#1F6FE0}
 :root[data-theme="dark"] .flag .ft{color:#6DB1FF}
 @media(prefers-color-scheme:dark){:root:not([data-theme="light"]) .flag .ft{color:#6DB1FF}}
+
+.tdate{font:600 12.5px var(--f-display,inherit);color:#fff;opacity:.92;white-space:nowrap;padding:3px 9px;border:1px solid rgba(255,255,255,.35);border-radius:999px;flex:none}
+@media(max-width:380px){.tdate{font-size:11px;padding:2px 6px}}

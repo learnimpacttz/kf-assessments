@@ -19,6 +19,7 @@ async function api(path, opts = {}) {
 const armLabel = (s) => `${s.arm || ''}${s.mne === 'M&E' ? ' · M&E' : ''}`;
 const fmt = (n) => (n == null ? '–' : Number(n).toLocaleString('en-GB'));
 const pc = (a, b) => (b ? Math.round((a / b) * 100) : 0);
+const nextLabel = (d, t) => (new Date(d + 'T00:00:00Z') - new Date(t + 'T00:00:00Z') === 864e5 ? 'Tomorrow' : 'Next school day');
 const dayName = (iso) => new Date(iso + 'T00:00:00Z').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' });
 const shortDate = (iso) => (iso ? new Date(iso + 'T00:00:00Z').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' }) : '–');
 const title = (s) => String(s || '').toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
@@ -138,7 +139,7 @@ function briefCard(title0 = "Today's briefing") {
   const items = b.items.length ? b.items.map((i) => `<div class="flag"><i class="st ${i.sev}"></i><div><span style="color:var(--ink);font-size:14px">${esc(i.text)}</span></div></div>`).join('') : '<div class="empty">Nothing to report yet.</div>';
   const ai = b.ai ? `<div class="aiwrap"><div class="ai-col"><h4>English</h4><ul>${(b.ai.en || []).map((x) => `<li>${esc(x)}</li>`).join('')}</ul></div><div class="ai-col"><h4>Kiswahili</h4><ul>${(b.ai.sw || []).map((x) => `<li>${esc(x)}</li>`).join('')}</ul></div></div>` : '';
   const tm = Object.entries(b.tomorrow_schools || {}).map(([r, s]) => `<div class="m"><b>${esc(title(r))}</b>: ${s.map(esc).join(', ')}</div>`).join('');
-  return `<div class="card brief"><h3>${title0}</h3><div class="sub">Worked out from the data and the plans. ${b.ai ? 'Wording by AI from the same facts.' : ''}</div>${items}${ai}${tm ? `<h4 style="margin:12px 0 4px">Tomorrow, ${dayName(b.tomorrow)}</h4>${tm}` : ''}</div>`;
+  return `<div class="card brief"><h3>${title0}</h3><div class="sub">Worked out from the data and the plans. ${b.ai ? 'Wording by AI from the same facts.' : ''}</div>${items}${ai}${tm ? `<h4 style="margin:12px 0 4px">${nextLabel(b.tomorrow, b.today)}, ${dayName(b.tomorrow)}</h4>${tm}` : ''}</div>`;
 }
 
 function dataBanner() {
@@ -2155,3 +2156,5 @@ document.addEventListener('keydown', (e) => {
   const ping = async () => { if (!navigator.onLine) return set(false); try { const r = await fetch('/manifest.json?ping=' + Date.now(), { cache: 'no-store' }); set(r.ok || r.status < 500); } catch { set(false); } };
   addEventListener('online', ping); addEventListener('offline', () => set(false)); setInterval(ping, 30000); ping();
 })();
+
+(function () { const el = document.getElementById('tdate'); if (!el) return; const t = () => { const d = new Date(Date.now() + 3 * 3600e3); el.textContent = d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' }); el.title = 'Today, East Africa Time'; }; t(); setInterval(t, 60000); })();
