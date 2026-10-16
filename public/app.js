@@ -1184,11 +1184,11 @@ function applyBrand() {
 const TABS = {
   public: [['progress', 'Progress'], ['compare', 'Compare']],
   volunteer: [['day', 'My day'], ['pilot', 'Pilot day'], ['news', 'News'], ['work', 'My work'], ['queries', 'My queries'], ['stats', 'My stats'], ['phones', 'Phones'], ['pupils', 'Pupil records'], ['compare', 'Compare'], ['practice', 'Practice (Mafunzo)'], ['help', 'Help']],
-  rc: [['region', 'Region'], ['news', 'News'], ['plan', 'Plan & calendar'], ['team', 'My team'], ['pilot', 'Pilot day'], ['allq', 'Queries'], ['phones', 'Phones'], ['compare', 'Compare'], ['reports', 'Reports'], ['clean', 'Data cleaning'], ['explore', 'Data explorer'], ['practice', 'Practice (Mafunzo)'], ['help', 'Help']],
+  rc: [['region', 'Region'], ['news', 'News'], ['plan', 'Plan & calendar'], ['team', 'My team'], ['pilot', 'Pilot day'], ['allq', 'Queries'], ['phones', 'Phones'], ['compare', 'Compare'], ['reports', 'Reports'], ['narr', 'School reports'], ['clean', 'Data cleaning'], ['explore', 'Data explorer'], ['practice', 'Practice (Mafunzo)'], ['help', 'Help']],
   hq: [['today', 'Today'], ['hq', 'HQ'], ['news', 'News'], ['messages', 'Write and schedule'], ['clean', 'Data cleaning'], ['regions', 'Regions & plans'], ['plan', 'Plan & calendar'], ['pilot', 'Pilot day'], ['people', 'People'], ['allq', 'Queries'], ['phones', 'Phones'], ['compare', 'Compare'], ['reports', 'Reports'], ['payments', 'Payments'], ['payments', 'Payments'], ['explore', 'Data explorer'], ['admin', 'Admin'], ['help', 'Help'], ['practice', 'Practice (Mafunzo)']],
 };
-const GROUPS = { rc: [['Home', ['region', 'news']], ['Plan', ['plan', 'team', 'pilot']], ['Checks', ['allq', 'clean', 'phones', 'compare', 'explore']], ['Reports', ['reports']], ['More', ['practice', 'help']]], volunteer: [['Today', ['day', 'pilot', 'news']], ['My work', ['work', 'queries', 'stats']], ['Team', ['phones', 'pupils', 'compare']], ['More', ['practice', 'help']]] };
-const HQ_GROUPS = [['Today', ['today']], ['Field', ['hq', 'regions', 'plan', 'pilot', 'people', 'practice']], ['Checks', ['allq', 'clean', 'phones', 'compare', 'explore']], ['Messages', ['news', 'messages']], ['Reports', ['reports', 'payments']], ['Admin', ['admin']], ['Help', ['help']]];
+const GROUPS = { rc: [['Home', ['region', 'news']], ['Plan', ['plan', 'team', 'pilot']], ['Checks', ['allq', 'clean', 'phones', 'compare', 'explore']], ['Reports', ['reports', 'narr']], ['More', ['practice', 'help']]], volunteer: [['Today', ['day', 'pilot', 'news']], ['My work', ['work', 'queries', 'stats']], ['Team', ['phones', 'pupils', 'compare']], ['More', ['practice', 'help']]] };
+const HQ_GROUPS = [['Today', ['today']], ['Field', ['hq', 'regions', 'plan', 'pilot', 'people', 'practice']], ['Checks', ['allq', 'clean', 'phones', 'compare', 'explore']], ['Messages', ['news', 'messages']], ['Reports', ['reports', 'narr', 'payments']], ['Admin', ['admin']], ['Help', ['help']]];
 const REPORTS_READY = true;
 const LEVEL_TXT = { admin: 'Admin', editor: 'Editor', viewer: 'Viewer' };
 const hqLevel = () => (S.who?.role === 'hq' ? S.who.level || 'admin' : null);
@@ -1197,11 +1197,12 @@ function tabAllowed(k) {
   if (k === 'admin') return hqLevel() === 'admin';
   if (k === 'payments') return hqLevel() === 'admin';
   if (k === 'messages') return hqLevel() !== null;
-  if (k === 'reports') return REPORTS_READY && S.who && S.who.role !== 'arc' && S.who.role !== 'volunteer';
+  if (k === 'reports') return REPORTS_READY && S.who && S.who.role !== 'volunteer';
+  if (k === 'narr') return Boolean(S.who && S.who.role !== 'volunteer');
   return true;
 }
 const roleKey = () => (!S.who ? 'public' : S.who.role === 'arc' ? 'rc' : S.who.role);
-const VIEWS = { progress: viewProgress, compare: viewCompare, day: viewDay, work: viewWork, queries: viewQueries, stats: viewStats, region: viewRegion, plan: viewPlan, team: viewTeam, explore: viewExplore, hq: viewHQ, regions: viewRegionsHQ, people: viewPeopleHQ, admin: viewAdmin, allq: viewAllQueries, phones: viewPhones, practice: viewPractice, news: viewNews, pilot: viewPilot, payments: viewPayments, pupils: viewPupils, messages: viewMessages, reports: viewReports, clean: viewClean, today: viewToday, help: viewHelp };
+const VIEWS = { progress: viewProgress, compare: viewCompare, day: viewDay, work: viewWork, queries: viewQueries, stats: viewStats, region: viewRegion, plan: viewPlan, team: viewTeam, explore: viewExplore, hq: viewHQ, regions: viewRegionsHQ, people: viewPeopleHQ, admin: viewAdmin, allq: viewAllQueries, phones: viewPhones, practice: viewPractice, news: viewNews, pilot: viewPilot, payments: viewPayments, pupils: viewPupils, messages: viewMessages, reports: viewReports, narr: viewNarr, clean: viewClean, today: viewToday, help: viewHelp };
 
 // Admin is long: each card folds away so you can jump to what you need. The first card stays open; your choices are remembered.
 function enhanceCollapsible() {
@@ -1833,6 +1834,57 @@ async function cleanAction(a, t) {
   render();
 }
 
+// ---------- School narrative reports (RC and ARC write, after the visit) ----------
+async function loadNarr(school) {
+  const N = (S.nr ||= { lang: store.get('kf_nlang') || 'en' }); N.err = null;
+  try {
+    if (!N.region) N.region = S.who.role === 'hq' ? (S.cfg.regions[0] && (S.cfg.regions[0].id || S.cfg.regions[0])) : S.who.region;
+    N.list = await api('/api/narratives?region=' + encodeURIComponent(N.region));
+    if (school || N.open) N.doc = await api('/api/narratives/school?school=' + encodeURIComponent(school || N.open));
+  } catch (e) { N.err = e.message; }
+  render();
+}
+function viewNarr() {
+  const N = S.nr; const hq = S.who.role === 'hq';
+  const head = `<div class="pagehead"><div><h2>School reports</h2><p>After each school visit the RC or ARC writes a short narrative: a few guiding questions and a free space. You can write in Kiswahili or English. At the end the system compiles every school, with its numbers, into one report.</p></div></div>`;
+  if (!N || (!N.list && !N.err)) return head + '<div class="empty">Loading…</div>';
+  if (N.err) return head + `<div class="banner bad">${esc(N.err)}</div>`;
+  const regSel = hq ? `<div class="mf"><label>Region<select id="nrRegion">${S.cfg.regions.map((r) => { const id = r.id || r; return `<option value="${esc(id)}" ${id === N.region ? 'selected' : ''}>${esc(title(r.name || id))}</option>`; }).join('')}</select></label></div>` : '';
+  const L = N.list; const done = L.schools.filter((x) => x.n_done).length;
+  const rows = L.schools.slice().sort((a, b) => (b.visited - a.visited) || String(b.last || '').localeCompare(String(a.last || ''))).map((x) => `<tr class="click" data-act="nrOpen" data-s="${esc(x.id)}"><td><b>${esc(x.name)}</b><div class="m">${esc(title(x.lga))}${x.last ? ' · visited ' + shortDate(x.last) : x.visited ? '' : ' · not visited yet'}</div></td><td>${x.n_done ? chip('written', 'good') : x.n_draft ? chip('draft', 'warn') : x.visited ? chip('please write', 'bad') : '<span class="m">after the visit</span>'}</td></tr>`).join('');
+  const compiled = `<div style="display:flex;gap:8px;flex-wrap:wrap;margin:8px 0"><button class="btn sm" data-act="nrCompiled" data-all="">Open the compiled report for ${esc(title(N.region))}</button>${hq ? '<button class="btn sm sec" data-act="nrCompiled" data-all="1">Open the compiled report for all regions</button>' : ''}</div>`;
+  return `${head}${regSel}<div class="kpis"><div class="kpi"><div class="v">${done}</div><div class="l">of ${L.schools.length} schools have a written report</div></div></div>${compiled}${N.doc ? narrEditor(N) : ''}<div class="card" style="margin-top:12px"><div class="tbl"><table><tbody>${rows}</tbody></table></div></div>`;
+}
+function narrEditor(N) {
+  const D = N.doc; const lang = N.lang; const me = D.mine; const can = D.can_write; const ans = (me && me.answers) || {};
+  const others = D.entries.filter((e) => !me || e.by_id !== me.by_id);
+  const T = lang === 'sw' ? { open: 'Mengineyo (chochote ambacho hakijaulizwa hapo juu)', save: 'Hifadhi rasimu', fin: 'Maliza na uwasilishe', hint: 'Andika sentensi chache kwa kila swali. Unaweza kuandika kwa Kiswahili au Kiingereza.' } : { open: 'Anything else (whatever the questions above did not ask)', save: 'Save draft', fin: 'Mark complete', hint: 'A few sentences for each question is enough. Write in Kiswahili or English, whichever is easier.' };
+  const qs = D.questions.map((q) => `<div class="f"><label>${esc(q[lang])}<textarea data-nq="${q.k}" rows="3">${esc(ans[q.k] || '')}</textarea></label></div>`).join('');
+  const oth = others.map((e) => `<details class="fd"><summary>${esc(e.by)} (${esc(e.role)}) · ${e.done ? 'complete' : 'draft'} · ${e.lang === 'sw' ? 'Kiswahili' : 'English'}</summary>${D.questions.filter((q) => e.answers[q.k]).map((q) => `<p><b>${esc(q[e.lang === 'sw' ? 'sw' : 'en'])}</b><br>${esc(e.answers[q.k])}</p>`).join('')}${e.open ? `<p>${esc(e.open)}</p>` : ''}</details>`).join('');
+  return `<div class="card" style="margin-top:12px;border-left:4px solid var(--gold)"><h3 style="display:flex;justify-content:space-between;gap:8px"><span>${esc(D.name)}</span><button class="btn sm ghost" data-act="nrClose">Close</button></h3>
+  <div class="sel" style="margin:6px 0"><button class="btn sm ${lang === 'en' ? '' : 'sec'}" data-act="nrLang" data-l="en">English</button><button class="btn sm ${lang === 'sw' ? '' : 'sec'}" data-act="nrLang" data-l="sw">Kiswahili</button></div>
+  ${can ? `<div class="sub">${T.hint}</div>${qs}<div class="f"><label>${T.open}<textarea data-nq="__open" rows="4">${esc((me && me.open) || '')}</textarea></label></div><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn sec" data-act="nrSave" data-done="">${T.save}</button><button class="btn" data-act="nrSave" data-done="1">${T.fin}</button></div>${N.msg ? `<p class="m">${esc(N.msg)}</p>` : ''}` : '<div class="note">Only the RC or ARC of the region can write this report.</div>'}
+  ${oth ? `<h4 style="margin:12px 0 4px">Written by others</h4>${oth}` : ''}</div>`;
+}
+async function narrAction(a, t) {
+  const N = (S.nr ||= { lang: 'en' });
+  try {
+    if (a === 'nrOpen') { N.open = t.dataset.s; N.msg = ''; N.doc = await api('/api/narratives/school?school=' + encodeURIComponent(N.open)); }
+    else if (a === 'nrClose') { N.open = null; N.doc = null; }
+    else if (a === 'nrLang') { keepNarr(); N.lang = t.dataset.l; store.set('kf_nlang', N.lang); }
+    else if (a === 'nrSave') {
+      keepNarr(); const D = N.doc; const body = { school: D.school, lang: N.lang, done: Boolean(t.dataset.done), answers: N.draft.answers, open: N.draft.open };
+      await api('/api/narratives', { method: 'POST', body }); N.msg = body.done ? 'Saved as complete. Thank you.' : 'Draft saved.'; await loadNarr(D.school); return;
+    }
+    else if (a === 'nrCompiled') {
+      const q = t.dataset.all ? '' : '?region=' + encodeURIComponent(N.region); const res = await fetch('/api/narratives/compiled' + q, { headers: { 'x-access-code': S.code } });
+      if (!res.ok) throw new Error('Could not build the report'); const blob = new Blob([await res.text()], { type: 'text/html' }); window.open(URL.createObjectURL(blob), '_blank'); return;
+    }
+  } catch (e) { N.msg = e.message; }
+  render();
+}
+function keepNarr() { const N = S.nr; const answers = {}; let open = ''; document.querySelectorAll('[data-nq]').forEach((x) => { if (x.dataset.nq === '__open') open = x.value; else if (x.value.trim()) answers[x.dataset.nq] = x.value; }); N.draft = { answers, open }; if (N.doc) { N.doc.mine = { ...(N.doc.mine || {}), answers, open }; } }
+
 // ---------- phone alerts ----------
 const pushSupported = () => 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
 function alertsLabel() {
@@ -1952,7 +2004,7 @@ async function go() {
 
 async function selectTab(k) {
   if (k === 'pilot') { S.tab = k; render(); await loadPilot(); return; }
-  S.tab = k; S.selVisit = null; if (S.tab === 'messages') { render(); await loadMsgs(); } if (S.tab === 'clean') { render(); await loadClean(); } if (S.tab === 'payments') { await loadPayments();  return; } if (S.tab === 'plan') { await loadPlan(); } if (S.tab === 'phones') { S.ph = null; render(); await loadPhones(); } if (S.tab === 'practice') { S.pr = null; render(); await loadPractice(); } if (S.tab === 'news') { await openNews(); } if (S.tab === 'reports') { render(); await openReports(); } if (S.tab === 'admin') await loadAdmin(); render();
+  S.tab = k; S.selVisit = null; if (S.tab === 'messages') { render(); await loadMsgs(); } if (S.tab === 'clean') { render(); await loadClean(); } if (S.tab === 'payments') { await loadPayments();  return; } if (S.tab === 'plan') { await loadPlan(); } if (S.tab === 'phones') { S.ph = null; render(); await loadPhones(); } if (S.tab === 'practice') { S.pr = null; render(); await loadPractice(); } if (S.tab === 'news') { await openNews(); } if (S.tab === 'reports') { render(); await openReports(); } if (S.tab === 'narr') { render(); await loadNarr(); } if (S.tab === 'admin') await loadAdmin(); render();
 }
 
 // ---------- refresh: a button and pull-down; also picks up a new version of the app ----------
@@ -2019,6 +2071,7 @@ document.addEventListener('click', async (e) => {
     else if (/^pil[A-Z]/.test(a)) await pilotAction(a, t);
     else if (/^pu[A-Z]/.test(a)) await pupilAction(a);
     else if (/^dl[A-Z]/.test(a)) await cleanAction(a, t);
+    else if (/^nr[A-Z]/.test(a)) await narrAction(a, t);
     else if (/^ms[A-Z]/.test(a)) await msAction(a, t);
     else if (/^ai[A-Z]/.test(a)) await aiAction(a, t);
     else if (a === 'stDel') await storageAction(t);
@@ -2118,6 +2171,7 @@ async function downloadFile(path, name) {
   link.href = url; link.download = name; document.body.appendChild(link); link.click(); link.remove(); URL.revokeObjectURL(url);
 }
 document.addEventListener('change', async (e) => {
+  if (e.target.id === 'nrRegion') { S.nr.region = e.target.value; S.nr.open = null; S.nr.doc = null; await loadNarr(); return; }
   if (e.target.id === 'dfField') { (S.cl ||= {}).editField = e.target.value; render(); return; }
   if (e.target.dataset?.rc !== undefined && S.rep?.edit) { const k = e.target.dataset.rc; const H = new Set(S.rep.edit.hidden || []); if (e.target.checked) H.delete(k); else H.add(k); S.rep.edit.hidden = [...H]; repSync(); render(); return; }
   if (e.target.dataset?.rf !== undefined && S.rep) { S.rep.formats[e.target.dataset.rf] = e.target.checked; return; }

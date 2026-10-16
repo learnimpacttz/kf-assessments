@@ -16,6 +16,7 @@ import { loadFormJob, saveFormJob, runFormJob, maybeRunFormJob } from './formjob
 import { kv } from './store.js';
 import { buildBrief, aiBrief } from './brief.js';
 import { ask as askAssistant, draftReportText } from './assistant.js';
+import { listNarr, getNarr, saveNarr, compiledHtml } from './narratives.js';
 import { TEMPLATES, buildReport, listReports, getReport, saveReport, deleteReport } from './reports.js';
 import { loadHq, hqChange, hqList, hqByCode, codeFor, levelGate, applySettings, settingsView, saveSettings, logActivity, readActivity, activityLabel, BRAND, assistantName } from './hq.js';
 import { emailSchedule, hqPersonalCodeEmail, morningDigest, eveningGap, loadRecipients, saveRecipients, runDigests, maybeRunScheduledDigests, sendMail, onboardingEmail, runOnboarding, followupEmail, runFollowup, hqCc, hqOnboardingEmail, reminderEmail, runReminders } from './digest.js';
@@ -248,17 +249,33 @@ export default {
         if (who.role !== 'hq') return err('The assistant is for the HQ team for now', 403);
         try { const r = await draftReportText(env, who, await request.json().catch(() => ({}))); return r.error ? err(r.error, 422) : json(r); } catch (e) { return err(String(e.message || e), 502); }
       }
+      // ---------- narrative report per school (RC/ARC write, HQ and the region read) ----------
+      if (path.startsWith('/api/narratives')) {
+        if (!(who.role === 'hq' || who.role === 'rc' || who.role === 'arc')) return err('Not allowed', 403);
+        const region = String(url.searchParams.get('region') || who.region || '').toUpperCase();
+        try {
+          if (path === '/api/narratives' && method === 'GET') { const { sum } = await loadSummary(env, CURRENT_YEAR); const r = await listNarr(env, who, region, sum); return r.error ? err(r.error, r.status || 422) : json(r); }
+          if (path === '/api/narratives/school' && method === 'GET') { const r = await getNarr(env, who, url.searchParams.get('school') || ''); return r.error ? err(r.error, r.status || 422) : json(r); }
+          if (path === '/api/narratives' && method === 'POST') { const r = await saveNarr(env, who, await request.json().catch(() => ({}))); return r.error ? err(r.error, r.status || 422) : json(r); }
+          if (path === '/api/narratives/compiled' && method === 'GET') {
+            const regs = url.searchParams.get('region') ? [region] : (who.role === 'hq' ? REGIONS : [who.region]); const { sum } = await loadSummary(env, CURRENT_YEAR);
+            const plans = Object.fromEntries(await Promise.all(regs.map(async (r) => [r, await getPlan(env, r)])));
+            return new Response(await compiledHtml(env, who, regs, sum, plans, eatToday()), { headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' } });
+          }
+        } catch (e) { return err(String(e.message || e), 500); }
+        return err('Not found', 404);
+      }
       // ---------- reports: HQ (all levels) and RCs for their own region; not ARCs or volunteers ----------
       if (path.startsWith('/api/reports')) {
-        if (!(who.role === 'hq' || who.role === 'rc')) return err('Reports are for HQ and Regional Coordinators', 403);
-        const scope = who.role === 'rc' ? who.region : null;
+        if (!(who.role === 'hq' || who.role === 'rc' || who.role === 'arc')) return err('Reports are for HQ and the coordinators', 403);
+        const scope = who.role === 'hq' ? null : who.region;
         const ctxFor = async (params) => { const ld = await loadSummary(env, params.year || null); const plans = Object.fromEntries(await Promise.all(REGIONS.map(async (r) => [r, await getPlan(env, r)]))); return { sum: ld.sum, year: ld.year, rehearsal: ld.rehearsal, queries: await loadQueries(env), plans, today: eatToday() }; };
-        if (path === '/api/reports/templates') return json({ templates: TEMPLATES.filter((t) => who.role === 'hq' || t.who === 'both'), scope });
+        if (path === '/api/reports/templates') return json({ templates: TEMPLATES.filter((t) => who.role === 'hq' || (t.who === 'both' && t.rc)), scope });
         if (path === '/api/reports' && method === 'GET') return json({ reports: await listReports(env, who) });
         if (path === '/api/reports/item') { const r = await getReport(env, who, url.searchParams.get('id') || ''); return r ? json(r) : err('Not found', 404); }
         const b = method === 'POST' ? await request.json().catch(() => ({})) : {};
-        if (path === '/api/reports/preview' && method === 'POST') { const t = TEMPLATES.find((x) => x.id === b.template); if (!t || (who.role !== 'hq' && t.who !== 'both')) return err('Choose a report', 422); return json(buildReport(b.template, await ctxFor(b.params || {}), b.params || {}, scope)); }
-        if (path === '/api/reports/save' && method === 'POST') { const t = TEMPLATES.find((x) => x.id === b.template); if (!t || (who.role !== 'hq' && t.who !== 'both')) return err('Choose a report', 422); const built = buildReport(b.template, await ctxFor(b.params || {}), b.params || {}, scope); const r = await saveReport(env, who, b, built); return r.error ? err(r.error, r.status || 422) : json(r); }
+        if (path === '/api/reports/preview' && method === 'POST') { const t = TEMPLATES.find((x) => x.id === b.template); if (!t || (who.role !== 'hq' && !(t.who === 'both' && t.rc))) return err('Choose a report', 422); return json(buildReport(b.template, await ctxFor(b.params || {}), b.params || {}, scope)); }
+        if (path === '/api/reports/save' && method === 'POST') { const t = TEMPLATES.find((x) => x.id === b.template); if (!t || (who.role !== 'hq' && !(t.who === 'both' && t.rc))) return err('Choose a report', 422); const built = buildReport(b.template, await ctxFor(b.params || {}), b.params || {}, scope); const r = await saveReport(env, who, b, built); return r.error ? err(r.error, r.status || 422) : json(r); }
         if (path === '/api/reports/delete' && method === 'POST') { const r = await deleteReport(env, who, b.id); return r.error ? err(r.error, r.status || 422) : json(r); }
       }
       if (path === '/api/news' && method === 'GET') return json(await listNews(env, who));

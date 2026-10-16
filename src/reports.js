@@ -14,13 +14,14 @@ const groupOf = (s) => `${s.arm || ''}${s.mne === 'M&E' ? ' · M&E' : ''}`;
 
 export const TEMPLATES = [
   { id: 'region_progress', title: 'Progress by region', desc: 'Schools complete, pupils tested against the sample, pace and plan status for each region.', who: 'hq', params: ['region'] },
-  { id: 'school_progress', title: 'School progress', desc: 'Every school: visit dates, pupils tested by grade against the sample, and status.', who: 'both', params: ['region'] },
+  { rc: true, id: 'lga_summary', title: 'Summary for the district (local government)', desc: 'For sharing with the District Education Office or council: each school, the dates of the visit, pupils tested by grade against the sample and whether the school is complete. No staff names, no query details.', who: 'both', params: ['region'] },
+  { rc: true, id: 'school_progress', title: 'School progress', desc: 'Every school: visit dates, pupils tested by grade against the sample, and status.', who: 'both', params: ['region'] },
   { id: 'people_quality', title: 'Test admins: speed and quality', desc: 'Pupils tested, average test time, quality score and the checks counted against each person.', who: 'both', params: ['region'] },
   { id: 'submission_timing', title: 'Who sends records early', desc: 'For each person: how many records were sent the same day, one, two and three or more days after the visit, the usual delay and the longest wait.', who: 'both', params: ['region'] },
-  { id: 'queries', title: 'Queries and replies', desc: 'Every check raised, who it is about, its age, whether it was answered, and whether it is overdue (no reply within 2 working days).', who: 'both', params: ['region', 'period'] },
-  { id: 'notices_plan', title: 'Notices and plan compliance', desc: 'Each planned visit: who leads, notice due dates and state for the ward officer and head teacher, team told, and what happened.', who: 'both', params: ['region', 'period'] },
+  { rc: true, id: 'queries', title: 'Queries and replies', desc: 'Every check raised, who it is about, its age, whether it was answered, and whether it is overdue (no reply within 2 working days).', who: 'both', params: ['region', 'period'] },
+  { rc: true, id: 'notices_plan', title: 'Notices and plan compliance', desc: 'Each planned visit: who leads, notice due dates and state for the ward officer and head teacher, team told, and what happened.', who: 'both', params: ['region', 'period'] },
   { id: 'coordinators_work', title: "Coordinators' own work", desc: 'For each RC and ARC: their own tests, schools led, notices on time, plan changes, same-day sends and overdue queries.', who: 'both', params: ['region'] },
-  { id: 'daily_summary', title: 'Daily field summary', desc: 'For one day: each school visited, who tested, and pupils tested by grade.', who: 'both', params: ['region', 'date'] },
+  { rc: true, id: 'daily_summary', title: 'Daily field summary', desc: 'For one day: each school visited, who tested, and pupils tested by grade.', who: 'both', params: ['region', 'date'] },
   { id: 'phones', title: 'Phones', desc: 'Each phone by its short code: records, days, schools, names used and owner.', who: 'hq', params: [] },
 ];
 
@@ -50,6 +51,14 @@ export function buildReport(id, ctx, params = {}, scope = null) {
       rows.push({ region: title(s.region), lga: title(s.lga), ward: title(s.ward || ''), school: String(s.name).trim(), group: groupOf(s), first: s.first || '', last: s.last || '', g1: `${g[1].av}/${g[1].target}`, g2: `${g[2].av}/${g[2].target}`, g3: `${g[3].av}/${g[3].target}`, tested, target, pct: pct(tested, target), status: s.done ? 'Complete' : s.started ? 'Started' : 'Not started' });
     }
     kpis = [{ label: 'Schools', value: rows.length }, { label: 'Complete', value: rows.filter((x) => x.status === 'Complete').length }, { label: 'Started', value: rows.filter((x) => x.status === 'Started').length }, { label: 'Not started', value: rows.filter((x) => x.status === 'Not started').length }];
+  } else if (id === 'lga_summary') {
+    columns = [C('lga', 'District (LGA)'), C('ward', 'Ward'), C('school', 'School'), C('visit', 'Visit date'), C('g1', 'Grade 1 tested / sample'), C('g2', 'Grade 2 tested / sample'), C('g3', 'Grade 3 tested / sample'), C('tested', 'Tested', 'num'), C('target', 'Sample', 'num'), C('status', 'Status')];
+    for (const s of Object.values(sum.schools)) {
+      if (!regs.includes(s.region)) continue; const g = s.g; const tested = g[1].av + g[2].av + g[3].av, target = (g[1].target || 0) + (g[2].target || 0) + (g[3].target || 0);
+      rows.push({ lga: title(s.lga), ward: title(s.ward || ''), school: String(s.name).trim(), visit: s.first ? (s.last && s.last !== s.first ? `${s.first} to ${s.last}` : s.first) : '', g1: `${g[1].av}/${g[1].target}`, g2: `${g[2].av}/${g[2].target}`, g3: `${g[3].av}/${g[3].target}`, tested, target, status: s.done ? 'Complete' : s.started ? 'Started' : 'Not started' });
+    }
+    rows.sort((x, y) => (x.lga + x.ward + x.school).localeCompare(y.lga + y.ward + y.school));
+    kpis = [{ label: 'Schools', value: rows.length }, { label: 'Complete', value: rows.filter((x) => x.status === 'Complete').length }, { label: 'Pupils tested', value: rows.reduce((n, x) => n + x.tested, 0) }];
   } else if (id === 'people_quality') {
     columns = [C('name', 'Name'), C('role', 'Role'), C('region', 'Region'), C('tested', 'Pupils tested', 'num'), C('avg', 'Average test minutes', 'num'), C('quality', 'Quality score', 'num'), C('fast', 'Too fast %', 'pct'), C('slow', 'Too slow', 'num'), C('late', 'After hours', 'num'), C('notlist', 'Not on list', 'num'), C('samp', 'Sampling forms', 'num'), C('schools', 'Schools', 'num'), C('days', 'Days', 'num')];
     for (const a of sum.admins) { if (!adminRegionOk(a, regs)) continue; rows.push({ name: a.name, role: a.position || (a.role === 'unlisted' ? 'Not in roster' : a.role), region: a.region ? title(a.region) : '', tested: a.tested, avg: a.avg_min, quality: a.quality, fast: a.fast_share, slow: a.slow, late: a.late, notlist: a.not_list, samp: a.samp || 0, schools: a.schools, days: a.days }); }
