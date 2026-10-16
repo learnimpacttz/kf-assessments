@@ -68,9 +68,9 @@ const STAGE_TXT = { open: 'Waiting for the response', rework: 'Sent back for rew
 const ACT_TXT = { submitted: 'wrote the response', resubmitted: 'sent the response again', approved: 'approved', edited_approved: 'edited and approved', rejected: 'sent it back', skipped: 'skipped', closed: 'closed it' };
 const wfOf = (f) => (f.q && f.q.wf) || { stage: 'open', history: [] };
 function qAbility(f) {
-  const w = wfOf(f), me = S.who || {}, st = w.stage || 'open', H = w.history || []; const out = { respond: false, review: false };
+  const w = wfOf(f), me = S.who || {}, st = w.stage || 'open', H = w.history || []; const out = { respond: false, review: false, remind: false };
   if (S.viewAs || !me.role) return out;
-  if (st === 'open' || st === 'rework') out.respond = me.role === 'volunteer' ? Boolean(f.admin) && f.admin === me.name : me.role === 'rc' || me.role === 'arc';
+  if (st === 'open' || st === 'rework') { out.respond = me.role === 'volunteer' ? Boolean(f.admin) && f.admin === me.name : (me.role === 'rc' || me.role === 'arc') && !f.vol; out.remind = (me.role === 'rc' || me.role === 'arc') && Boolean(f.vol); }
   else if (st === 'team') out.review = (me.role === 'rc' || me.role === 'arc') && !(w.response && w.response.by_id === me.id);
   else if (st === 'hq1') out.review = me.role === 'hq' && (me.review_level || 0) >= 2;
   else if (st === 'final') out.review = me.role === 'hq' && (me.review_level || 0) >= 3 && !H.some((h) => h.level === 'hq1' && h.action !== 'rejected' && h.by_id === me.hq_id);
@@ -95,7 +95,8 @@ function chainHtml(f) {
   return `<div class="chain" title="${esc(STAGE_TXT[st])}">${steps}</div><div class="m" style="margin:4px 0"><b>${esc(STAGE_TXT[st])}</b></div>${resp}${back}${hist}`;
 }
 function qActions(f) {
-  const a = qAbility(f); if (!f.qk || (!a.respond && !a.review)) return '';
+  const a = qAbility(f); if (f.qk && a.remind) return `<div class="note" style="margin-top:6px">Waiting for ${esc(f.vol_name || f.admin)} to write the first response. You review it after.</div><button class="btn sm sec" data-act="qRemind" data-k="${esc(f.qk)}" style="margin-top:6px">Remind ${esc((f.vol_name || f.admin).split(' ')[0])}</button>`;
+  if (!f.qk || (!a.respond && !a.review)) return '';
   const k = esc(f.qk), w = wfOf(f);
   if (S.qOpen === f.qk) {
     const mode = S.qMode || 'respond'; const pre = mode === 'edit' ? esc(w.response?.text || '') : mode === 'respond' && w.stage === 'rework' ? esc(w.response?.text || '') : '';
@@ -2032,6 +2033,7 @@ document.addEventListener('click', async (e) => {
       catch (er) { const b = $('#plErr'); b.hidden = false; b.innerHTML = esc(er.message) + (er.data?.errors ? '<ul>' + er.data.errors.slice(0, 8).map((x) => '<li>' + esc(x) + '</li>').join('') + '</ul>' : ''); }
     }
     else if (a === 'qOpen') { S.qOpen = t.dataset.k || null; S.qMode = t.dataset.m || 'respond'; render(); $('#qText')?.focus(); }
+    else if (a === 'qRemind') { try { await api('/api/query', { method: 'POST', body: { key: t.dataset.k, action: 'remind' } }); alert('Reminder sent'); await loadData(); } catch (e) { alert(e.message); } render(); }
     else if (a === 'qSubmit' || a === 'qApprove' || a === 'qClose') {
       const m = t.dataset.m; const text = ($('#qText') || {}).value || '';
       let body = { key: t.dataset.k };

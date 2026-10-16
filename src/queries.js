@@ -31,7 +31,8 @@ export function decorate(flags, queries) {
   return flags.map((f) => {
     const k = flagKey(f);
     const q = queries[k];
-    return { ...f, qk: k, q: q ? { status: q.status, thread: q.thread, wf: q.wf ? { stage: q.wf.stage, response: q.wf.response, responder: q.wf.responder, history: q.wf.history, rework_note: q.wf.rework_note } : null } : null };
+    const vst = f.admin ? staffForKoboName(f.admin) : null;
+    return { ...f, qk: k, vol: Boolean(vst && vst.role === 'volunteer'), vol_name: vst && vst.role === 'volunteer' ? vst.name : null, q: q ? { status: q.status, thread: q.thread, wf: q.wf ? { stage: q.wf.stage, response: q.wf.response, responder: q.wf.responder, history: q.wf.history, rework_note: q.wf.rework_note } : null } : null };
   });
 }
 
@@ -46,6 +47,7 @@ const isCoord = (who, region) => (who.role === 'rc' || who.role === 'arc') && (w
 function canRespond(who, ri) {
   if (ri.region === 'TRAINING' && who.role !== 'hq') return 'self';
   if (ri.st && who.id === ri.st.id) return 'self';
+  if (ri.st && ri.st.role === 'volunteer' && isCoord(who, ri.region)) return null; // the volunteer answers first; coordinators review
   if (isCoord(who, ri.region) && (!ri.st || ri.st.role === 'volunteer' || ri.st.role === 'rc' || ri.st.role === 'arc')) return ri.st && ri.st.id !== who.id ? 'behalf' : 'self';
   return null;
 }
@@ -69,7 +71,8 @@ export async function postQuery(env, who, { key, text, action, decision, note })
   if (action === 'respond') {
     const stage = stageOf(q); if (stage !== 'open' && stage !== 'rework') return { error: 'A response is already with the reviewers. Wait for their decision.', status: 409 };
     const t = String(text || '').trim(); if (t.length < 10) return { error: 'Write a meaningful response: what happened and what was done (at least a sentence).', status: 422 };
-    const rel = canRespond(who, ri); if (!rel) return { error: 'The response comes from the person the query is about, or from the region\'s coordinators.', status: 403 };
+    const rel = canRespond(who, ri); if (!rel && ri.st && ri.st.role === 'volunteer' && isCoord(who, ri.region)) return { error: `${ri.st.name} must write the first response. Remind them to open this query and respond, then you review it.`, status: 403 };
+    if (!rel) return { error: 'The response comes from the person the query is about, or from the region\'s coordinators.', status: 403 };
     q.wf = { ...(q.wf || {}), response: { text: t.slice(0, 600), by: who.name, by_id: who.id, role: who.position || who.role, at: now, on_behalf_of: rel === 'behalf' ? ri.st.name : null }, responder: { name: ri.st ? ri.st.name : who.name, role: ri.st ? ri.st.role : who.role }, history: q.wf?.history || [], versions: q.wf?.versions || [] };
     q.wf.versions.push({ at: now, by: who.name, text: t.slice(0, 600) });
     const skip = who.role === 'rc' || who.role === 'arc'; const to = skip ? 'hq1' : 'team'; const from = stage; q.wf.stage = to; q.wf.rework_note = null;
@@ -89,6 +92,12 @@ export async function postQuery(env, who, { key, text, action, decision, note })
       q.wf.stage = next; if (next === 'approved') { q.status = 'resolved'; q.wf.approved_at = now; }
       notify = { to_stage: next, region: ri.region, responder_id: ri.st?.id ?? q.wf.response?.by_id, reviewer: who.name };
     } else return { error: 'Choose approve, reject or edit and approve', status: 422 };
+  } else if (action === 'remind') {
+    if (!isCoord(who, ri.region) && who.role !== 'hq') return { error: 'Only the region\'s coordinators or HQ can send a reminder', status: 403 };
+    if (!ri.st) return { error: 'This query is not about one person, so there is nobody to remind', status: 422 };
+    const st0 = stageOf(q); if (st0 !== 'open' && st0 !== 'rework') return { error: 'A response is already with the reviewers.', status: 409 };
+    q.thread.push({ by: who.name, role: who.role, text: `Reminder sent to ${ri.st.name} to respond`, at: now });
+    notify = { to_stage: 'remind', region: ri.region, responder_id: ri.st.id, reviewer: who.name };
   } else if (action === 'resolve') {
     if (!(who.role === 'hq' && (who.level || 'admin') === 'admin')) return { error: 'Only an HQ Admin can close a query without the review chain. Use the chain: response, review, approval.', status: 403 };
     q.status = 'resolved'; q.wf = { ...(q.wf || {}), stage: 'approved', history: q.wf?.history || [] }; push(q, who, 'admin', 'closed', text || 'Closed by an Admin without the review chain', stageOf(q), 'approved');

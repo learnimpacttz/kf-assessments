@@ -110,7 +110,8 @@ async function notifyQuery(env, n) {
   const ids = (min) => new Set(hq.filter((u) => (u.review_level || 0) >= min).map((u) => 'hq:' + u.id));
   const coord = (w) => (w.role === 'rc' || w.role === 'arc') && w.region === n.region;
   const reg = n.region ? n.region[0] + n.region.slice(1).toLowerCase() : '';
-  if (n.to_stage === 'team') await pushTo(env, (w) => coord(w) && w.id !== n.author_id, { title: 'A response is waiting for your review', body: `A team member answered a query in ${reg}. Approve, edit or send it back.`, url: '/#allq' });
+  if (n.to_stage === 'remind') await pushTo(env, (w) => w.id === n.responder_id, { title: 'A query needs your response', body: `${n.reviewer || 'Your coordinator'} asks you to open the query and write what happened. Your coordinator will then review it.`, url: '/#allq' });
+  else if (n.to_stage === 'team') await pushTo(env, (w) => coord(w) && w.id !== n.author_id, { title: 'A response is waiting for your review', body: `A team member answered a query in ${reg}. Approve, edit or send it back.`, url: '/#allq' });
   else if (n.to_stage === 'hq1') { const s = ids(2); await pushTo(env, (w) => w.role === 'hq' && s.has(w.id), { title: 'First HQ review waiting', body: `A query response from ${reg} is ready for your review.`, url: '/#allq' }); }
   else if (n.to_stage === 'final') { const s = ids(3); await pushTo(env, (w) => w.role === 'hq' && s.has(w.id), { title: 'Final approval waiting', body: `A query response from ${reg} is ready for final approval.`, url: '/#allq' }); }
   else if (n.to_stage === 'rework') await pushTo(env, (w) => w.id === n.responder_id || coord(w), { title: 'Response sent back', body: `${n.reviewer || 'A reviewer'} sent a query response back for rework. Open it to see why.`, url: '/#queries' });
