@@ -91,7 +91,7 @@ export async function postQuery(env, who, { key, text, action, decision, note })
       if (decision === 'edit') { const t = String(text || '').trim(); if (t.length < 10) return { error: 'Write the corrected response (at least a sentence).', status: 422 }; const before = q.wf.response.text; q.wf.response = { ...q.wf.response, text: t.slice(0, 600), edited_by: who.name, edited_at: now }; q.wf.versions.push({ at: now, by: who.name, text: t.slice(0, 600) }); push(q, who, stage, 'edited_approved', t, stage, next, { before: before.slice(0, 600), note: String(note || '').slice(0, 300) }); }
       else push(q, who, stage, 'approved', String(note || '').slice(0, 300), stage, next);
       q.wf.stage = next; if (next === 'approved') { q.status = 'resolved'; q.wf.approved_at = now; }
-      notify = { to_stage: next, region: ri.region, responder_id: ri.st?.id ?? q.wf.response?.by_id, reviewer: who.name };
+      notify = { to_stage: next, region: ri.region, responder_id: ri.st?.id ?? q.wf.response?.by_id, reviewer: who.name, ...(next === 'approved' ? { people: [...new Set([...(q.wf.history || []).map((h) => String(h.by_id)), String(q.wf.response?.by_id), String(ri.st?.id)].filter((x) => x && x !== 'undefined' && x !== 'null'))], school: ri.info.school } : {}) };
     } else return { error: 'Choose approve, reject or edit and approve', status: 422 };
   } else if (action === 'remind') {
     if (!isCoord(who, ri.region) && who.role !== 'hq') return { error: 'Only the region\'s coordinators or HQ can send a reminder', status: 403 };
