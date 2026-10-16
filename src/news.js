@@ -1,7 +1,7 @@
 // News and announcements: messages from HQ (written, polished with AI, sent now or scheduled) and automatic ones
 // (good wishes, reminders, milestones). Everyone signed in sees them in the News tab; a phone alert goes out too.
 import { kv } from './store.js';
-import { REGIONS, FIELD_START, eatToday } from './config.js';
+import { REGIONS, FIELD_START, eatToday, STAFF } from './config.js';
 import { pushTo } from './push.js';
 
 const KEY = 'v2:news';
@@ -40,7 +40,7 @@ function shape(item, who, hq) {
   const counts = {}; let mine = null; const names = {}; const rxList = []; const seenList = hq ? Object.values(item.seen || {}).map((x) => ({ n: x.n, r: x.r || '', p: x.p || '', at: x.at || '' })).sort((a, b) => String(b.at).localeCompare(String(a.at))) : [];
   for (const [uidk, r] of Object.entries(item.rx || {})) { counts[r.e] = (counts[r.e] || 0) + 1; if (uidk === myId(who)) mine = r.e; if (hq) { (names[r.e] ||= []).push(r.n); rxList.push({ e: r.e, n: r.n, r: r.r || '', p: r.p || '', at: r.at || '' }); } }
   const out = { id: item.id, kind: item.kind, kind_label: KINDS[item.kind] || 'Announcement', title: item.title, body: item.body, pinned: item.pinned, sent_at: item.sent_at, counts, mine, auto: item.auto };
-  if (hq) Object.assign(out, { status: item.status, publish_at: item.publish_at, to: item.to, regions: item.regions, push: item.push, by: item.by, names, seen: seenList, reacted: rxList.sort((a, b) => String(b.at).localeCompare(String(a.at))), seed: item.seed || null, created_at: item.created_at });
+  if (hq) Object.assign(out, { status: item.status, publish_at: item.publish_at, to: item.to, regions: item.regions, push: item.push, by: item.by, names, seen: seenList, unseen: hq && item.status === 'sent' ? STAFF.filter((t) => t.active !== false && toOk(item, t) && regionOk(item, t) && !(item.seen || {})[String(t.id)]).map((t) => ({ n: t.name, r: t.region, p: t.position })) : undefined, audience: hq && item.status === 'sent' ? STAFF.filter((t) => t.active !== false && toOk(item, t) && regionOk(item, t)).length : undefined, reacted: rxList.sort((a, b) => String(b.at).localeCompare(String(a.at))), seed: item.seed || null, created_at: item.created_at });
   return out;
 }
 const order = (a, b) => (b.pinned - a.pinned) || ((b.sent_at || b.publish_at || b.created_at || '') > (a.sent_at || a.publish_at || a.created_at || '') ? 1 : -1);
