@@ -1529,6 +1529,8 @@ const HELP = {
   common: [
     ['Install the app on your phone (Android)', '<ol style="margin:4px 0 8px;padding-left:20px"><li>Open the link or scan the QR code below in <b>Chrome</b>. (If you tapped the link inside WhatsApp, Facebook or another app, choose <b>Open in Chrome</b> from its menu first.)</li><li>Enter your access code.</li><li>Tap the menu <b>&#8942;</b> (three dots, top right of Chrome), then <b>Install app</b>, or <b>Add to Home screen</b> if you do not see Install. Tap <b>Install</b>.</li><li>Look for the <b>KiuFunza</b> icon on your home screen or in your apps list. From now on open it from the icon, with no link.</li></ol><p><b>If you do not see Install app:</b> update Chrome from the Play Store, make sure you are in Chrome and not another browser, and try again. In <b>Samsung Internet</b>: menu, <b>Add page to</b>, <b>Home screen</b>.</p><p><b>Alerts:</b> tap the bell icon at the top of the app and choose <b>Allow</b>. If you chose Block by mistake: Settings, Apps, KiuFunza (or Chrome), Notifications, switch on.</p><p><b>Updates:</b> tap the refresh icon at the top, or pull the page down from the top. You do not need to close and reopen the app.</p><p style="margin-top:8px"><img src="/api/qr.png" width="160" height="160" alt="QR code for the dashboard" style="border:1px solid var(--line);background:#fff"><br><span class="m">Scan with your camera to open the dashboard.</span></p>'],
     ['Install the app on your phone (iPhone)', '<ol style="margin:4px 0 8px;padding-left:20px"><li>Open the link in <b>Safari</b>, not inside WhatsApp or another app.</li><li>Enter your access code.</li><li>Tap <b>Share</b> (the square with an arrow), scroll down, tap <b>Add to Home Screen</b>, then <b>Add</b>.</li><li>Open the <b>KiuFunza</b> icon from your home screen. Alerts work only when it is opened from that icon.</li></ol>'],
+    ['Language and appearance', 'Open the account menu (your initials, top right). Under <b>Lugha · Language</b> choose Kiswahili or English (Kiswahili covers the pages for test admins). Under <b>Appearance</b> choose light, dark or automatic.'],
+    ['Messages for you', 'A message from HQ or your coordinator shows at the top of <b>News</b> and as a banner, and you get a phone alert. Press <b>Got it</b> so the sender knows you have read it.'],
     ['What is this?', 'One place for the field work: who is where, which schools are done, what needs a reply, and what is next. It reads the KoBo forms every few minutes. It never shows pupil names.'],
     ['How do I sign in?', 'Use the code you were sent. It is yours alone. Do not share it. If it does not work, ask your RC or HQ for a new one.'],
     ['How do I get alerts on my phone?', 'Press <b>Turn on alerts</b> at the top and allow notifications. On an iPhone, first use Share, then Add to Home Screen, and open the app from there.'],
@@ -1536,6 +1538,8 @@ const HELP = {
     ['What does Treatment, Control and M&E mean?', 'Treatment and Control are the two study groups of schools. M&E is an extra label on some schools that also have monitoring visits or surveys.'],
   ],
   volunteer: [
+    ['Quick start (3 minutes)', '<ol style="margin:4px 0 8px;padding-left:20px"><li>Open the app from its icon and turn on alerts.</li><li><b>My day</b>: your school and today\'s numbers.</li><li>Finish and send every assessment the same day. Never reopen a sent record.</li><li>If a check (query) appears, open <b>My queries</b> and write what happened.</li><li>Stuck? <b>Ask a question</b> (under Today).</li></ol>'],
+    ['Ask a question', 'Open <b>Ask a question</b> (under Today). Choose what it is about, write a sentence or two and press Send. Your coordinator answers first and sends it to HQ if needed. You get an alert when there is an answer. If it is not solved, press <b>Ask again</b>.'],
     ['My day', 'Shows the school you are at today, the sampling status and your own test times. Check it in the morning.'],
     ['Sending your records', 'Turn on auto send in KoBo Collect so records go out the same day. Sent late (2 or more days after the visit) is a check.'],
     ['My queries: how to respond', 'When a check is raised on your records, press <b>Write the response</b> and say in a sentence or two what happened and what was done. Your RC or ARC reviews it, then HQ reviews and approves it. You can see every step and the history. If it is sent back, read the reason and write it again.'],
@@ -1543,6 +1547,9 @@ const HELP = {
     ['Practice', 'Use the TRAINING schools to practice. They do not count in the real numbers.'],
   ],
   rc: [
+    ['Quick start (5 minutes)', '<ol style="margin:4px 0 8px;padding-left:20px"><li>Turn on alerts. Open <b>Region</b> each morning: the prompt at the top lists what to answer and review.</li><li>Submit your plan, then keep notices on time.</li><li>Review your team\'s query responses (<b>Queries</b>, filter I review or respond). Volunteers answer first; remind them if they have not.</li><li>After each visit write a short school report (<b>School reports</b>, Kiswahili or English).</li><li>Message a person or team from their detail view. Answer your team\'s <b>Questions</b>, or send them up to HQ.</li></ol>'],
+    ['Messages and questions', 'Click a name or school and use <b>Send a message</b> for a short note with a phone alert; you see who has read it. Volunteers\' questions arrive under <b>Questions</b>: answer, send to HQ, or close.'],
+    ['School reports', 'After each visit open <b>School reports</b>, choose the school and answer the guiding questions in Kiswahili or English, then <b>Mark complete</b>. At the end the system compiles every school with its numbers. For the pilot schools, RCs and ARCs of both regions can write.'],
     ['Plan and calendar', 'Plan the whole field work before 16 Oct: 2 schools a day is the standard. One or three schools in a day needs a reason. After you submit, a change needs a reason and shows in the history.'],
     ['Notices to schools', 'Ward officers get 5 working days notice and head teachers 3. The tracker has ready messages: copy, send by SMS or WhatsApp, then press Mark sent.'],
     ['Queries: reviewing your team', 'Test admin responses reach you first. Read each, check it makes sense, then <b>Approve</b> (goes to HQ), <b>Edit and approve</b>, or <b>Send back</b> with a reason. Your own queries you answer yourself and they go to HQ. A response is overdue after 2 working days; you get a reminder every day.'],
@@ -1550,6 +1557,8 @@ const HELP = {
     ['Reports', 'RCs can build, edit and download reports for their region (Excel, Word, PDF, CSV).'],
   ],
   hq: [
+    ['Quick start (5 minutes)', '<ol style="margin:4px 0 8px;padding-left:20px"><li><b>Today</b> lists what needs you: reviews, questions, plans, serious checks.</li><li>Approve queries in order: team, then Joram, then Mundo. Nobody closes a query outside the chain.</li><li><b>Questions</b>: answer what the field sends up. <b>Direct messages</b> (Messages): see who has read what.</li><li>Use HQ notes on any person, school, query or request; tag a colleague to alert them.</li><li><b>Usage & analytics</b> shows who is not opening the app. <b>Admin</b> has six sub-pages and <b>Layouts</b>.</li></ol>'],
+    ['Messages, questions and notes', 'Open a person, school or region and use <b>Send a message</b> (phone alert + inbox + read receipt). Field staff and coordinators ask under <b>Questions</b>; answering alerts them. <b>HQ notes</b> are private to HQ and live on people, schools, regions, queries and data-cleaning requests.'],
     ['Today', 'Your start page: queries waiting for your review, plans missing, serious checks and the next scheduled message.'],
     ['Query review (the chain)', 'Test admin writes the response; RC or ARC reviews; the first HQ reviewer (Joram) reviews; the final approver (Mundo) approves. Each step can approve, send back with a reason, or edit and approve. Nothing is deleted: the full history stays. Set who reviews in Admin, HQ team, Query review.'],
     ['News', 'Write a message, polish it with AI, then send now or schedule it. Messages go as phone alerts too.'],
@@ -1834,7 +1843,7 @@ async function formsAction(a, t) {
 }
 
 // ---------- Messages hub (compose, schedule, templates, built-in emails, log) ----------
-const MS_TABS = [['compose', 'Compose'], ['jobs', 'Scheduled and repeating'], ['tpl', 'Templates'], ['builtin', 'Built-in emails'], ['log', 'Sent log']];
+const MS_TABS = [['compose', 'Compose'], ['direct', 'Direct messages'], ['jobs', 'Scheduled and repeating'], ['tpl', 'Templates'], ['builtin', 'Built-in emails'], ['log', 'Sent log']];
 const DOW = [[1, 'Mon'], [2, 'Tue'], [3, 'Wed'], [4, 'Thu'], [5, 'Fri'], [6, 'Sat'], [0, 'Sun']];
 const BUILTIN_TXT = { morning: ['Morning brief and update', 'Progress, plans, calendar changes, checks, today and tomorrow. To HQ and coordinators, Monday to Friday.'], evening: ['End-of-day check', 'Schools that started and are not complete. Field days only. Not sent when nothing is open.'], reminder: ['Reminders', 'Plan not submitted, notices due, queries waiting. Not sent when nothing is due.'] };
 const msBlank = () => ({ id: null, name: '', subject: '', body: '', channels: { email: true, push: false, news: false }, audience: { roles: ['rc', 'arc'], regions: [], people: [] }, schedule: { type: 'now', at: '', time: '08:00', days: [1, 2, 3, 4, 5], from: '', until: '' } });
@@ -1859,7 +1868,7 @@ function viewMessages() {
   const t = M.tab || 'compose'; const d = M.data; const pend = d.jobs.filter((j) => j.status === 'pending').length;
   const bar = `<div class="sel" style="margin:8px 0 12px;flex-wrap:wrap">${MS_TABS.map(([k, n]) => `<button class="btn sm ${k === t ? '' : 'sec'}" data-act="msTab" data-t="${k}">${n}${k === 'jobs' && d.jobs.filter((j) => ['scheduled', 'pending', 'paused'].includes(j.status)).length ? ` (${d.jobs.filter((j) => ['scheduled', 'pending', 'paused'].includes(j.status)).length})` : ''}${k === 'jobs' && pend ? ' ⚑' : ''}</button>`).join('')}</div>`;
   const head = `<div class="pagehead"><div><h2>Messages</h2><p>Write a message, send it now, schedule it once or repeat it. Emails, phone alerts and News all work from here.</p></div></div>${d.sending_on ? '' : '<div class="banner bad"><b>Email sending is switched off in this system.</b> Phone alerts and News still work.</div>'}${M.note ? `<div class="banner" style="background:var(--surface2)">${esc(M.note)}</div>` : ''}`;
-  return head + bar + (t === 'log' ? dmSentCard() : '') + ({ compose: msCompose, jobs: msJobs, tpl: msTpl, builtin: msBuiltin, log: msLog }[t] || msCompose)();
+  return head + bar + ({ direct: dmSentCard, compose: msCompose, jobs: msJobs, tpl: msTpl, builtin: msBuiltin, log: msLog }[t] || msCompose)();
 }
 function msCompose() {
   const M = S.msg, d = M.data, D = M.draft || msBlank(); const can = canWrite(); const sc = D.schedule;
