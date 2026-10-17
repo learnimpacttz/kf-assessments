@@ -20,12 +20,13 @@ const run = async (label, iso, sumDates) => {
 };
 const a = await run('07:30 EAT, nothing yet (too early, team still travelling)', '2026-10-15T04:30:00Z', []);
 const b = await run('09:30 EAT, nothing yet (start 08:00 + 2 h not reached)', '2026-10-15T06:30:00Z', []);
-const c = await run('10:30 EAT, nothing from any of the 5 schools', '2026-10-15T07:30:00Z', []);
-const d = await run('10:30 EAT, 3 of 5 schools have tests today', '2026-10-15T07:30:00Z', [['2026-10-15'], ['2026-10-15'], ['2026-10-15']]);
-const e = await run('10:30 EAT, tests exist but on another day', '2026-10-15T07:30:00Z', [['2026-10-14'], ['2026-10-14'], [], [], []]);
-at('2026-10-15T07:30:00Z'); put('v2:sum:2026', { schools: mk([]), regions: {}, flags: [], national: { records: 1 }, admins: [], work: {} });
+const c = await run('11:30 EAT, nothing from any of the 5 schools', '2026-10-15T08:30:00Z', []);
+const d = await run('11:30 EAT, 3 of 5 schools have tests today', '2026-10-15T08:30:00Z', [['2026-10-15'], ['2026-10-15'], ['2026-10-15']]);
+const e = await run('11:30 EAT, tests exist but on another day', '2026-10-15T08:30:00Z', [['2026-10-14'], ['2026-10-14'], [], [], []]);
+at('2026-10-15T08:30:00Z'); put('v2:sum:2026', { schools: mk([]), regions: {}, flags: [], national: { records: 1 }, admins: [], work: {} });
 const brief = await buildBrief(env, { regions: {}, flags: [], national: { records: 1 }, admins: [] }, '2026-10-15', 'DODOMA');
 console.log('in the briefing:', brief.items.filter((i) => i.kind === 'silent').map((i) => i.text.slice(0, 150)));
 Date.now = realNow;
 const ok = a === 0 && b === 0 && c === 5 && d === 2 && e === 5;
 console.log(ok ? 'ALL PASS' : 'FAILED', { a, b, c, d, e });
+if (!ok) process.exit(1);
