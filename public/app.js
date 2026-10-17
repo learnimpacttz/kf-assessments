@@ -23,7 +23,7 @@ const nextLabel = (d, t) => (new Date(d + 'T00:00:00Z') - new Date(t + 'T00:00:0
 const dayName = (iso) => new Date(iso + 'T00:00:00Z').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' });
 const shortDate = (iso) => (iso ? new Date(iso + 'T00:00:00Z').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' }) : '–');
 const title = (s) => String(s || '').toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
-const FLAG_LABEL = { fast: 'Test too fast', slow: 'Test too slow', window: 'Outside school hours', gps: 'Far from school', skilltime: 'Skills skipped', dup: 'Pupil tested twice', notlist: 'Not on sampling list', latesub: 'Sent late', team: 'Team size', over: 'Over the sample', short: 'Short of the sample', nosample: 'No sampling record', offcal: 'Visited off the calendar', headcount: 'Fewer phones than people', devshare: 'One phone, several names', devowner: 'Someone else\'s phone', devoverlap: 'Tests overlap on one phone', devtravel: 'Phone at two schools too fast', devswitch: 'Phone jumping between grades', devnames: 'Names changing on one phone', namedevs: 'One person, several phones', nameoverlap: 'Same person, tests overlap', devpeople: 'One phone, several people', edited: 'Record changed after it was sent' };
+const FLAG_LABEL = { assign: 'Assigned vs who did the work', fast: 'Test too fast', slow: 'Test too slow', window: 'Outside school hours', gps: 'Far from school', skilltime: 'Skills skipped', dup: 'Pupil tested twice', notlist: 'Not on sampling list', latesub: 'Sent late', team: 'Team size', over: 'Over the sample', short: 'Short of the sample', nosample: 'No sampling record', offcal: 'Visited off the calendar', headcount: 'Fewer phones than people', devshare: 'One phone, several names', devowner: 'Someone else\'s phone', devoverlap: 'Tests overlap on one phone', devtravel: 'Phone at two schools too fast', devswitch: 'Phone jumping between grades', devnames: 'Names changing on one phone', namedevs: 'One person, several phones', nameoverlap: 'Same person, tests overlap', devpeople: 'One phone, several people', edited: 'Record changed after it was sent' };
 
 // ---------- shared pieces ----------
 const kpi = (l, v, s = '', go = '') => `<div class="kpi${go ? ' click' : ''}"${go ? ` data-tab="${go}" title="Open"` : ''}><div class="l">${l}</div><div class="v num">${v}</div><div class="s">${s}</div></div>`;
@@ -123,6 +123,21 @@ function phoneHelp(f) {
   const h = PHONE_HELP[f.type]; if (!h) return '';
   return `<details class="fd ph"><summary>What does this mean?</summary><div class="phbox"><p><b>What we saw.</b> ${esc(h.what)}</p><p><b>Why we check.</b> ${esc(h.why)}</p><p><b>It may be harmless if.</b> ${esc(h.ok)}</p><p><b>What to do.</b> ${esc(h.todo)}</p><p class="sw"><b>Kwa kifupi.</b> ${esc(h.sw)}</p></div></details>`;
 }
+// Where to go to put the problem right: each query type links to the page that holds the real fix
+const PHONE_T = new Set(['devoverlap', 'devshare', 'devowner', 'devtravel', 'devswitch', 'devnames', 'namedevs', 'nameoverlap', 'devpeople', 'headcount']);
+function fixLinks(f) {
+  const has = (tab) => (TABS[roleKey()] || []).some((t) => t[0] === tab) && tabAllowed(tab); const out = [];
+  const clean = (mode, kind, label) => { if (has('clean') && S.who.role !== 'volunteer' && !S.viewAs) out.push(`<button class="btn sm sec" data-act="fixClean" data-mode="${mode}" data-kind="${kind}" data-school="${esc(f.school)}" data-date="${esc(f.date || '')}" data-grade="${esc(f.grade || '')}" data-stu="${esc(((f.recs || [])[0] || [])[0] || '')}">${label}</button>`); };
+  const tab = (k, label) => { if (has(k)) out.push(`<button class="btn sm ghost" data-tab="${k}">${label}</button>`); };
+  if (f.type === 'dup') { clean('edit', 'students', 'Suggest correcting the pupil number'); clean('delete', 'students', 'Suggest deleting one record'); tab('pupils', 'Open the pupil records'); }
+  else if (f.type === 'nosample') { clean('delete', 'sampling', 'Look at the sampling records'); }
+  else if (f.type === 'assign') { tab(PILOT_IDS.has(f.school) ? 'pilot' : 'plan', PILOT_IDS.has(f.school) ? 'Open the pilot day page' : 'Open the plan'); }
+  else if (f.type === 'offcal' || f.type === 'team') tab('plan', 'Open the plan and calendar');
+  else if (PHONE_T.has(f.type) || f.type === 'devtravel') tab('phones', 'Open the phones page');
+  else if (['fast', 'slow', 'skilltime', 'window', 'gps', 'notlist', 'edited'].includes(f.type)) tab('pupils', 'Open the pupil records');
+  return out.length ? `<div class="fixrow" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px"><span class="m" style="align-self:center">Fix it:</span>${out.join('')}</div>` : '';
+}
+const PILOT_IDS = new Set(['PS0302005', 'PS0302057', 'PS0302041', 'PS0302023', 'PS0302089']);
 function flagList(all, { limit = 8, names = true, closed = false } = {}) {
   const flags = closed ? all.slice() : all.filter(isOpen);
   if (!flags.length) return '<div class="empty">No open flags. Nothing needs a call right now.</div>';
@@ -130,7 +145,7 @@ function flagList(all, { limit = 8, names = true, closed = false } = {}) {
   const one = (f) => {
     const thread = f.q && f.q.thread.length ? `<div class="thread">${f.q.thread.map((m) => `<div><b>${esc(m.by)}</b> <span>${fmtAt(m.at)}</span><br>${esc(m.text)}</div>`).join('')}</div>` : '';
     const box = qActions(f);
-    return `<div class="flag ${isOpen(f) ? 'openq' : 'doneq'}"><i class="st ${f.sev}"></i><div style="min-width:0;flex:1"><b>${esc(f.school_name || f.school)} · ${esc(FLAG_LABEL[f.type] || f.type)}${isOpen(f) && f.qk ? (() => { const ab = qAbility(f); return ab.review ? ' <span class="pill good">I review</span>' : ab.respond ? ' <span class="pill warn">I respond</span>' : ''; })() : ''}</b><span>${esc(f.region ? title(f.region) + ' · ' : '')}${esc(f.lga ? title(f.lga) + ' · ' : '')}${f.grade ? 'Grade ' + f.grade + ' · ' : ''}${esc(f.text)}${names && f.admin ? ' · ' + esc(f.admin) : ''}${f.date ? ' · ' + shortDate(f.date) : ''}</span>${f.hint ? `<span class="ft">${esc(f.hint)}</span>` : ''}${phoneHelp(f)}${thread}<details class="fd"><summary>Details to find the records</summary>${flagDetail(f)}</details>${f.qk ? chainHtml(f) : ''}${f.qk ? box : ''}</div></div>`;
+    return `<div class="flag ${isOpen(f) ? 'openq' : 'doneq'}"><i class="st ${f.sev}"></i><div style="min-width:0;flex:1"><b>${esc(f.school_name || f.school)} · ${esc(FLAG_LABEL[f.type] || f.type)}${isOpen(f) && f.qk ? (() => { const ab = qAbility(f); return ab.review ? ' <span class="pill good">I review</span>' : ab.respond ? ' <span class="pill warn">I respond</span>' : ''; })() : ''}</b><span>${esc(f.region ? title(f.region) + ' · ' : '')}${esc(f.lga ? title(f.lga) + ' · ' : '')}${f.grade ? 'Grade ' + f.grade + ' · ' : ''}${esc(f.text)}${names && f.admin ? ' · ' + esc(f.admin) : ''}${f.date ? ' · ' + shortDate(f.date) : ''}</span>${f.hint ? `<span class="ft">${esc(f.hint)}</span>` : ''}${fixLinks(f)}${phoneHelp(f)}${thread}<details class="fd"><summary>Details to find the records</summary>${flagDetail(f)}</details>${f.qk ? chainHtml(f) : ''}${f.qk ? box : ''}</div></div>`;
   };
   return flags.slice(0, limit).map(one).join('') + (flags.length > limit ? `<div class="note">+ ${flags.length - limit} more in the data explorer.</div>` : '');
 }
@@ -1793,10 +1808,12 @@ function delNew() {
   const schools = schoolsAll().filter((s) => !String(s.id).startsWith('TRAIN') || true);
   const rows = F ? F.records.map((r) => `<tr><td><input type="checkbox" data-dsel="${r.id}" ${C.sel?.includes(r.id) ? 'checked' : ''} ${r.pending ? 'disabled' : ''}></td><td class="num">${r.id}</td><td>${esc(r.grade)}</td><td>${esc(r.date)}</td><td>${esc(r.enumerator)}</td><td class="num">${esc(r.stuid || r.att || '')}</td><td>${esc(r.at)}</td><td>${r.pending ? chip('in a request', 'warn') : ''}</td></tr>`).join('') : '';
   const mode = C.mode || 'delete'; const sel = C.sel || [];
-  const fld = C.editField || 'grade';
-  const editBox = mode === 'edit' && F ? `<div class="mf" style="display:flex;gap:10px;flex-wrap:wrap;align-items:end"><label>What to change<select id="dfField" data-act="dfField">${[['grade', 'Grade'], ['pupil', 'Pupil number / ID'], ['tester', 'Test administrator name'], ['school', 'School']].filter(([k]) => !(k === 'pupil' && F.kind === 'sampling')).map(([k, t]) => `<option value="${k}" ${fld === k ? 'selected' : ''}>${t}</option>`).join('')}</select></label>
+  const fld = C.editField || 'school';
+  const editBox = mode === 'edit' && F ? `<div class="mf" style="display:flex;gap:10px;flex-wrap:wrap;align-items:end"><label>What to change<select id="dfField" data-act="dfField">${[['school', 'School'], ['grade', 'Grade'], ['tester', 'Test administrator (who did the test)'], ['lga', 'District (LGA)'], ['region', 'Region'], ['pupil', 'Pupil number / ID']].filter(([k]) => !(k === 'pupil' && F.kind === 'sampling')).map(([k, t]) => `<option value="${k}" ${fld === k ? 'selected' : ''}>${t}</option>`).join('')}</select></label>
     ${fld === 'grade' ? `<label>New grade<select id="dfValue"><option>1</option><option>2</option><option>3</option></select></label>` : ''}
     ${fld === 'tester' ? `<label>New name (as in the roster)<input id="dfValue" list="dfStaff" placeholder="Type the name"></label><datalist id="dfStaff">${(S.staffNames || []).map((n) => `<option value="${esc(n)}">`).join('')}</datalist>` : ''}
+    ${fld === 'region' ? `<label>Correct region<select id="dfValue">${S.cfg.regions.map((r) => `<option value="${esc(r)}">${esc(title(r))}</option>`).join('')}</select></label>` : ''}
+    ${fld === 'lga' ? `<label>Correct district (LGA)<input id="dfValue" list="dfLgas" placeholder="Type the LGA"></label><datalist id="dfLgas">${[...new Set(schoolsAll().map((x) => x.lga).filter(Boolean))].sort().map((l) => `<option value="${esc(l)}">`).join('')}</datalist>` : ''}
     ${fld === 'school' ? `<label>Correct school<input id="dfValue" list="dfSchools" placeholder="School name or code"></label>` : ''}</div>
     ${fld === 'pupil' ? `<div class="m">New pupil number for each ticked record:</div>${sel.map((id) => `<div class="m">Record ${id} <input type="number" min="1" max="400" data-dpn="${id}" style="width:80px"></div>`).join('') || '<div class="m">Tick the records first.</div>'}` : ''}
     ${fld === 'grade' ? '<div class="note">Only the grade label and the pupil ID change. The questions the pupil was asked do not change, so use this only when the wrong grade was recorded by mistake.</div>' : ''}` : '';
@@ -2070,6 +2087,12 @@ document.addEventListener('click', async (e) => {
     else if (a === 'wkx') await workToggle(t);
     else if (/^pil[A-Z]/.test(a)) await pilotAction(a, t);
     else if (/^pu[A-Z]/.test(a)) await pupilAction(a);
+    else if (a === 'fixClean') {
+      const C = (S.cl ||= {}); C.mode = t.dataset.mode; C.form = { kind: t.dataset.kind, school: t.dataset.school, date: t.dataset.date, grade: t.dataset.grade, stuid: t.dataset.mode === 'edit' || t.dataset.mode === 'delete' ? t.dataset.stu : '', dups: false }; C.found = null; C.sel = []; C.msg = 'Searching…';
+      await selectTab('clean');
+      try { const f = C.form; const q = new URLSearchParams({ kind: f.kind, school: f.school, ...(f.date ? { date: f.date } : {}), ...(f.grade ? { grade: f.grade } : {}), ...(f.stuid ? { stuid: f.stuid } : {}) }); C.found = await api('/api/deletions/find?' + q); C.sel = []; C.msg = C.found.records.length ? 'Tick the record to correct or remove.' : ''; if (C.mode === 'edit') C.editField = 'pupil'; } catch (e) { C.msg = e.message; }
+      render();
+    }
     else if (/^dl[A-Z]/.test(a)) await cleanAction(a, t);
     else if (/^nr[A-Z]/.test(a)) await narrAction(a, t);
     else if (/^ms[A-Z]/.test(a)) await msAction(a, t);

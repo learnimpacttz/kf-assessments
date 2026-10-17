@@ -106,3 +106,5 @@ export async function pilotSet(env, who, b) {
   }
   return { ok: true, changed: changes.length };
 }
+
+export async function pilotGrades(env) { return (await load(env)).grades || {}; } // school -> { staff id -> grade placed }

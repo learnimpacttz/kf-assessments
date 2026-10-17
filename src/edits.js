@@ -1,10 +1,10 @@
 // Correcting submitted records (grade, pupil number/ID, tester name, school) through the same approval chain as deletions.
 // The change is made through KoBo's data interface, every record is read back and checked, and the originals are saved first.
 import { kv } from './store.js';
-import { SCHOOL_BY_ID, staffForKoboName } from './config.js';
+import { SCHOOL_BY_ID, REGIONS, staffForKoboName } from './config.js';
 
 export const FIELDS = {
-  grade: 'Grade', pupil: 'Pupil number / ID', tester: 'Test administrator name', school: 'School',
+  grade: 'Grade', lga: 'District (LGA)', region: 'Region', pupil: 'Pupil number / ID', tester: 'Test administrator name', school: 'School',
 };
 const sfx = (r, s) => { for (const k in r) if (k === s || k.endsWith('/' + s)) return r[k]; return undefined; };
 const keysEnding = (r, s) => Object.keys(r).filter((k) => k === s || k.endsWith('/' + s));
@@ -28,6 +28,8 @@ export function patchFor(kind, field, rec, to) {
     if (rec.stuid) { const s = String(rec.stuid); const old = pad3(rec.rand_long ?? sfx(rec, 'rand_nr')); if (s.endsWith(old)) d.stuid = s.slice(0, s.length - 3) + rl; }
   } else if (field === 'tester') {
     for (const k of keysEnding(rec, 'enumerator')) d[k] = String(to);
+  } else if (field === 'lga' || field === 'region') {
+    for (const k of keysEnding(rec, field)) if (/^id_data\//.test(k) || k === field) d[k] = String(to);
   }
   return Object.fromEntries(Object.entries(d).filter(([k, v]) => String(rec[k] ?? '') !== String(v)));
 }
@@ -37,6 +39,8 @@ export function checkEdit(b, kind, who) {
   const field = b.field; if (!FIELDS[field]) return { error: 'Choose what to change' };
   if (kind === 'sampling' && field === 'pupil') return { error: 'Pupil numbers exist only in the Students project' };
   if (field === 'grade') { if (!['1', '2', '3'].includes(String(b.value))) return { error: 'The grade must be 1, 2 or 3' }; return { edit: { field, value: String(b.value) } }; }
+  if (field === 'region') { const v = String(b.value || '').toUpperCase(); if (!REGIONS.includes(v)) return { error: 'Choose a real region' }; if (who.role !== 'hq' && v !== who.region) return { error: 'You can only use your own region', status: 403 }; return { edit: { field, value: v } }; }
+  if (field === 'lga') { const v = String(b.value || '').trim().toUpperCase(); if (!Object.values(SCHOOL_BY_ID).some((x) => String(x.lga).toUpperCase() === v)) return { error: 'That district is not on the school list. Type it exactly as listed.' }; return { edit: { field, value: Object.values(SCHOOL_BY_ID).find((x) => String(x.lga).toUpperCase() === v).lga } }; }
   if (field === 'tester') { const st = staffForKoboName(String(b.value || '')); if (!st) return { error: 'That name is not on the staff list. Type it exactly as in the roster.' }; return { edit: { field, value: st.name } }; }
   if (field === 'school') {
     const s = SCHOOL_BY_ID[String(b.value || '')]; if (!s) return { error: 'The school must be a real school code' };
@@ -48,7 +52,7 @@ export function checkEdit(b, kind, who) {
   return { edit: { field, values: vals } };
 }
 const toOf = (edit, id) => (edit.field === 'pupil' ? edit.values[id] : edit.value);
-export const describe = (edit, it) => (edit.field === 'grade' ? `Grade ${it.grade} to ${edit.value}` : edit.field === 'tester' ? `${it.enumerator} to ${edit.value}` : edit.field === 'school' ? `${it.school_name || it.school} to ${SCHOOL_BY_ID[edit.value]?.name}` : `Pupil ${it.rand || it.stuid} to ${edit.values[it.id]}`);
+export const describe = (edit, it) => (edit.field === 'grade' ? `Grade ${it.grade} to ${edit.value}` : edit.field === 'tester' ? `${it.enumerator} to ${edit.value}` : edit.field === 'region' || edit.field === 'lga' ? `${edit.field === 'lga' ? 'District' : 'Region'} to ${edit.value}` : edit.field === 'school' ? `${it.school_name || it.school} to ${SCHOOL_BY_ID[edit.value]?.name}` : `Pupil ${it.rand || it.stuid} to ${edit.values[it.id]}`);
 
 // Carry out an approved edit request. Returns { ok, done[], failed[] }.
 export async function runEdit(env, who, r, recs, schoolMover) {

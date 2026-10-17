@@ -16,6 +16,7 @@ import { loadFormJob, saveFormJob, runFormJob, maybeRunFormJob } from './formjob
 import { kv } from './store.js';
 import { buildBrief, aiBrief } from './brief.js';
 import { ask as askAssistant, draftReportText } from './assistant.js';
+import { assignFlags } from './assign.js';
 import { listNarr, getNarr, saveNarr, compiledHtml } from './narratives.js';
 import { TEMPLATES, buildReport, listReports, getReport, saveReport, deleteReport } from './reports.js';
 import { loadHq, hqChange, hqList, hqByCode, codeFor, levelGate, applySettings, settingsView, saveSettings, logActivity, readActivity, activityLabel, BRAND, assistantName } from './hq.js';
@@ -66,6 +67,7 @@ async function loadSummary(env, wanted) {
     const earlier = years.filter((y) => y !== CURRENT_YEAR).pop();
     if (earlier) { year = earlier; sum = await readSummary(env, year); }
   }
+  if (sum && year === CURRENT_YEAR) { try { sum = { ...sum, flags: [...(sum.flags || []), ...(await assignFlags(env, sum, eatToday()))] }; } catch { /* the other checks still show */ } }
   return { years, sum, year, rehearsal: year !== CURRENT_YEAR };
 }
 

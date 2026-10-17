@@ -177,6 +177,7 @@ export function summarize(Y, { year, bands, today, owners = {}, practice = false
     if (!sc.dates.includes(date)) sc.dates.push(date);
     if (enumerator && !sc.admins.includes(enumerator)) sc.admins.push(enumerator);
     if (enumerator) { const da = (sc.dayAdmins[date] ||= []); if (!da.includes(enumerator)) da.push(enumerator); }
+    if (enumerator && c.av > 0) { const dg = ((sc.dayGrade ||= {})[date] ||= {}); const gl = (dg[grade] ||= []); if (!gl.includes(enumerator)) gl.push(enumerator); }
     (visitTeam[schoolId + '|' + date] ||= new Set()).add(enumerator);
     const d = ((daily[date] ||= {})[sc.region] = (daily[date][sc.region] || 0) + c.av);
     void d;
