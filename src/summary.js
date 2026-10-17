@@ -237,7 +237,14 @@ export function summarize(Y, { year, bands, today, owners = {}, practice = false
     }
     const dupNums = [...seen.entries()].filter(([, v]) => v > 1).map(([k]) => k);
     const dups = dupNums.length;
-    if (dups) flags.push({ sev: 'bad', type: 'dup', recs: sg.rn.filter((e) => dupNums.includes(+e.split('~')[0])).slice(0, 10).map((e) => { const p = e.split('~'); return [p[2] || '', +p[0], '', '', '', p[3] ? +p[3] : '']; }), normal: 'each pupil number once', school: schoolId, grade: +grade, admin: sc.admins[0] || '', date: sc.dates.slice(-1)[0], text: `${dups} pupil number(s) tested twice in Grade ${grade}`, hint: 'Look for a repeated pupil.' });
+    if (dups) { // one flag for each person whose record is one of the repeats, so each answers for their own record
+      const drec = sg.rn.filter((e) => dupNums.includes(+e.split('~')[0])); const who = [...new Set(drec.map((e) => e.split('~')[1]).filter(Boolean))];
+      for (const person of (who.length ? who : [sc.admins[0] || ''])) {
+        const mineRecs = drec.filter((e) => !person || e.split('~')[1] === person); const nums = new Set(mineRecs.map((e) => +e.split('~')[0]));
+        const withOthers = who.filter((x) => x !== person);
+        flags.push({ sev: 'bad', type: 'dup', recs: drec.filter((e) => nums.has(+e.split('~')[0])).slice(0, 10).map((e) => { const p = e.split('~'); return [p[2] || '', +p[0], '', '', '', p[3] ? +p[3] : '']; }), normal: 'each pupil number once', school: schoolId, grade: +grade, admin: person, date: sc.dates.slice(-1)[0], text: `${nums.size} pupil number(s) tested twice in Grade ${grade}${withOthers.length ? ' (the same pupil number was also tested by ' + withOthers.join(' and ') + ')' : ''}`, hint: 'Look for a repeated pupil.' });
+      }
+    }
     if (hasSampling && notList >= 3) flags.push({ sev: 'warn', type: 'notlist', recs: offRecs.slice(0, 10), normal: 'drawn numbers: ' + (sg.list || []).slice(0, 20).join(', '), school: schoolId, grade: +grade, admin: Object.keys(byAdmin)[0] || '', date: sc.dates.slice(-1)[0], text: `${notList} pupil(s) not on the sampling list in Grade ${grade}`, hint: 'The pupil was not drawn by the app. Replace or explain.' });
   }
 

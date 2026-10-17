@@ -171,6 +171,11 @@ export async function koboForm(env, b) {
       return { ok: pr.status < 300 && !wrong.length, mismatches: wrong, edit_trace: { deprecatedID: after['meta/deprecatedID'] || null, last_edited: after._last_edited || null }, log };
     } finally { const d = await fetch(`${srv}/api/v2/assets/${t.uid}/`, { method: 'DELETE', headers: H }); log.push('cleanup ' + d.status); }
   }
+  if (b.op === 'record_brief') { // read only: who, which phone, when, for named records (no pupil answers)
+    if (!known.includes(b.asset)) throw new Error('Only the KiuFunza projects');
+    const out = []; for (const id of (b.ids || []).slice(0, 30)) { const r = await fetch(`${srv}/api/v2/assets/${b.asset}/data/${Number(id)}/?format=json`, { headers: H }); if (!r.ok) { out.push({ id, error: r.status }); continue; } const x = await r.json(); out.push({ id: x._id, enumerator: x['id_data/enumerator'], device: x.deviceid, school: x['id_data/school'], grade: x['id_data/grade'], grade_conf: x['stu_info/grade_conf'], pupil: x['stu_info/rand_nr'], stuid: x.stuid, start: x.start, end: x.end, sent: x._submission_time, testtime: x['end_note_gr/testtime'], submitted_by: x._submitted_by, edited: x['meta/deprecatedID'] || null, avail: x.stu_avail }); }
+    return { records: out };
+  }
   if (b.op === 'tail_view') { // read only: the newest records of a form for one day, with the fields that show where they belong (no pupil answers)
     if (!known.includes(b.asset)) throw new Error('Only the KiuFunza projects');
     const c0 = await (await fetch(`${srv}/api/v2/assets/${b.asset}/data/?format=json&limit=1`, { headers: H })).json(); const total = c0.count || 0; const n = b.tail || 300;
