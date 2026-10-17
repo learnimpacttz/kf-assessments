@@ -309,3 +309,12 @@ details.fd>summary.need-l::marker{color:var(--bad)}
 #nav2{flex:0 0 100%;order:20;display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;margin-top:0;padding-bottom:1px}#nav2::-webkit-scrollbar{display:none}#nav2 button{flex:none;white-space:nowrap}
 
 .top .in{flex-wrap:wrap;row-gap:4px}
+
+/* logo and name on the left; light, date, search, refresh, alerts and account on the right */
+.top .in>img,.top .in>.brand{order:0}
+.top #nav{order:5;margin-left:8px}
+.top .in>#net{order:10;margin-left:auto}
+.top .in>#tdate,.top .in>#gswrap,.top .in>#gsb,.top .in>#who{order:10}
+.top .who{margin-left:0}
+
+@media(min-width:721px){.top #nav{flex:0 1 auto;min-width:0;order:5}}
