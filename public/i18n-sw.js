@@ -1,5 +1,11 @@
 // Kiswahili sanifu for the volunteer pages. Exact phrases first, then patterns for sentences with numbers.
 window.SW_EXACT = {
+"Guides and manuals":"Miongozo na vitabu",
+"Download them to your phone or computer. They open in Word or any document reader.":"Zipakue kwenye simu au kompyuta yako. Hufunguka kwenye Word au programu yoyote ya kusoma nyaraka.",
+"User guide":"Mwongozo wa mtumiaji",
+"Field operations manual":"Kitabu cha uendeshaji wa kazi ya uwandani",
+"Quick start":"Mwongozo wa haraka",
+"Download":"Pakua",
 "Quick start (3 minutes)":"Mwanzo wa haraka (dakika 3)",
 "Open the app from its icon and turn on alerts.":"Fungua programu kwa alama yake na uwashe arifa.",
 "My day":"Siku yangu",

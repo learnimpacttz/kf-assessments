@@ -293,6 +293,16 @@ export default {
         } catch (e) { return err(String(e.message || e), 500); }
         return err('Not found', 404);
       }
+      // ---------- guides and manuals (staff only; kept inside the system, not on a public link) ----------
+      if (path === '/api/docs') { const meta = (await kv(env).get('v2:docs')) || {}; return json({ docs: Object.entries(meta).filter(([, m]) => !m.hq_only || who.role === 'hq').map(([id, m]) => ({ id, ...m })).sort((a, b) => (a.order || 9) - (b.order || 9)) }); }
+      if (path === '/api/docs/file') { const id = (url.searchParams.get('id') || '').replace(/[^a-z]/g, ''); const meta = ((await kv(env).get('v2:docs')) || {})[id]; const buf = meta && (!meta.hq_only || who.role === 'hq') && env.DASHBOARD_KV ? await env.DASHBOARD_KV.get('doc:' + id, 'arrayBuffer') : null; if (!buf) return err('Not found', 404); return new Response(buf, { headers: { 'content-type': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'content-disposition': `attachment; filename="${meta.filename}"`, 'cache-control': 'no-store' } }); }
+      if (path === '/api/admin/doc' && method === 'POST') {
+        if (!(who.role === 'hq' && (who.level || 'admin') === 'admin' && !who.viewAs)) return err('Only an HQ Admin can publish documents', 403);
+        const id = (url.searchParams.get('id') || '').replace(/[^a-z]/g, ''); if (!id) return err('Give an id', 422); const buf = await request.arrayBuffer(); if (!buf.byteLength || buf.byteLength > 20 * 1024 * 1024) return err('The file is empty or too large', 422);
+        await env.DASHBOARD_KV.put('doc:' + id, buf); const meta = (await kv(env).get('v2:docs')) || {};
+        meta[id] = { title: url.searchParams.get('title') || id, version: url.searchParams.get('version') || '', filename: (url.searchParams.get('filename') || id + '.docx').replace(/[^A-Za-z0-9._\- ]/g, ''), order: Number(url.searchParams.get('order')) || 9, hq_only: url.searchParams.get('hq') === '1', size: buf.byteLength, updated: new Date().toISOString(), by: who.name };
+        await kv(env).put('v2:docs', meta); return json({ ok: true, id, size: buf.byteLength });
+      }
       // ---------- guest pages: public-facing reports only ----------
       if (path === '/api/guest/reports') { return json({ reports: GUEST_REPORTS.map((id) => { const t = TEMPLATES.find((x) => x.id === id); return { id, title: t?.title || id, desc: t?.desc || '' }; }), can_download: Boolean(who.can_download) }); }
       if (path === '/api/guest/report') {

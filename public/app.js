@@ -1570,11 +1570,18 @@ const HELP = {
     ['Activity log', 'Every change by an HQ person is logged with who and when. Look in Admin.'],
   ],
 };
+async function loadDocs() { try { S.docs = (await api('/api/docs')).docs; } catch { S.docs = []; } if (S.tab === 'help') render(); }
+function docsCard() {
+  if (!S.who || isGuest()) return ''; if (!S.docs) { loadDocs(); return ''; } if (!S.docs.length) return '';
+  const DT = { guide: 'User guide', manual: 'Field operations manual', quick: 'Quick start', guideh: 'User guide (HQ edition, with HQ and admin sections)', manualh: 'Operations manual (HQ edition, confidential)', quickh: 'Quick start (HQ edition, includes the HQ page)' };
+  return `<div class="card" style="margin-top:14px"><h3>Guides and manuals</h3><div class="sub">Download them to your phone or computer. They open in Word or any document reader.</div>${S.docs.map((d) => `<div class="flag"><i class="st good"></i><div style="flex:1"><b>${esc(DT[d.id] || d.title)}</b><span>${d.version ? esc(d.version) + ' · ' : ''}${d.size ? Math.round(d.size / 1024) + ' KB' : ''}</span></div><button class="btn sm" data-act="docGet" data-id="${esc(d.id)}">Download</button></div>`).join('')}</div>`;
+}
 function viewHelp() {
   const role = roleKey(); const mk = (list) => list.map(([q, a]) => `<details class="fd helpq"><summary><b>${q}</b></summary><div class="phbox">${a}</div></details>`).join('');
   const mine = HELP[role] || [];
   return `<div class="pagehead"><div><h2>Help</h2><p>Short answers in plain words. Open any question.</p></div></div>
   ${mine.length ? `<div class="card"><h3>For your role</h3>${mk(mine)}</div>` : ''}<div class="card" style="margin-top:14px"><h3>For everyone</h3>${mk(HELP.common)}</div>
+  ${docsCard()}
   <div class="card" style="margin-top:14px"><h3>Still stuck?</h3><div class="sub">Use Ask a question (under Today) or tell your Regional Coordinator. RCs tell HQ.</div></div>`;
 }
 
@@ -2444,6 +2451,7 @@ document.addEventListener('click', async (e) => {
     }
     else if (a === 'askAct') { const tx = (document.getElementById('aq-' + t.dataset.id) || {}).value || ''; try { await api('/api/ask', { method: 'POST', body: { action: t.dataset.op, id: t.dataset.id, text: tx } }); } catch (e) { alert(e.message); } await loadAsk(); }
     else if (a === 'qaF') { S.qaF = t.dataset.v; render(); }
+    else if (a === 'docGet') { try { const res = await fetch('/api/docs/file?id=' + encodeURIComponent(t.dataset.id), { headers: { 'x-access-code': S.code } }); if (!res.ok) throw new Error('Could not download'); const blob = await res.blob(); const d = (S.docs || []).find((x) => x.id === t.dataset.id) || {}; const a2 = document.createElement('a'); a2.href = URL.createObjectURL(blob); a2.download = d.filename || 'document.docx'; a2.click(); } catch (e) { alert(e.message); } }
     else if (a === 'usFilter') { S.usF = t.dataset.v; render(); }
     else if (a === 'lyMove') { const E = S.lyEdit[t.dataset.r]; const o = E.order; const i = o.indexOf(t.dataset.k); const j = i + Number(t.dataset.d); if (i >= 0 && j >= 0 && j < o.length) { [o[i], o[j]] = [o[j], o[i]]; } render(); }
     else if (a === 'lySave' || a === 'lyReset') { const r = t.dataset.r; const E = S.lyEdit[r]; try { await api('/api/layouts', { method: 'POST', noView: true, body: a === 'lyReset' ? { role: r, reset: true } : { role: r, tabs: { hidden: E.hidden, order: E.order } } }); delete S.lyEdit[r]; await loadLayout(); toast('Saved'); } catch (e) { alert(e.message); } }
