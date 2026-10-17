@@ -150,9 +150,24 @@ function flagList(all, { limit = 8, names = true, closed = false } = {}) {
   return flags.slice(0, limit).map(one).join('') + (flags.length > limit ? `<div class="note">+ ${flags.length - limit} more in the data explorer.</div>` : '');
 }
 
+// A short prompt with a link to the queries page: what to answer, what to review, what is still moving
+function queryPrompt() {
+  const me = S.who || {}; if (!S.ov || !S.ov.mine || S.viewAs && false) return '';
+  const fl = (S.ov.mine.flags || []).filter((f) => f.qk && isOpen(f)); if (!fl.length) return '';
+  const st = (f) => wfOf(f).stage || 'open';
+  const act = fl.filter((f) => { const a = qAbility(f); return a.respond || a.review; });
+  const mineAnswer = act.filter((f) => qAbility(f).respond).length, toReview = act.filter((f) => qAbility(f).review).length;
+  const moving = fl.filter((f) => ['team', 'hq1', 'final'].includes(st(f)) && !act.includes(f)).length;
+  const waitVol = me.role !== 'volunteer' ? fl.filter((f) => ['open', 'rework'].includes(st(f)) && f.vol).length : 0;
+  const bits = [mineAnswer ? `${mineAnswer} to answer` : '', toReview ? `${toReview} waiting for your review` : '', waitVol ? `${waitVol} waiting for a volunteer to answer` : '', moving ? `${moving} in review (follow them)` : ''].filter(Boolean);
+  if (!bits.length) return '';
+  const vol = me.role === 'volunteer'; const hot = mineAnswer + toReview > 0;
+  return `<div class="banner ${hot ? 'bad' : ''}" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><span style="flex:1;min-width:200px"><b>Queries:</b> ${bits.join(' · ')}.</span>${vol ? '<button class="btn sm" data-tab="queries">Open My queries</button>' : '<button class="btn sm" data-act="goMineQ">Open Queries</button>'}</div>`;
+}
 function briefCard(title0 = "Today's briefing") {
   const b = S.brief; if (!b) return '';
-  const items = b.items.length ? b.items.map((i) => `<div class="flag"><i class="st ${i.sev}"></i><div><span style="color:var(--ink);font-size:14px">${esc(i.text)}</span></div></div>`).join('') : '<div class="empty">Nothing to report yet.</div>';
+  const qBtn = S.who && S.who.role === 'volunteer' ? '<button class="btn sm ghost" data-tab="queries">Open My queries</button>' : (S.who ? '<button class="btn sm ghost" data-act="goMineQ">Open Queries</button>' : '');
+  const items = b.items.length ? b.items.map((i) => `<div class="flag"><i class="st ${i.sev}"></i><div><span style="color:var(--ink);font-size:14px">${esc(i.text)}</span>${i.kind === 'flags' && i.sev !== 'good' ? `<div style="margin-top:4px">${qBtn}</div>` : ''}</div></div>`).join('') : '<div class="empty">Nothing to report yet.</div>';
   const ai = b.ai ? `<div class="aiwrap"><div class="ai-col"><h4>English</h4><ul>${(b.ai.en || []).map((x) => `<li>${esc(x)}</li>`).join('')}</ul></div><div class="ai-col"><h4>Kiswahili</h4><ul>${(b.ai.sw || []).map((x) => `<li>${esc(x)}</li>`).join('')}</ul></div></div>` : '';
   const tm = Object.entries(b.tomorrow_schools || {}).map(([r, s]) => `<div class="m"><b>${esc(title(r))}</b>: ${s.map(esc).join(', ')}</div>`).join('');
   return `<div class="card brief"><h3>${title0}</h3><div class="sub">Worked out from the data and the plans. ${b.ai ? 'Wording by AI from the same facts.' : ''}</div>${items}${ai}${tm ? `<h4 style="margin:12px 0 4px">${nextLabel(b.tomorrow, b.today)}, ${dayName(b.tomorrow)}</h4>${tm}` : ''}</div>`;
@@ -239,6 +254,7 @@ function viewRegion() {
   const neededPerDay = remaining > 0 ? remaining / Math.max(1, workingLeft(o.today)) : 0;
   return `${dataBanner()}<div class="pagehead"><div><h2>Habari, ${esc((S.who.name || '').split(' ')[0])}</h2><p>${esc(S.who.role === 'arc' ? 'Assistant Regional Coordinator' : 'Regional Coordinator')} · ${esc(title(r.region))} · ${dayName(o.today)} · ${r.total} schools · target ${tpg} pupils per grade per school</p></div></div>
   <div class="grid kpis">${kpi('Schools complete', `${r.done}<small> / ${r.total}</small>`, pc(r.done, r.total) + '%')}${kpi('Pupils tested', fmt(r.tested), 'of ' + fmt(r.target))}${kpi('Open flags', flags.length, flags.filter((f) => f.sev === 'bad').length + ' need a call', 'allq')}${kpi('Pace', r.pace + ' / day', 'schools per field day, last 5 days')}${kpi('Projected finish', r.projected === 'done' ? 'Done' : r.projected ? shortDate(r.projected) : '–', r.behind ? 'after the 4 Dec close' : 'before the 4 Dec close')}</div>
+  ${queryPrompt()}
   <div class="card" style="margin-top:14px">${ring(r.tested, r.target, { label: `${fmt(r.tested)} of ${fmt(r.target)} pupils tested`, sub: `${r.done} of ${r.total} schools complete` })}</div>${weekStrip()}
   ${ownSection()}
   <div class="grid two" style="margin-top:14px"><div class="card"><h3>Schools in ${esc(title(r.region))}</h3><div class="sub">Pupils tested against sample, by grade</div><div class="tbl"><table><thead><tr><th>School</th><th class="hide-s">LGA</th><th class="hide-s">Type</th><th class="hide-s">Gr 1</th><th class="hide-s">Gr 2</th><th class="hide-s">Gr 3</th><th>Progress</th><th>Status</th></tr></thead><tbody>${rows}</tbody></table></div></div>
@@ -267,7 +283,7 @@ function viewDay() {
   const mf = o.mine.flags.filter(isOpen).length;
   const lead = (o.mine.staff || []).filter((x) => x.role === 'rc' || x.role === 'arc'); const team = lead.length ? lead.map((x) => esc(x.name.split(' ')[0]) + ' (' + x.role.toUpperCase() + ')').join(', ') : '';
   return `${dataBanner()}<div class="pagehead"><div><h2>Habari, ${esc(me.name.split(' ')[0])}</h2><p>${esc(/^volunteer/i.test(me.position || '') || !me.position ? 'Test admin' + (me.position ? ' (' + me.position + ')' : '') : me.position)} · ${esc(title(me.region))} · ${dayName(today)}${team ? ' · ' + team : ''} · ${todays.length ? todays.length + ' school' + (todays.length > 1 ? 's' : '') + ' today' : 'no school today'}</p></div></div>
-  ${mf ? `<div class="banner bad">You have <b>${mf}</b> query(ies) to look at. Open "My queries".</div>` : ''}
+  ${queryPrompt()}
   ${(() => { let t = 0, g = 0; for (const v of todays) { const x = sch[v.school]; if (x) for (const k of [1, 2, 3]) { t += x.g[k].av; g += x.g[k].target; } } return g ? `<div class="card" style="margin-top:12px">${ring(t, g, { label: `${t} of ${g} pupils tested today`, sub: t >= g ? 'Well done. Check that every assessment is finished and sent.' : `${g - t} to go at ${todays.map((v) => esc(v.school_name)).join(' and ')}` })}</div>` : ''; })()}
   <h3 style="margin:14px 0 8px">Leo · Today</h3>${todays.length ? todays.map(card).join('') : '<div class="note">No school in the plan for you today. Check with your RC.</div>'}
   <h3 style="margin:18px 0 8px">Zinazofuata · Coming up</h3>${next.length ? next.map((v) => `<div class="sch"><h4>${esc(v.school_name)}</h4><div class="m">${dayName(v.date)} · ${esc(v.start)} · ${esc(title(v.lga))}</div></div>`).join('') : '<div class="note">Nothing planned yet.</div>'}`;
