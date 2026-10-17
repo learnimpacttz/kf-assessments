@@ -11,7 +11,13 @@ import {
 
 const key = (region) => `v2:plan:${region}`;
 
+// A plan is read by many pages at once and changes rarely: keep each one for 10 seconds, and forget it the moment this isolate saves it
+const PM = new Map(); const bust = (region) => PM.delete(region);
 export async function getPlan(env, region) {
+  const hit = PM.get(region); if (hit && Date.now() - hit.t < 10000) return structuredClone(hit.v);
+  const v = await getPlanRaw(env, region); PM.set(region, { v: structuredClone(v), t: Date.now() }); return v;
+}
+async function getPlanRaw(env, region) {
   return (await kv(env).get(key(region))) || { region, status: 'draft', version: 0, visits: [], changes: [], submitted_at: null, submitted_by: null };
 }
 
@@ -79,7 +85,7 @@ export async function submitPlan(env, who, region, visits, dayNotes = {}) {
   const errors = [...validateVisits(region, clean, notes), ...leadErrors(region, clean)];
   if (errors.length) return { error: 'The plan has problems', errors, status: 422 };
   const plan = { region, status: 'locked', version: 1, visits: clean, day_notes: notes, changes: [], submitted_at: new Date().toISOString(), submitted_by: who.name };
-  await kv(env).put(key(region), plan);
+  await kv(env).put(key(region), plan); bust(region);
   return { plan };
 }
 
@@ -87,7 +93,7 @@ export async function saveDraft(env, region, visits, dayNotes = {}) {
   const cur = await getPlan(env, region);
   if (cur.status === 'locked') return { error: 'Plan is locked', status: 409 };
   const draft = { ...cur, day_notes: dayNotes || {}, visits: visits.map((v) => ({ id: v.id || uid(), school: v.school, date: v.date || null, start: v.start || '08:00', team: v.team || [], lead: v.lead || null, notices: {}, status: 'planned' })) };
-  await kv(env).put(key(region), draft);
+  await kv(env).put(key(region), draft); bust(region);
   return { plan: draft };
 }
 
@@ -121,7 +127,7 @@ export async function changeVisit(env, who, region, { visit_id, new_date, new_st
   if (new_team) v.team = new_team.slice(0, 8);
   if (new_lead) { const le = leadErrors(region, [{ ...v, lead: new_lead }]); if (le.length) return { error: le[0], status: 422 }; v.lead = new_lead; }
   plan.version += 1;
-  await kv(env).put(key(region), plan);
+  await kv(env).put(key(region), plan); bust(region);
   return { plan };
 }
 
@@ -130,7 +136,7 @@ export async function markNotice(env, who, region, { visit_id, kind }) {
   const v = plan.visits.find((x) => x.id === visit_id);
   if (!v || !['aek', 'ht', 'team'].includes(kind)) return { error: 'Not found', status: 404 };
   v.notices[kind] = { at: new Date().toISOString(), by: who.name };
-  await kv(env).put(key(region), plan);
+  await kv(env).put(key(region), plan); bust(region);
   return { plan };
 }
 
