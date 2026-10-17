@@ -67,7 +67,7 @@ async function loadSummary(env, wanted) {
     const earlier = years.filter((y) => y !== CURRENT_YEAR).pop();
     if (earlier) { year = earlier; sum = await readSummary(env, year); }
   }
-  if (sum && year === CURRENT_YEAR) { try { sum = { ...sum, flags: [...(sum.flags || []), ...(await assignFlags(env, sum, eatToday()))] }; } catch { /* the other checks still show */ } }
+  if (sum && year === CURRENT_YEAR) { try { const as = await assignFlags(env, sum, eatToday()); sum = { ...sum, flags: [...(sum.flags || []), ...as.flags], info: as.info }; } catch { /* the other checks still show */ } }
   return { years, sum, year, rehearsal: year !== CURRENT_YEAR };
 }
 
@@ -250,6 +250,10 @@ export default {
       if (path === '/api/assistant/draft' && method === 'POST') {
         if (who.role !== 'hq') return err('The assistant is for the HQ team for now', 403);
         try { const r = await draftReportText(env, who, await request.json().catch(() => ({}))); return r.error ? err(r.error, 422) : json(r); } catch (e) { return err(String(e.message || e), 502); }
+      }
+      if (path === '/api/assign-info') { // for information only: helpers, grade differences, planned people with no records
+        if (who.role === 'volunteer') return json({ items: [] });
+        const { sum } = await loadSummary(env, CURRENT_YEAR); return json({ items: ((sum && sum.info) || []).filter((x) => who.role === 'hq' || x.region === who.region) });
       }
       // ---------- narrative report per school (RC/ARC write, HQ and the region read) ----------
       if (path.startsWith('/api/narratives')) {

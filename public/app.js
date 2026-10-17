@@ -592,12 +592,13 @@ function personCard(name) {
   <h3 style="margin:16px 0 4px">Recent work</h3><div class="tbl"><table><thead><tr><th>Day</th><th>School</th><th class="r">Gr</th><th class="r">Tested</th><th class="r">Avg min</th></tr></thead><tbody>${rows || '<tr><td colspan="5" class="empty">No work recorded.</td></tr>'}</tbody></table></div>`;
 }
 const schoolNameOf = (id) => schoolsAll().find((x) => x.id === id)?.name || S.plan?.schools?.find((x) => x.id === id)?.name || (S.pil?.data?.schools || []).find((x) => x.school === id)?.name || id;
+function schoolInfo(id) { return infoBlock(id); }
 function schoolCard(id) {
   const s = schoolsAll().find((x) => x.id === id);
   if (!s) return `<h2>School</h2><p class="m">Details are not available for ${esc(id)}.</p>`;
   const flags = [...flagsAll(), ...(S.pr?.flags || [])].filter((f) => f.school === id && isOpen(f));
   const rows = [1, 2, 3].map((g) => `<tr><td>Grade ${g}</td><td class="r num">${s.g[g].att ?? '–'}</td><td class="r num">${s.g[g].target}</td><td class="r num">${s.g[g].av}</td><td>${s.g[g].done ? '<span class="pill good">complete</span>' : s.g[g].n ? '<span class="pill warn">in progress</span>' : '<span class="pill mute">not started</span>'}</td></tr>`).join('');
-  return `<h2>${esc(s.name)}</h2><p class="m">${s.region ? lk('region', s.region, title(s.region)) + ' · ' : ''}${esc(title(s.lga))} LGA · ${esc(title(s.ward || ''))} ward · ${esc(s.id)}</p>
+  return `<h2>${esc(s.name)}</h2>${schoolInfo(id)}<p class="m">${s.region ? lk('region', s.region, title(s.region)) + ' · ' : ''}${esc(title(s.lga))} LGA · ${esc(title(s.ward || ''))} ward · ${esc(s.id)}</p>
   <p style="margin:8px 0">${statusPill(s)} <span class="pill mute">${esc(s.arm)}</span> ${s.mne === 'M&E' ? '<span class="pill mute">M&amp;E</span>' : ''}</p>
   <div class="grid kpis">${kpi('Visit', s.first ? shortDate(s.first) + (s.last && s.last !== s.first ? ' – ' + shortDate(s.last) : '') : 'not yet')}${kpi('People by name', s.max_team || '–', 'test admins recorded')}${kpi('Phones', s.max_devices || '–', 'different phones that sent tests')}${kpi('Teacher forms', s.teacher_forms)}${kpi('Test admins', s.admins.length)}</div>
   <h3 style="margin:16px 0 4px">Pupils by grade</h3><div class="tbl"><table><thead><tr><th>Grade</th><th class="r">Attended</th><th class="r">Sample</th><th class="r">Tested</th><th>Status</th></tr></thead><tbody>${rows}</tbody></table></div>
@@ -908,6 +909,10 @@ function linkedView(hq) {
 }
 
 // ---------- Queries (all) ----------
+function infoBlock(school) {
+  const items = (S.info || []).filter((x) => !school || x.school === school); if (!items.length) return '';
+  return `<details class="fd" style="margin:10px 0"><summary>For information, no action needed (${items.length})</summary><div class="m" style="margin:6px 0">Helpers, grade differences and planned people with no records. The tests stay credited to whoever sent them.</div>${items.map((x) => `<div class="hrow">${lk('school', x.school, schoolNameOf(x.school))} · ${shortDate(x.date)} · ${esc(x.text)}</div>`).join('')}</details>`;
+}
 function viewAllQueries() {
   const hq = S.who.role === 'hq';
   const all = flagsAll();
@@ -916,7 +921,7 @@ function viewAllQueries() {
   const list = all.filter((f) => (F.st === 'all' || (F.st === 'resolved' ? !isOpen(f) : F.st === 'mine' ? isOpen(f) && needsMe(f) : F.st === 'review' ? isOpen(f) && inReview(f) : isOpen(f))) && (!F.type || f.type === F.type) && (!F.sev || f.sev === F.sev) && (!F.region || f.region === F.region) && (!F.q || [f.school_name, f.school, f.admin, f.lga, f.ward, f.text].join(' ').toLowerCase().includes(F.q.toLowerCase())));
   const types = [...new Set(all.map((f) => f.type))];
   const sel = (key, label, opts) => `<select data-qf="${key}" aria-label="${label}"><option value="">${label}: all</option>${opts.map(([v, t]) => `<option value="${esc(v)}" ${F[key] === v ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select>`;
-  return `${dataBanner()}<div class="pagehead"><div><h2>Queries</h2><p>Automatic checks on submitted tests. Open a query for the exact region, school, pupils and times so the person involved can find the records.</p></div></div><div class="card"><div class="toolbar"><input data-qf="q" type="search" placeholder="Search school, person, LGA" value="${esc(F.q)}">${sel('type', 'Check', types.map((t) => [t, FLAG_LABEL[t] || t]))}${sel('sev', 'Severity', [['bad', 'Serious'], ['warn', 'Review']])}${hq ? sel('region', 'Region', S.cfg.regions.map((r) => [r, title(r)])) : ''}<select data-qf="st"><option value="open" ${F.st === 'open' ? 'selected' : ''}>Open</option><option value="mine" ${F.st === 'mine' ? 'selected' : ''}>I review or respond</option><option value="review" ${F.st === 'review' ? 'selected' : ''}>In review</option><option value="resolved" ${F.st === 'resolved' ? 'selected' : ''}>Approved and closed</option><option value="all" ${F.st === 'all' ? 'selected' : ''}>All</option></select><span class="count">${list.length} shown</span></div>${flagListFull(list, 60)}</div>`;
+  return `${dataBanner()}${infoBlock()}<div class="pagehead"><div><h2>Queries</h2><p>Automatic checks on submitted tests. Open a query for the exact region, school, pupils and times so the person involved can find the records.</p></div></div><div class="card"><div class="toolbar"><input data-qf="q" type="search" placeholder="Search school, person, LGA" value="${esc(F.q)}">${sel('type', 'Check', types.map((t) => [t, FLAG_LABEL[t] || t]))}${sel('sev', 'Severity', [['bad', 'Serious'], ['warn', 'Review']])}${hq ? sel('region', 'Region', S.cfg.regions.map((r) => [r, title(r)])) : ''}<select data-qf="st"><option value="open" ${F.st === 'open' ? 'selected' : ''}>Open</option><option value="mine" ${F.st === 'mine' ? 'selected' : ''}>I review or respond</option><option value="review" ${F.st === 'review' ? 'selected' : ''}>In review</option><option value="resolved" ${F.st === 'resolved' ? 'selected' : ''}>Approved and closed</option><option value="all" ${F.st === 'all' ? 'selected' : ''}>All</option></select><span class="count">${list.length} shown</span></div>${flagListFull(list, 60)}</div>`;
 }
 function flagListFull(list, limit) {
   const open = list.filter(() => true);
@@ -1039,7 +1044,7 @@ function repData() { // what the person sees, and exactly what the files contain
 function repTable() {
   const R = S.rep, E = R.edit; const d = repData(); const max = 150;
   const head = d.columns.map((c) => `<th class="${c.type === 'num' || c.type === 'pct' ? 'r' : ''}" data-rs="${esc(c.k)}" style="cursor:pointer" title="Sort">${esc(c.label)}${E.sort && E.sort.k === c.k ? (E.sort.dir > 0 ? ' ▲' : ' ▼') : ''}</th>`).join('');
-  const body = d.rows.slice(0, max).map((r) => `<tr>${d.columns.map((c) => `<td class="${c.type === 'num' || c.type === 'pct' ? 'r num' : ''}">${esc(c.type === 'pct' && typeof r[c.k] === 'number' ? r[c.k] + '%' : r[c.k] ?? '')}</td>`).join('')}</tr>`).join('');
+  const body = d.rows.slice(0, max).map((r) => `<tr${r._sid ? ` class="click" data-open="school:${esc(r._sid)}"` : r._pn ? ` class="click" data-open="person:${esc(r._pn)}"` : ''}>${d.columns.map((c) => `<td class="${c.type === 'num' || c.type === 'pct' ? 'r num' : ''}">${esc(c.type === 'pct' && typeof r[c.k] === 'number' ? r[c.k] + '%' : r[c.k] ?? '')}</td>`).join('')}</tr>`).join('');
   return `<div class="tbl rectbl" style="max-height:480px"><table class="dt"><thead><tr>${head}</tr></thead><tbody>${body || `<tr><td colspan="${d.columns.length}" class="empty">Nothing matches.</td></tr>`}</tbody></table></div><div class="m" style="margin-top:4px">${d.rows.length > max ? `Showing ${max} of ${d.rows.length} rows here. The downloaded files contain all ${d.rows.length}.` : `${d.rows.length} row${d.rows.length === 1 ? '' : 's'}.`}</div>`;
 }
 function viewReports() {
@@ -1957,6 +1962,7 @@ async function loadData() {
   const q = S.year ? '?year=' + S.year : '';
   if (!S.who) { S.pub = await api('/api/public' + q); S.cmp = publicCompare(S.pub); return; }
   const vol = S.who.role === 'volunteer';
+  if (!vol) api('/api/assign-info').then((r) => { S.info = r.items || []; }).catch(() => { S.info = S.info || []; }); // for information: helpers, grade differences
   // everything the first screen needs is fetched at the same time, not one after another
   const [ov, cmp, pred, brief] = await Promise.all([
     api('/api/overview' + q),
