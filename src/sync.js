@@ -5,7 +5,7 @@ import { kv } from './store.js';
 import { fetchKoboPage } from './kobo.js';
 import { addStudents, addSampling, addTeachers, yearOf, stateYearOf } from './ingest.js';
 import { buildBands, summarize, phoneDay } from './summary.js';
-import { eatToday, devCode, isPracticeSchool } from './config.js';
+import { eatToday, devCode, isPracticeSchool, staffForKoboName } from './config.js';
 
 const KINDS = {
   students: { asset: 'KOBO_ASSET_ID', add: addStudents },
@@ -54,7 +54,7 @@ export async function recomputeSummaries(env, years, { allDays = false } = {}) {
     // One small document per field day for the Phones screen (the last 3 days each time, all days on a full rebuild)
     if (env.DASHBOARD_KV && Y.tl) {
       const dates = Object.keys(Y.tl).sort();
-      for (const d of allDays ? dates : dates.slice(-3)) await env.DASHBOARD_KV.put(`tl:${y}:${d}`, JSON.stringify({ date: d, year: y, events: Y.tl[d].map((e) => ({ c: devCode(e[0]), s: e[1], e: e[2], sc: e[3], g: e[4], w: e[5], k: e[6] })), phones: phoneDay(Y.tl[d]) }));
+      for (const d of allDays ? dates : dates.slice(-3)) await env.DASHBOARD_KV.put(`tl:${y}:${d}`, JSON.stringify({ date: d, year: y, events: Y.tl[d].map((e) => ({ c: devCode(e[0]), s: e[1], e: e[2], sc: e[3], g: e[4], w: staffForKoboName(e[5])?.name || e[5], k: e[6] })), phones: phoneDay(Y.tl[d].map((e) => { const x = e.slice(); x[5] = staffForKoboName(x[5])?.name || x[5]; return x; })) }));
       await env.DASHBOARD_KV.put(`tl:${y}:dates`, JSON.stringify(dates));
     }
     // Derived read-only copies go to Workers KV: fast at the edge, and a minute of staleness does not matter here.

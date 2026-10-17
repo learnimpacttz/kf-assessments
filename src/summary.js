@@ -146,6 +146,7 @@ export function summarize(Y, { year, bands, today, owners = {}, practice = false
   });
   for (const s of Object.values(UNI)) schools[s.id] = mkSchool(s);
 
+  const canon = (n) => (n ? staffForKoboName(n)?.name || n : n); // one person, one name: every spelling in KoBo maps to the roster name
   const adminOf = (name) => {
     const a = (admins[name] ||= {
       name, staff: staffForKoboName(name), n: 0, tn: 0, ts: 0, days: new Set(), schools: new Set(),
@@ -170,7 +171,7 @@ export function summarize(Y, { year, bands, today, owners = {}, practice = false
   const hasSampling = Boolean(Y.nsamp);
   const visitTeam = {}; // school|date -> Set(enumerator)
   for (const [key, c] of Object.entries(Y.cells)) {
-    const [date, schoolId, grade, enumerator] = key.split('|');
+    const [date, schoolId, grade, enumRaw] = key.split('|'); const enumerator = canon(enumRaw);
     const sc = schools[schoolId];
     if (!sc) continue; // submissions for a school outside the 325-school list
     sc.g[grade].n += c.n;
@@ -211,7 +212,8 @@ export function summarize(Y, { year, bands, today, owners = {}, practice = false
   }
 
   // sampling checks (random-number list, duplicates, attendance mismatch)
-  for (const [sgk, sg] of Object.entries(Y.sg)) {
+  for (const [sgk, sg0] of Object.entries(Y.sg)) {
+    const sg = { ...sg0, enum: canon(sg0.enum), devWho: canon(sg0.devWho), rn: (sg0.rn || []).map((e) => { const p = e.split('~'); p[1] = canon(p[1]); return p.join('~'); }) };
     const [schoolId, grade] = sgk.split('|');
     const sc = schools[schoolId];
     if (!sc) continue;
@@ -261,7 +263,7 @@ export function summarize(Y, { year, bands, today, owners = {}, practice = false
   }
   for (const [key, c] of Object.entries(Y.cells)) {
     if (!c.cal) continue;
-    const [date, schoolId, grade, enumerator] = key.split('|'); if (!schools[schoolId]) continue;
+    const [date, schoolId, grade, enumRaw2] = key.split('|'); const enumerator = canon(enumRaw2); if (!schools[schoolId]) continue;
     const unanswered = c.cal.n - c.cal.a - c.cal.b - c.cal.c;
     if (!c.cal.c && !unanswered) continue; // every test was explained by an accepted answer (updated calendar, or finishing a previous day)
     const ans = `${c.cal.a} calendar updated and approved, ${c.cal.b} finishing pupils left from a previous day, ${c.cal.c} other${c.cal.other[0] ? ' (' + c.cal.other[0] + ')' : ''}${unanswered ? ', ' + unanswered + ' no answer' : ''}`;
@@ -322,7 +324,7 @@ export function summarize(Y, { year, bands, today, owners = {}, practice = false
     if (ownerId != null) for (const nm of names) { const st = staffForKoboName(nm); if (st && st.id !== ownerId) { const own = STAFF.find((x) => x.id === ownerId); flags.push({ sev: 'bad', type: 'devowner', school: schoolId, admin: nm, date, text: `${nm} submitted from the phone registered to ${own ? own.name : 'another person'} (${devCode(dev)})`, hint: 'Check whether the phone was lent or the wrong name was chosen.', normal: 'own phone' }); } }
   }
   const tlDates = Object.keys(Y.tl || {}).sort();
-  for (const d of tlDates) for (const f of analyseDay(d, Y.tl[d])) if (schools[f.school]) flags.push(f);
+  for (const d of tlDates) for (const f of analyseDay(d, Y.tl[d].map((e) => { const x = e.slice(); x[5] = canon(x[5]); return x; }))) if (schools[f.school]) flags.push(f);
   const devices = Object.entries(devReg).map(([dev, r]) => {
     const top = Object.entries(r.names).sort((a, b) => b[1] - a[1]);
     const share = top.length ? top[0][1] / r.n : 0;
@@ -331,7 +333,7 @@ export function summarize(Y, { year, bands, today, owners = {}, practice = false
   });
 
   // admins -> scores
-  for (const [nm, n] of Object.entries(Y.tfp || {})) adminOf(nm).tf = n; // teacher and baseline forms sent, by person
+  for (const [nm, n] of Object.entries(Y.tfp || {})) adminOf(canon(nm)).tf = (adminOf(canon(nm)).tf || 0) + n; // teacher and baseline forms sent, by person
   const adminList = Object.values(admins).map((a) => {
     const avgAll = a.tn ? a.ts / a.tn : null;
     const tooFastShare = a.tn ? a.fast / a.tn : 0;
