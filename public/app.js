@@ -15,7 +15,7 @@ async function api(path, opts = {}) {
   return data;
 }
 
-// Treatment / Control is what the programme cares about; M&E (baseline school and teacher survey, surprise visits) is added only to the schools that carry it
+// Treatment / Control is what the program cares about; M&E (baseline school and teacher survey, surprise visits) is added only to the schools that carry it
 const armLabel = (s) => `${s.arm || ''}${s.mne === 'M&E' ? ' · M&E' : ''}`;
 const fmt = (n) => (n == null ? '–' : Number(n).toLocaleString('en-GB'));
 const pc = (a, b) => (b ? Math.round((a / b) * 100) : 0);
@@ -162,7 +162,7 @@ function dataBanner() {
   const o = S.ov || S.pub; if (!o) return '';
   const years = o.years || [];
   const sel = years.length > 1 ? `<select id="yearSel" aria-label="Round">${years.map((y) => `<option value="${y}" ${y === o.year ? 'selected' : ''}>${y}${y === (S.cfg && S.cfg.year) ? '' : ' (archive)'}</option>`).join('')}</select>` : '';
-  const warn = o.rehearsal ? `<div class="banner"><b>Rehearsal.</b> No 2026 endline data yet, so you are looking at ${esc(o.year)} data. Use it to practise. Live numbers appear after the first 2026 submission.</div>` : '';
+  const warn = o.rehearsal ? `<div class="banner"><b>Rehearsal.</b> No 2026 endline data yet, so you are looking at ${esc(o.year)} data. Use it to practice. Live numbers appear after the first 2026 submission.</div>` : '';
   return `${warn}<div class="sel" style="margin-top:10px">${sel}${S.stale ? '<span class="pill warn">Showing the last update, refreshing…</span>' : ''}<span class="pill mute">Updated ${o.as_of ? new Date(o.as_of).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' }) : '–'}</span></div>`;
 }
 
@@ -330,7 +330,7 @@ function viewPlan() {
   const n = plan.visits.length;
   const done = plan.visits.filter((x) => x.outcome === 'visited').length, past = plan.visits.filter((x) => x.date <= today && x.date < today).length;
   return `${head}<div class="grid kpis">${kpi('Schools planned', n, 'submitted ' + (plan.submitted_at ? shortDate(plan.submitted_at.slice(0, 10)) : '') + ' by ' + esc(plan.submitted_by || ''))}${kpi('Changes', plan.changes.length, plan.changes.filter((c) => c.late).length + ' late')}${kpi('On plan so far', past ? pc(done, past) + '%' : '–', done + ' of ' + past + ' visits due')}${kpi('Plan version', 'v' + plan.version)}</div>
-  <div class="card" style="margin-top:14px"><h3>Calendar</h3><div class="sub">Planned (grey), done (green), moved (amber), missed (red). Tap a school to change it.</div>${cal}</div>${dayNotesList(plan, byDate)}${editor}
+  <div class="card" style="margin-top:14px"><h3>Calendar</h3><div class="sub">Planned (gray), done (green), moved (amber), missed (red). Tap a school to change it.</div>${cal}</div>${dayNotesList(plan, byDate)}${editor}
   <div class="grid two" style="margin-top:14px"><div class="card"><h3>Notice tracker</h3><div class="sub">Ward officer 5 working days before, head teacher 3 working days before, team told at the same time. The app does not send the messages: tap Copy message, send it by SMS or WhatsApp (or read it out on a call), then tap Mark sent so the reminders stop.${S.noticeMsg ? ` <b>${esc(S.noticeMsg)}</b>` : ''}${plan.visits.filter((v) => v.date >= today).length > 14 ? ` <button class="btn sm ghost" data-act="noticeAll">${S.nAll ? 'Show fewer' : 'Show all ' + plan.visits.filter((v) => v.date >= today).length}</button>` : ''}</div><div class="tbl"><table><thead><tr><th>Visit</th><th>Ward officer</th><th>Head teacher</th><th>Team</th></tr></thead><tbody>${nrows || '<tr><td colspan="4" class="empty">No upcoming visits.</td></tr>'}</tbody></table></div></div>
   <div class="card"><h3>Changes and reasons</h3><div class="sub">Every change is recorded with who made it and why</div>${changes}</div></div>`;
 }
@@ -340,7 +340,7 @@ function dayNotesList(plan, byDate) {
   return `<div class="card" style="margin-top:14px"><h3>Days that are not 2 schools, and why</h3>${odd.map((d) => `<div class="flag"><i class="st ${byDate[d].length === 3 ? 'warn' : 'good'}"></i><div><b>${dayName(d)} · ${byDate[d].length} school(s)</b><span>${esc(byDate[d].map((v) => v.school_name).join(', '))}</span><span>${esc(plan.day_notes?.[d]?.note || 'No reason recorded')}</span></div></div>`).join('')}</div>`;
 }
 const SCH = (id) => (S.plan?.schools || []).find((s) => s.id === id)?.name || id;
-const enrolLine = (e) => (e ? `<div class="m" style="font-size:12px">Enrolment: ${[1, 2, 3].map((g) => (e[g] ? `Gr${g} <b>${e[g][2]}</b>` : '')).filter(Boolean).join(' · ')}</div>` : '<div class="m" style="font-size:12px">Enrolment: not in the baseline yet</div>');
+const enrolLine = (e) => (e ? `<div class="m" style="font-size:12px">Enrollment: ${[1, 2, 3].map((g) => (e[g] ? `Gr${g} <b>${e[g][2]}</b>` : '')).filter(Boolean).join(' · ')}</div>` : '<div class="m" style="font-size:12px">Enrollment: not in the baseline yet</div>');
 function planBuilder(P, canEdit, region) {
   if (!canEdit) return '<div class="note">The plan has not been submitted yet.</div>';
   const cur = S.draft || (P.plan.visits.length ? P.plan.visits : suggest(P.schools, region, P.staff));
@@ -366,7 +366,7 @@ function viewHQ() {
   const byType = {}; openF.forEach((f) => (byType[f.type] = (byType[f.type] || 0) + 1));
   const types = Object.entries(byType).sort((a, b) => b[1] - a[1]);
   const mx = Math.max(1, ...types.map((t) => t[1]));
-  return `${dataBanner()}<div class="pagehead"><div><h2>HQ command centre</h2><p>All regions · ${esc(o.year)}</p></div></div>
+  return `${dataBanner()}<div class="pagehead"><div><h2>HQ command center</h2><p>All regions · ${esc(o.year)}</p></div></div>
   <div class="grid kpis">${kpi('Schools complete', `${fmt(n.done)}<small> / ${fmt(n.schools)}</small>`, pc(n.done, n.schools) + '%', 'regions')}${kpi('Pupils tested', fmt(n.tested), 'of ' + fmt(n.target), 'compare')}${kpi('Open flags', fmt(openF.length), bad + ' serious', 'allq')}${kpi('Regions at risk', atRisk, 'projected after 4 Dec', 'regions')}${kpi('Projected finish', n.projected === 'done' ? 'Done' : n.projected ? shortDate(n.projected) : '–', 'at current pace')}</div>
   ${S.brief ? '<div style="margin-top:14px">' + briefCard() + '</div>' : ''}<div style="margin-top:14px">${forecastCard()}</div><div class="card" style="margin-top:14px"><h3>Regions</h3><div class="sub">Schools complete out of ${fmt(n.schools)}</div>${tiles(o.regions)}</div>
   <div class="grid two" style="margin-top:14px"><div class="card"><h3>Flags to act on</h3><div class="sub">Newest checks across all regions</div>${flagList(openF.slice().sort((a, b) => (a.sev === 'bad' ? 0 : 1) - (b.sev === 'bad' ? 0 : 1)), { limit: 12 })}</div>
@@ -436,7 +436,7 @@ function settingsCard(a) {
   const b = T.brand;
   const tr = Object.entries(T.targets).map(([k, t]) => `<tr><td>${esc({ visits: 'Visits on the planned day (%)', notices: 'Notices sent on time (%)', sameday: 'Records sent the same day (%)', quality: 'Test quality score' }[k] || k)}<div class="m" style="font-size:11.5px;color:var(--ink3)">${esc(t.text)}</div></td><td><input type="number" min="1" max="100" data-tg="${k}" data-f="good" value="${t.good}"></td><td><input type="number" min="1" max="100" data-tg="${k}" data-f="warn" value="${t.warn}"></td><td class="m">${t.default.good} / ${t.default.warn}</td></tr>`).join('');
   return `<div class="card" style="margin-top:14px"><h3>Settings: name and targets</h3><div class="sub">Changes apply everywhere at once (screens, emails, alerts).</div>
-  <div class="f"><label>Platform name<input id="stPlatform" maxlength="40" value="${esc(b.platform)}"></label><label>Programme shown beside it<input id="stProgramme" maxlength="80" value="${esc(b.programme)}"></label><label style="grid-column:1/-1">Tagline<input id="stTagline" maxlength="160" value="${esc(b.tagline)}"></label><label>Assistant name<input id="stAssistant" maxlength="40" value="${esc(b.assistant)}" placeholder="${esc(T.assistant_name)}"></label></div>
+  <div class="f"><label>Platform name<input id="stPlatform" maxlength="40" value="${esc(b.platform)}"></label><label>Program shown beside it<input id="stProgramme" maxlength="80" value="${esc(b.programme)}"></label><label style="grid-column:1/-1">Tagline<input id="stTagline" maxlength="160" value="${esc(b.tagline)}"></label><label>Assistant name<input id="stAssistant" maxlength="40" value="${esc(b.assistant)}" placeholder="${esc(T.assistant_name)}"></label></div>
   <h4 style="margin:14px 0 4px">Targets (green at or above the first number, amber at or above the second)</h4><div class="tbl rectbl"><table class="dt"><thead><tr><th>Target</th><th>Green</th><th>Amber</th><th>Standard</th></tr></thead><tbody>${tr}</tbody></table></div>
   <div style="margin-top:10px"><button class="btn sm" data-act="stSave">Save settings</button></div>${S.stMsg ? `<p class="m" style="margin-top:8px">${esc(S.stMsg)}</p>` : ''}</div>`;
 }
@@ -490,7 +490,7 @@ function autoCards(a) {
   if (f) {
     const r = f.result;
     out += `<div class="card" style="margin-top:14px"><h3>Scheduled replacement of the Sampling form</h3><div class="sub">On ${eatTime(f.run_after)} (EAT) the Sampling project in KoBo is replaced with the standard (non-pilot) form, in the same project. It first checks the live form is the pilot form with no draft, imports, checks the name, question count, calendar check, media files and that the number of submissions is unchanged, and only then deploys. If any check fails, nothing is deployed and HQ gets an email. Submissions are never touched.</div>
-    <p style="margin:8px 0">${f.done === 'done' ? '<span class="pill good">done</span>' : f.done === 'failed' ? '<span class="pill bad">stopped, nothing deployed</span>' : f.done === 'expired' ? '<span class="pill mute">expired</span>' : f.armed ? '<span class="pill warn">scheduled</span>' : '<span class="pill mute">cancelled</span>'}</p>
+    <p style="margin:8px 0">${f.done === 'done' ? '<span class="pill good">done</span>' : f.done === 'failed' ? '<span class="pill bad">stopped, nothing deployed</span>' : f.done === 'expired' ? '<span class="pill mute">expired</span>' : f.armed ? '<span class="pill warn">scheduled</span>' : '<span class="pill mute">canceled</span>'}</p>
     ${r ? `<p class="m">${eatTime(r.at)} · ${r.ok ? 'replaced: ' + r.rows + ' rows, ' + r.submissions + ' submissions kept. Previous version (for rollback): <b>' + esc(r.previous_version) + '</b>' : '<b>' + esc(r.why) + '</b>'}</p>` : ''}
     <p style="margin-top:8px">${f.armed && !f.done ? '<button class="btn sm ghost" data-act="formJobCancel">Cancel the schedule</button>' : !f.done || f.done === 'failed' || f.done === 'expired' ? '<button class="btn sm" data-act="formJobArm">Schedule it</button>' : ''} ${f.done !== 'done' ? '<button class="btn sm ghost" data-act="formJobRun">Run now</button>' : ''}</p>${S.formJobMsg ? `<p class="m">${esc(S.formJobMsg)}</p>` : ''}</div>`;
   }
@@ -740,7 +740,7 @@ function coordinatorsBlock() {
   <div class="card" style="margin-top:14px"><h3>Regional coordination teams</h3><div class="sub">What each RC and ARC did together for their region</div><div class="tbl"><table class="stk"><thead><tr><th>Region</th><th>Team</th><th>Status</th></tr></thead><tbody>${rowsT}</tbody></table></div></div>`;
 }
 function viewPeopleHQ() {
-  return `${dataBanner()}<div class="pagehead"><div><h2>Coordinators and volunteers</h2><p>Click a name for the full card. Click a column to sort. Chips are coloured against the normal range for each grade.</p></div></div>${coordinatorsBlock()}${submitBoard(S.ov.admins)}<div class="card" style="margin-top:14px">${peopleTable(S.ov.admins, true)}<div class="legend"><span><i style="background:var(--good)"></i>normal</span><span><i style="background:var(--gold)"></i>borderline</span><span><i style="background:var(--bad)"></i>outside the normal range</span><span>Normal test time: ${bandsText()}</span></div></div>`;
+  return `${dataBanner()}<div class="pagehead"><div><h2>Coordinators and volunteers</h2><p>Click a name for the full card. Click a column to sort. Chips are colored against the normal range for each grade.</p></div></div>${coordinatorsBlock()}${submitBoard(S.ov.admins)}<div class="card" style="margin-top:14px">${peopleTable(S.ov.admins, true)}<div class="legend"><span><i style="background:var(--good)"></i>normal</span><span><i style="background:var(--gold)"></i>borderline</span><span><i style="background:var(--bad)"></i>outside the normal range</span><span>Normal test time: ${bandsText()}</span></div></div>`;
 }
 function viewTeam() {
   return `${dataBanner()}<div class="pagehead"><div><h2>My team</h2><p>Pace, test speed and quality for everyone in ${esc(title(S.who.region))}. Click a name for their card.</p></div></div>${submitBoard(S.ov.mine.admins)}<div class="card" style="margin-top:14px">${peopleTable(S.ov.mine.admins, false)}</div>`;
@@ -811,7 +811,7 @@ function viewExplore() {
   else if (tab === 'teach') body = S.exErr ? `<div class="banner bad">${esc(S.exErr)}</div>` : !S.tch ? '<div class="empty">Loading teacher data…</div>' : teachersView(hq);
   else if (tab === 'school') body = !S.tch ? '<div class="empty">Loading school baseline…</div>' : schoolBaselineView(hq);
   else body = !S.linked || !S.tch ? '<div class="empty">Linking the sources…</div>' : linkedView(hq);
-  return `${dataBanner()}<div class="pagehead"><div><h2>Data explorer</h2><p>Four sources, kept apart, plus the links between them. The colour tag on each table says where the numbers come from.</p></div></div>${bar}${body}`;
+  return `${dataBanner()}<div class="pagehead"><div><h2>Data explorer</h2><p>Four sources, kept apart, plus the links between them. The color tag on each table says where the numbers come from.</p></div></div>${bar}${body}`;
 }
 
 function samplingTable(rows, hq) {
@@ -879,7 +879,7 @@ function schoolBaselineView(hq) {
   ];
   return `${srcTag('school')}
   <div class="grid kpis">${kpi('Pupils enrolled, Grade 1', fmt(E(1, 2)), fmt(E(1, 0)) + ' girls · ' + fmt(E(1, 1)) + ' boys')}${kpi('Grade 2', fmt(E(2, 2)), fmt(E(2, 0)) + ' girls · ' + fmt(E(2, 1)) + ' boys')}${kpi('Grade 3', fmt(E(3, 2)), fmt(E(3, 0)) + ' girls · ' + fmt(E(3, 1)) + ' boys')}${kpi('Ward officer took part', pctOf(w(1), wTot), pctOf(w(3), wTot) + ' sent a representative')}</div>
-  <div class="card" style="margin-top:14px"><h3>By region</h3><div class="sub">Enrolment in grades 1 to 3 as counted at the baseline visit. Teachers are the average per school.</div><div class="tbl"><table><thead><tr><th>Region</th><th class="r">Gr 1</th><th class="r">Gr 2</th><th class="r">Gr 3</th><th class="r">Girls</th><th class="r">Teachers</th><th class="r">KiuFunza</th><th class="r">Ward officer</th></tr></thead><tbody>${regRows}</tbody></table></div></div>
+  <div class="card" style="margin-top:14px"><h3>By region</h3><div class="sub">Enrollment in grades 1 to 3 as counted at the baseline visit. Teachers are the average per school.</div><div class="tbl"><table><thead><tr><th>Region</th><th class="r">Gr 1</th><th class="r">Gr 2</th><th class="r">Gr 3</th><th class="r">Girls</th><th class="r">Teachers</th><th class="r">KiuFunza</th><th class="r">Ward officer</th></tr></thead><tbody>${regRows}</tbody></table></div></div>
   <div class="card" style="margin-top:14px"><h3>By school</h3><div class="sub">G = girls, B = boys.</div>${dataTable(hq ? 'sb-hq' : 'sb', cols, T.schools.filter((s) => s.t), { filters, sort: 'name', dir: 1, open: (s) => 'school:' + s.id, placeholder: 'Search a school', limit: 400 })}</div>`;
 }
 
@@ -912,7 +912,7 @@ function linkedView(hq) {
   ];
   return `${srcTag('linked')}
   <div class="card"><h3>1. Coverage: teacher forms and assessments</h3><div class="sub">Joined on the school code. "Assessed without teacher form" means tests exist but the school has no teacher record, which matters when teachers are paid on results.</div><div class="tbl"><table><thead><tr><th>Region</th><th class="r">Teacher forms</th><th class="r">Schools assessed</th><th class="r">Assessed, no teacher form</th><th class="r">Teacher form, not yet assessed</th></tr></thead><tbody>${covRows}</tbody></table></div></div>
-  <div class="card" style="margin-top:14px"><h3>2. Pupils enrolled at baseline against pupils present on test day</h3><div class="sub">Enrolment from the baseline visit, attendance from the sampling form. Above 100% or very low rates are worth a second look.</div>${dataTable(hq ? 'att-hq' : 'att', attCols, L.attendance, { filters: attFilters, sort: 'rate', dir: -1, placeholder: 'Search a school', limit: 300 })}</div>
+  <div class="card" style="margin-top:14px"><h3>2. Pupils enrolled at baseline against pupils present on test day</h3><div class="sub">Enrollment from the baseline visit, attendance from the sampling form. Above 100% or very low rates are worth a second look.</div>${dataTable(hq ? 'att-hq' : 'att', attCols, L.attendance, { filters: attFilters, sort: 'rate', dir: -1, placeholder: 'Search a school', limit: 300 })}</div>
   ${hq && L.results ? `<div class="card" style="margin-top:14px;border-left:4px solid var(--terra)"><h3>3. Results by grade and subject, with the teachers recorded <span class="chip c-gold">HQ only</span></h3><div class="sub">Share of skills passed by the pupils tested, next to how many teachers are recorded for that grade and subject. This view is for HQ only. It shows where results and staffing line up or do not. It is not a payment calculation: payments will be added once the payment rules are set up here.</div>${dataTable('res-hq', resCols, L.results, { filters: resFilters, sort: 'pass', dir: 1, placeholder: 'Search a school', limit: 300 })}</div>` : '<div class="note" style="margin-top:14px">Results by grade and subject are shown to HQ only.</div>'}`;
 }
 
@@ -965,7 +965,7 @@ function timelineChart(P) {
     });
   });
   return `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Phone timeline">${g}</svg>
-  <div class="legend"><span><i style="background:var(--teal)"></i>Grade 1</span><span><i style="background:var(--gold)"></i>Grade 2</span><span><i style="background:var(--terra)"></i>Grade 3</span><span>Border colour = school: ${schools.map((sc) => `<i style="background:${col(sc)};display:inline-block;width:10px;height:10px;border-radius:2px;margin:0 4px 0 8px"></i>${esc(SCHOOL_BY_ID_UI[sc] || sc)}`).join('')}</span><span>Dashed = sampling form</span><span style="color:var(--bad)"><b>Red line</b> = same phone at a different school within 30 minutes</span></div>`;
+  <div class="legend"><span><i style="background:var(--teal)"></i>Grade 1</span><span><i style="background:var(--gold)"></i>Grade 2</span><span><i style="background:var(--terra)"></i>Grade 3</span><span>Border color = school: ${schools.map((sc) => `<i style="background:${col(sc)};display:inline-block;width:10px;height:10px;border-radius:2px;margin:0 4px 0 8px"></i>${esc(SCHOOL_BY_ID_UI[sc] || sc)}`).join('')}</span><span>Dashed = sampling form</span><span style="color:var(--bad)"><b>Red line</b> = same phone at a different school within 30 minutes</span></div>`;
 }
 const SCHOOL_BY_ID_UI = new Proxy({}, { get: (_, id) => (S.ph?.schools || []).find((s) => s.id === id)?.name || schoolNameOf(String(id)) });
 function viewPhones() {
@@ -980,7 +980,7 @@ function viewPhones() {
   return `<div class="pagehead"><div><h2>Phones</h2><p>What each phone did on the day. Shown to the whole team so the work is open and fair. A flag means "look at this", not "this is wrong". Open <b>What does this mean?</b> under any check for a plain explanation.</p></div>${sel}</div>
   <div class="grid kpis">${kpi('Phones active', P.phones.length)}${kpi('Schools with tests', P.schools.length, 'on this day')}${kpi('Most phones at one school', maxPer)}${kpi('Phone checks to look at', dev.length, dev.filter((f) => f.sev === 'bad').length + ' serious')}</div>
   <div class="card" style="margin-top:14px"><h3>Timeline</h3><div class="sub">One row per phone. Each bar is a test or sampling record. A phone should do one thing at a time, in one school, and one person normally uses one phone.</div>${timelineChart(P)}</div>
-  <div class="card" style="margin-top:14px"><h3>Checks on phone behaviour</h3><div class="sub">We look at phones because each phone should belong to one person, test one pupil at a time, and stay with its team. These checks never mean someone did wrong; they ask for a short explanation so the data can be trusted. Looking for: tests overlapping on one phone, a phone at two schools within 30 minutes, a phone jumping back and forth between grades, names changing on one phone, one person on several phones, fewer phones than people.</div>${dev.length ? flagList(dev, { limit: 30 }) : '<div class="empty">Nothing to look at for this day.</div>'}</div>
+  <div class="card" style="margin-top:14px"><h3>Checks on phone behavior</h3><div class="sub">We look at phones because each phone should belong to one person, test one pupil at a time, and stay with its team. These checks never mean someone did wrong; they ask for a short explanation so the data can be trusted. Looking for: tests overlapping on one phone, a phone at two schools within 30 minutes, a phone jumping back and forth between grades, names changing on one phone, one person on several phones, fewer phones than people.</div>${dev.length ? flagList(dev, { limit: 30 }) : '<div class="empty">Nothing to look at for this day.</div>'}</div>
   <div class="card" style="margin-top:14px"><h3>Phones and people</h3><div class="tbl"><table><thead><tr><th>Phone</th><th>Names used</th><th>Schools</th><th class="r">Records</th><th>Active</th><th class="r">Checks</th></tr></thead><tbody>${prows}</tbody></table></div></div>`;
 }
 
@@ -1007,7 +1007,7 @@ function viewPractice() {
   const ph = S.prPh && S.prPh.events ? `<div class="card" style="margin-top:14px"><h3>Phones in practice</h3><div class="sub">One row per phone, each bar a record, so people can see how their own phone shows up on the dashboard.</div>${timelineChart(S.prPh)}</div>` : '';
   return `${banner}${head}<div class="grid kpis">${kpi('Sampling forms', fmt(nSamp), 'class lists drawn')}${kpi('Test records', fmt(P.records))}${kpi('Pupils tested', fmt(P.tested))}${kpi('Phones', P.devices || 0)}${kpi('Checks raised', (P.flags || []).length)}</div>
   <div class="card" style="margin-top:14px"><h3>Training schools</h3><div class="tbl"><table><thead><tr><th>School</th><th>Present (sampling) Gr 1 · 2 · 3</th><th>Tested Gr 1 · 2 · 3</th><th class="r">People · phones</th></tr></thead><tbody>${srows}</tbody></table></div></div>
-  <div class="card" style="margin-top:14px"><h3>Checks raised on practice records</h3><div class="sub">Open one to see what a real query looks like, and reply to it to practise the process.</div>${flagList(P.flags || [], { limit: 30 })}</div>${ppl}${ph}`;
+  <div class="card" style="margin-top:14px"><h3>Checks raised on practice records</h3><div class="sub">Open one to see what a real query looks like, and reply to it to practice the process.</div>${flagList(P.flags || [], { limit: 30 })}</div>${ppl}${ph}`;
 }
 
 
@@ -1382,7 +1382,7 @@ const HELP = {
     ['What is this?', 'One place for the field work: who is where, which schools are done, what needs a reply, and what is next. It reads the KoBo forms every few minutes. It never shows pupil names.'],
     ['How do I sign in?', 'Use the code you were sent. It is yours alone. Do not share it. If it does not work, ask your RC or HQ for a new one.'],
     ['How do I get alerts on my phone?', 'Press <b>Turn on alerts</b> at the top and allow notifications. On an iPhone, first use Share, then Add to Home Screen, and open the app from there.'],
-    ['What do the colours mean?', 'Green is fine. Amber means look at it. Red means it needs an answer soon. A check is a question, not a charge: it asks for a short explanation.'],
+    ['What do the colors mean?', 'Green is fine. Amber means look at it. Red means it needs an answer soon. A check is a question, not a charge: it asks for a short explanation.'],
     ['What does Treatment, Control and M&E mean?', 'Treatment and Control are the two study groups of schools. M&E is an extra label on some schools that also have monitoring visits or surveys.'],
   ],
   volunteer: [
@@ -1390,7 +1390,7 @@ const HELP = {
     ['Sending your records', 'Turn on auto send in KoBo Collect so records go out the same day. Sent late (2 or more days after the visit) is a check.'],
     ['My queries: how to respond', 'When a check is raised on your records, press <b>Write the response</b> and say in a sentence or two what happened and what was done. Your RC or ARC reviews it, then HQ reviews and approves it. You can see every step and the history. If it is sent back, read the reason and write it again.'],
     ['Phones', 'Each phone should belong to one person. Do not lend yours. If you must, tell your RC and write it in your response.'],
-    ['Practice', 'Use the TRAINING schools to practise. They do not count in the real numbers.'],
+    ['Practice', 'Use the TRAINING schools to practice. They do not count in the real numbers.'],
   ],
   rc: [
     ['Plan and calendar', 'Plan the whole field work before 16 Oct: 2 schools a day is the standard. One or three schools in a day needs a reason. After you submit, a change needs a reason and shows in the history.'],
@@ -1492,7 +1492,7 @@ function viewPayments() {
   const note = d.current ? `<div class="banner"><b>Provisional.</b> These are the numbers from the tests so far. They change until every school has been tested and the teacher data is complete. The official payment run is done in Stata.</div>` : `<div class="banner"><b>Rehearsal with ${esc(d.year)} data.</b> The same rules on last round's results, to check the engine. The 2025 official run paid TZS 334,400,000 to teachers and 66,880,000 to head teachers.</div>`;
   const kp = `<div class="grid kpis" style="margin-top:10px">${kpi('Teacher budget (net)', tzs(d.net), 'after 5% tax')}${kpi('Head teacher pool', tzs(d.ht_net), '20% of teacher earnings')}${kpi('Schools in the pool', fmt(d.schools.length), 'control schools left out')}${kpi('Price per pass', prices.length ? tzs(Math.min(...prices)) + ' to ' + tzs(Math.max(...prices)) : '–', 'TZS, by skill')}${kpi('Checks passed', `${ok}<small> / ${d.checks.length}</small>`, ok === d.checks.length ? 'all clear' : 'see below')}</div>`;
   const checks = `<div class="card" style="margin-top:14px"><h3>Checks</h3><div class="sub">All must pass before a payment list is approved.</div>${d.checks.map((c) => `<div class="flag"><i class="st ${c.ok ? 'good' : 'bad'}"></i><div><b>${esc(c.name)}</b><span>${esc(c.detail)}</span></div></div>`).join('')}</div>`;
-  const prt = `<div class="card" style="margin-top:14px"><h3>Price per pass, by skill</h3><div class="sub">The skill budget divided by all projected passes in the programme. Harder skills have fewer passes, so each pass pays more.</div><div class="tbl dt-wrap"><table class="dt"><thead><tr><th>Grade</th><th>Subject</th><th>Skill</th><th class="r">Budget</th><th class="r">Projected passes</th><th class="r">TZS per pass</th></tr></thead><tbody>${d.price_table.map((r) => `<tr><td>${r.grade}</td><td>${r.subject === 'kis' ? 'Kiswahili' : 'Arithmetic'}</td><td>${esc(r.skill.replace(/^[ka]\d_/, '').replace(/_/g, ' '))}</td><td class="r num">${tzs(r.budget)}</td><td class="r num">${tzs(r.projected_passes)}</td><td class="r num">${r.price_per_pass == null ? '–' : tzs(r.price_per_pass)}</td></tr>`).join('')}</tbody></table></div></div>`;
+  const prt = `<div class="card" style="margin-top:14px"><h3>Price per pass, by skill</h3><div class="sub">The skill budget divided by all projected passes in the program. Harder skills have fewer passes, so each pass pays more.</div><div class="tbl dt-wrap"><table class="dt"><thead><tr><th>Grade</th><th>Subject</th><th>Skill</th><th class="r">Budget</th><th class="r">Projected passes</th><th class="r">TZS per pass</th></tr></thead><tbody>${d.price_table.map((r) => `<tr><td>${r.grade}</td><td>${r.subject === 'kis' ? 'Kiswahili' : 'Arithmetic'}</td><td>${esc(r.skill.replace(/^[ka]\d_/, '').replace(/_/g, ' '))}</td><td class="r num">${tzs(r.budget)}</td><td class="r num">${tzs(r.projected_passes)}</td><td class="r num">${r.price_per_pass == null ? '–' : tzs(r.price_per_pass)}</td></tr>`).join('')}</tbody></table></div></div>`;
   const reg = `<div class="card" style="margin-top:14px"><h3>By region</h3><div class="tbl dt-wrap"><table class="dt"><thead><tr><th>Region</th><th class="r">Schools ready</th><th class="r">Teacher pay (TZS)</th><th class="r">Head teacher pool (TZS)</th></tr></thead><tbody>${d.regions.map((r) => `<tr><td><b>${esc(title(r.region))}</b></td><td class="r num">${r.ready} / ${r.schools}</td><td class="r num">${tzs(r.total)}</td><td class="r num">${tzs(r.ht_pot)}</td></tr>`).join('')}</tbody></table></div></div>`;
   const names = Object.fromEntries(d.schools.map((s) => [s.id, s.name]));
   const inf = `<div class="card" style="margin-top:14px"><h3>Infrastructure bonus: leading school in each region</h3><div class="sub">Highest pass rate over all skill tests. Earlier winners (2023 to 2025) are left out. TZS 5,000,000 each.</div><div class="tbl dt-wrap"><table class="dt"><thead><tr><th>Region</th><th>School</th><th class="r">Pass rate</th></tr></thead><tbody>${d.infra.winners.slice().sort((a, b) => a.region.localeCompare(b.region)).map((w) => `<tr><td>${esc(title(w.region))}</td><td><b>${esc(names[w.school] || w.school)}</b></td><td class="r num">${(w.rate * 100).toFixed(1)}%</td></tr>`).join('')}</tbody></table></div>${d.infra.ties.length ? `<p class="m"><b>Tie:</b> ${d.infra.ties.map((t) => esc(title(t.region))).join(', ')}. Decide the tie-break.</p>` : ''}</div>`;
@@ -2073,7 +2073,7 @@ async function go() {
   if (exm) { S.tab = 'explore'; S.exTab = exm[1]; }
   else if (!S.tab && location.hash && !location.hash.includes(':')) S.tab = location.hash.slice(1);
   if (S.who && !S.ov && !S.viewAs) { const snap = loadSnapshot(); if (snap) { S.ov = snap.ov; S.pub = snap.ov; S.cmp = snap.cmp; S.pred = snap.pred; S.brief = snap.brief; S.stale = snap.t; render(); } }
-  try { await loadData(); S.stale = null; render(); ensureSchools(); if (S.tab === 'explore' && ['teach', 'school', 'linked'].includes(S.exTab)) loadExplore(S.exTab); if (S.tab === 'phones' && !S.ph) loadPhones().then(render); if (S.tab === 'practice' && !S.pr) loadPractice().then(render); if (S.tab === 'reports' && !S.rep) openReports(); loadNews().then(() => { if (S.tab === 'news') openNews().then(render); }); if (location.hash.includes(':')) { try { openDetail(decodeURIComponent(location.hash.slice(1))); } catch {} } } catch (e) { if (e.status === 401 && S.code) { S.code = null; S.who = null; store.set('kf_code', null); loginScreen('Your code was not recognised. Try again.'); } else $('#app').innerHTML = `<div class="banner bad">${esc(e.message)}</div>`; }
+  try { await loadData(); S.stale = null; render(); ensureSchools(); if (S.tab === 'explore' && ['teach', 'school', 'linked'].includes(S.exTab)) loadExplore(S.exTab); if (S.tab === 'phones' && !S.ph) loadPhones().then(render); if (S.tab === 'practice' && !S.pr) loadPractice().then(render); if (S.tab === 'reports' && !S.rep) openReports(); loadNews().then(() => { if (S.tab === 'news') openNews().then(render); }); if (location.hash.includes(':')) { try { openDetail(decodeURIComponent(location.hash.slice(1))); } catch {} } } catch (e) { if (e.status === 401 && S.code) { S.code = null; S.who = null; store.set('kf_code', null); loginScreen('Your code was not recognized. Try again.'); } else $('#app').innerHTML = `<div class="banner bad">${esc(e.message)}</div>`; }
 }
 
 async function selectTab(k) {
@@ -2120,7 +2120,7 @@ document.addEventListener('click', async (e) => {
   if (t.dataset.tab) { await selectTab(t.dataset.tab); return; }
   const a = t.dataset.act;
   try {
-    if (a === 'login') { const c = $('#code').value.trim().toUpperCase(); if (!c) return; S.code = c; try { const r = await api('/api/login'); S.who = r.who; store.set('kf_code', c); S.tab = null; await go(); } catch { S.code = null; loginScreen('That code was not recognised.'); } }
+    if (a === 'login') { const c = $('#code').value.trim().toUpperCase(); if (!c) return; S.code = c; try { const r = await api('/api/login'); S.who = r.who; store.set('kf_code', c); S.tab = null; await go(); } catch { S.code = null; loginScreen('That code was not recognized.'); } }
     else if (a === 'logout') { S.code = null; S.who = null; S.ov = null; S.plan = null; S.draft = null; store.set('kf_code', null); try { localStorage.removeItem('kf_snap'); } catch {} S.tab = null; loginScreen(); }
     else if (a === 'showLogin') loginScreen();
     else if (a === 'tblReset') { const T = S.tbl[t.dataset.id]; if (T) { T.f = {}; T.q = ''; store.set(memKey('t:' + t.dataset.id), null); } render(); }

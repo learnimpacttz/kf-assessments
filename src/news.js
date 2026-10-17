@@ -115,7 +115,7 @@ export async function runDueNews(env) {
   return out.filter(Boolean);
 }
 
-// Milestones: each region and the whole programme reach 25, 50, 75 and 100% of schools complete
+// Milestones: each region and the whole program reach 25, 50, 75 and 100% of schools complete
 export async function checkMilestones(env) {
   const today = eatToday(); const sum = await kv(env).get('v2:sum:2026');
   if (!sum || !sum.regions) return null;

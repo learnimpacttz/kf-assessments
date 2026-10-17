@@ -168,7 +168,7 @@ export default {
       const who = await identify(request, env);
 
       if (path === '/api/login') {
-        if (!who) return err('That code was not recognised', 401);
+        if (!who) return err('That code was not recognized', 401);
         return json({ who });
       }
       if (!who) return err('Sign in with your access code', 401);
@@ -366,7 +366,7 @@ export default {
           const schools = baseSchools.filter((s) => s.arm !== 'Control' || s.tch).map((s) => ({ id: s.id, name: s.name, region: s.region, lga: s.lga, arm: s.arm, mne: s.mne, t: s.tch || null }));
           return json({ status: 'ok', sources, regions: Object.values(roll), schools });
         }
-        // linked: coverage + enrolment vs attendance for everyone with access; results by grade and subject for HQ only
+        // linked: coverage + enrollment vs attendance for everyone with access; results by grade and subject for HQ only
         const out = { status: 'ok', sources, coverage: [], attendance: [], hq_only: who.role === 'hq' };
         const cov = {};
         for (const s of baseSchools) {
@@ -454,7 +454,7 @@ export default {
         if (!canSeeRegion(who, region)) return err('Not your region', 403);
         const today = eatToday();
         const { sum } = await loadSummary(env, CURRENT_YEAR); // the real 2026 visits, never the rehearsal year
-        const enrolMap = sum ? Object.fromEntries(Object.values(sum.schools).filter((s) => s.region === region && s.tch?.enrol).map((s) => [s.id, s.tch.enrol])) : {}; // baseline enrolment by grade [girls, boys, total]
+        const enrolMap = sum ? Object.fromEntries(Object.values(sum.schools).filter((s) => s.region === region && s.tch?.enrol).map((s) => [s.id, s.tch.enrol])) : {}; // baseline enrollment by grade [girls, boys, total]
         const withEnrol = (p) => ({ ...p, visits: p.visits.map((v) => ({ ...v, enrol: enrolMap[v.school] || null })) });
         const visitDates = sum ? Object.fromEntries(Object.values(sum.schools).filter((s) => s.region === region).map((s) => [s.id, s.dates])) : {};
 
@@ -848,6 +848,12 @@ export default {
         const b = await request.json();
         const r = await pushTo(env, (w) => (!b.region || w.region === b.region) && (!b.role || w.role === b.role) && (!b.id || w.id === b.id), { title: 'KiuFunza 4 · Test alert', body: 'If you can read this, phone alerts work on this device.', url: '/' });
         return json(r);
+      }
+      if (path === '/api/admin/push-field' && method === 'POST') { // a one-off message to all field staff (approved wording only); the automatic reminders are not touched
+        if (who.role !== 'hq' || (who.level || 'admin') !== 'admin') return err('Only an HQ Admin can send this', 403);
+        const b = await request.json().catch(() => ({})); const MSG = { finalize: { title: 'Maliza kila tathmini · Finalize every assessment', body: 'Finish and send each assessment before you leave the pupil. Do not reopen or edit a sent record. / Kamilisha na utume kila tathmini kabla ya kumwacha mwanafunzi. Usifungue wala kuhariri rekodi iliyotumwa.', url: '/' } };
+        const m = MSG[b.kind]; if (!m) return err('Unknown message', 422);
+        return json(await pushTo(env, (w) => w.role !== 'hq', m));
       }
       if (path === '/api/admin/reminders' && method === 'POST') { const b = await request.json(); return json({ results: await runReminders(env, { dry: b.dry !== false }) }); }
       if (path === '/api/admin/reminder-preview') { const m = await reminderEmail(env, (url.searchParams.get('region') || 'TANGA').toUpperCase(), eatToday(), env.SITE_URL || url.origin); return json(m || { subject: 'Nothing to remind', html: '<p>Nothing due right now.</p>', text: '' }); }

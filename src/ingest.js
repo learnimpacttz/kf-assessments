@@ -187,7 +187,7 @@ export function addSampling(state, records, opts = {}) {
     const dev = r.deviceid || pick(r, 'deviceid'); // the phone that sent the sampling form
     if (dev) {
       sg.dev = dev; sg.devWho = sg.enum;
-      // A sampling form is often left open for hours and finalised later, so its window says little. Use the moment it was opened, as one point in time.
+      // A sampling form is often left open for hours and finalized later, so its window says little. Use the moment it was opened, as one point in time.
       const s0 = secsOf(r.start);
       if (s0 !== null && sg.date) {
         const day = ((Y.tl ||= {})[sg.date] ||= []);

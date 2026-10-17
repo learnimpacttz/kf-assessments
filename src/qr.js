@@ -8,7 +8,7 @@ const chunk = (type, data) => { const t = new TextEncoder().encode(type); const 
 
 export async function qrPng(text, scale = 8, quiet = 4) {
   const qr = qrcode(0, 'M'); qr.addData(String(text)); qr.make(); const n = qr.getModuleCount(); const size = (n + quiet * 2) * scale;
-  const raw = new Uint8Array((size + 1) * size); // one filter byte (0) per row, then 8-bit grey pixels
+  const raw = new Uint8Array((size + 1) * size); // one filter byte (0) per row, then 8-bit gray pixels
   for (let y = 0; y < size; y++) { const row = y * (size + 1); const my = Math.floor(y / scale) - quiet; for (let x = 0; x < size; x++) { const mx = Math.floor(x / scale) - quiet; raw[row + 1 + x] = my >= 0 && mx >= 0 && my < n && mx < n && qr.isDark(my, mx) ? 0 : 255; } }
   const z = new Uint8Array(await new Response(new Blob([raw]).stream().pipeThrough(new CompressionStream('deflate'))).arrayBuffer());
   const ihdr = new Uint8Array(13); ihdr.set(u32(size), 0); ihdr.set(u32(size), 4); ihdr[8] = 8; ihdr[9] = 0; // 8-bit greyscale

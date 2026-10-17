@@ -43,7 +43,7 @@ function responderInfo(key) {
   if (PILOT_ALLOC[info.school] && st?.region) region = st.region; // pilot day: the person's own regional team handles the query, as in a live school
   return { info, st, region };
 }
-const isCoord = (who, region) => (who.role === 'rc' || who.role === 'arc') && (who.region === region || region === 'TRAINING'); // anyone may practise the chain in the TRAINING schools
+const isCoord = (who, region) => (who.role === 'rc' || who.role === 'arc') && (who.region === region || region === 'TRAINING'); // anyone may practice the chain in the TRAINING schools
 
 function canRespond(who, ri) {
   if (ri.region === 'TRAINING' && who.role !== 'hq') return 'self';

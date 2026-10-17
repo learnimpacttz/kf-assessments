@@ -97,7 +97,7 @@ export async function forecast(env, sum, today) {
       level: remaining === 0 ? 'good' : onTime >= 0.85 ? 'good' : onTime >= 0.5 ? 'warn' : 'bad',
     };
   }
-  // all regions together: the programme finishes when the last region does
+  // all regions together: the program finishes when the last region does
   const nat = [];
   for (let n = 0; n < SIMS; n++) { let m = ''; let any = true; for (const r of Object.keys(sims)) { const d = sims[r][n]; if (!d) { any = false; break; } if (d > m) m = d; } nat.push(any ? m : null); }
   const natOn = nat.filter((d) => d && d <= FIELD_END).length / SIMS;
