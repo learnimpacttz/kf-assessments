@@ -323,3 +323,22 @@ details.fd>summary.need-l::marker{color:var(--bad)}
 @media(max-width:720px){.top .brand .bl{display:inline!important}.top .brand .bs{display:none!important}.top .brand{flex:0 1 auto;min-width:0;overflow:hidden}.top .brand b{font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block}}
 @media(max-width:430px){.tdate .dw{display:none}.tdate{padding:0 8px}}
 @media(max-width:359px){.top .brand .bl{display:none!important}.top .brand .bs{display:inline!important}}
+
+/* HQ desk: a sidebar of HQ pages on wide screens */
+#side{display:none}
+@media(min-width:900px){
+  body.hqdesk #side{display:block;position:fixed;left:0;top:calc(env(safe-area-inset-top,0px) + 40px);bottom:0;width:208px;overflow-y:auto;background:var(--surface);border-right:1px solid var(--line);padding:12px 10px 24px;z-index:8}
+  body.hqdesk #side .sg{margin-bottom:14px}
+  body.hqdesk #side h4{font:700 10.5px var(--f-display);letter-spacing:.08em;text-transform:uppercase;color:var(--ink3);margin:0 6px 4px}
+  body.hqdesk #side button{display:flex;width:100%;align-items:center;justify-content:space-between;gap:6px;text-align:left;background:transparent;border:0;border-radius:8px;padding:7px 10px;font:600 13.5px var(--f-body);color:var(--ink);cursor:pointer}
+  body.hqdesk #side button:hover{background:var(--surface2)}
+  body.hqdesk #side button.on{background:var(--brand);color:#fff}
+  body.hqdesk header.top #nav,body.hqdesk header.top #nav2{display:none}
+  body.hqdesk main.wrap{margin-left:224px;max-width:none;padding-right:8px}
+  body.hqdesk{padding-inline:12px}
+}
+
+.arrbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;background:var(--warn-bg);border:1px solid var(--gold);border-radius:10px;padding:8px 12px;margin-bottom:12px;position:sticky;top:44px;z-index:9}.arrbar .sp{flex:1}
+.arrctl{display:flex;gap:6px;justify-content:flex-end;margin:-4px 0 6px}.arrctl button{border:1px solid var(--line);background:var(--surface2);color:var(--ink);border-radius:8px;padding:2px 10px;font:600 12px var(--f-body);cursor:pointer}
+.arr-hidden{opacity:.35;outline:2px dashed var(--ink3)}
+.tdate .dw{margin-right:.3em}

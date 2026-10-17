@@ -7,7 +7,7 @@ const store = { get: (k) => { try { return localStorage.getItem(k); } catch { re
 async function api(path, opts = {}) {
   const headers = { ...(opts.headers || {}) };
   if (S.code && S.viewAs !== 'public') headers['x-access-code'] = S.code;
-  if (S.viewAs && S.viewAs !== 'public') headers['x-view-as'] = 'staff:' + S.viewAs;
+  if (S.viewAs && S.viewAs !== 'public' && !opts.noView) headers['x-view-as'] = 'staff:' + S.viewAs;
   if (opts.body) headers['content-type'] = 'application/json';
   const res = await fetch(path, { ...opts, headers, body: opts.body ? JSON.stringify(opts.body) : undefined });
   const data = await res.json().catch(() => ({}));
@@ -496,11 +496,24 @@ function autoCards(a) {
   }
   return out;
 }
+const PAGE_ROLES = [['hq', 'HQ'], ['rc', 'Coordinators (RC and ARC)'], ['volunteer', 'Volunteers (test admins)'], ['public', 'Public visitors']];
+function layoutsCard() {
+  const all = (S.layout && S.layout.all) || {}; S.lyEdit ||= {};
+  const card = (r, label) => {
+    const base = TABS[r === 'public' ? 'public' : r] || []; const saved = (all[r] && all[r].tabs) || { hidden: [], order: [] };
+    const E = (S.lyEdit[r] ||= { hidden: (saved.hidden || []).slice(), order: (saved.order && saved.order.length ? saved.order : base.map((t) => t[0])).slice() });
+    const names = Object.fromEntries(base); const list = E.order.filter((k) => names[k]).concat(base.map((t) => t[0]).filter((k) => !E.order.includes(k)));
+    return `<div class="card" style="margin-top:14px"><h3>${esc(label)}</h3><div class="sub">Choose which pages this group sees and in what order. Hiding a page only removes it from their menu. What they are allowed to see is decided separately and does not change. To arrange the cards on one page, open that page and use <b>Arrange this page</b> in your account menu (while you are in "View as" for that group, or as HQ).${all[r] && all[r].updated_by ? ` <span class="m">Last changed by ${esc(all[r].updated_by)}.</span>` : ''}</div>
+    ${list.map((k, i) => `<div class="hrow" style="display:flex;gap:8px;align-items:center"><label style="flex:1"><input type="checkbox" data-lyh="${r}:${k}" ${E.hidden.includes(k) ? '' : 'checked'} ${r === 'hq' && ['admin', 'today'].includes(k) ? 'disabled' : ''}> ${esc(names[k])}</label><button class="btn sm ghost" data-act="lyMove" data-r="${r}" data-k="${k}" data-d="-1" ${i === 0 ? 'disabled' : ''}>▲</button><button class="btn sm ghost" data-act="lyMove" data-r="${r}" data-k="${k}" data-d="1" ${i === list.length - 1 ? 'disabled' : ''}>▼</button></div>`).join('')}
+    <div style="margin-top:10px;display:flex;gap:8px"><button class="btn sm" data-act="lySave" data-r="${r}">Save for ${esc(label)}</button><button class="btn sm sec" data-act="lyReset" data-r="${r}">Back to default</button></div></div>`;
+  };
+  return `<div class="banner">Pages and cards can be arranged for each kind of user. Changes show the next time they open or refresh the app.</div>${PAGE_ROLES.map(([r, l]) => card(r, l)).join('')}`;
+}
 function viewAdmin() {
   const a = S.adm; if (!a) return '<div class="empty">Loading…</div>';
   const sync = Object.entries(a.status.sync).map(([k, v]) => `<tr><td><b>${esc(k)}</b></td><td>${v.configured ? '<span class="pill good">connected</span>' : '<span class="pill bad">not set</span>'}</td><td class="num r">${fmt(v.records_last_pass)}</td><td>${v.in_progress ? `<span class="pill warn">syncing · page ${v.pages}</span>` : '<span class="pill good">idle</span>'}</td><td>${v.last_done ? new Date(v.last_done).toLocaleString('en-GB') : '–'}</td></tr>`).join('');
   const codes = a.codes ? a.codes.codes.map((c) => `<tr><td>${esc(title(c.region))}</td><td>${esc(c.position)}</td><td>${esc(c.name)}</td><td class="num"><b>${esc(c.code)}</b></td></tr>`).join('') : '';
-  const SECTIONS = [['health', 'Health'], ['people', 'People & access'], ['messages', 'Messages'], ['forms', 'KoBo & forms'], ['safety', 'Data safety'], ['settings', 'Settings']];
+  const SECTIONS = [['health', 'Health'], ['people', 'People & access'], ['messages', 'Messages'], ['forms', 'KoBo & forms'], ['safety', 'Data safety'], ['layouts', 'Layouts'], ['settings', 'Settings']];
   const cur = SECTIONS.some((x) => x[0] === S.admSub) ? S.admSub : (store.get('kf_admsub') || 'health');
   const part = {
     health: () => `${readinessCard(a)}<div class="card"><h3>Data connections</h3><div class="sub">Student tests, sampling and teacher forms are read from KoBo every 5 minutes in field hours</div><div class="tbl"><table><thead><tr><th>Form</th><th>Status</th><th class="r">Records read</th><th>State</th><th>Last complete</th></tr></thead><tbody>${sync}</tbody></table></div></div>
@@ -518,6 +531,7 @@ ${storageCard()}${activityCard(a)}`,
     forms: () => `${formsCard()}  <div class="card" style="margin-top:14px"><h3>Calendar for the KoBo forms: manual backup</h3><div class="sub">The standard way is the automatic update below: switch it on once and the file on the phones follows the plans by itself. This is the manual backup if the automatic update is off or fails. <b>Download</b> the file, then in KoBo open each project (Students and Sampling) > Form > Settings > Media and replace <b>ref_calendar.csv</b>. Never delete the file without replacing it: the forms look it up. <b>Download the last automatic copy</b> gives you exactly what the system last uploaded.</div><button class="btn sm" data-act="calCsv">Download the calendar built from today's plans</button> <button class="btn sm ghost" data-act="calCsvLast">Download the last automatic copy</button>${S.calMsg ? `<p class="m" style="margin-top:8px">${esc(S.calMsg)}</p>` : ''}</div>\n${autoCards(a)}`,
     safety: () => `${backupDaysCard(a)}`,
     settings: () => `${settingsCard(a)}`,
+    layouts: () => layoutsCard(),
   };
   const nav = `<div class="sel admnav" style="margin:6px 0 12px;flex-wrap:wrap">${SECTIONS.map(([k, t]) => `<button class="btn sm ${k === cur ? '' : 'sec'}" data-act="admSub" data-v="${k}">${t}</button>`).join('')}</div>`;
   return `<div class="pagehead"><div><h2>Admin</h2><p>Readiness, data connections, people, access codes and backups</p></div><button class="btn" data-act="refreshNow">Sync now</button></div>
@@ -1287,6 +1301,7 @@ function whoHtml() {
   ${viewAsControl() ? `<div class="row"><label>View the app as</label>${viewAsControl()}</div>` : ''}
   ${S.viewAs ? '' : `<div class="row"><label>Open the app on</label><select id="startSel" aria-label="Start page"><option value="">The first tab (default)</option>${TABS[roleKey()].filter(([k]) => tabAllowed(k)).map(([k, t]) => `<option value="${k}" ${startKey() === k ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select></div>`}
   <div class="row"><label>Appearance</label><select id="themeSel" aria-label="Appearance"><option value="" ${themePref() === '' ? 'selected' : ''}>Match my phone (automatic)</option><option value="light" ${themePref() === 'light' ? 'selected' : ''}>Light</option><option value="dark" ${themePref() === 'dark' ? 'selected' : ''}>Dark</option></select></div>
+  ${isRealHQ() && (S.real || S.who).level === 'admin' && S.who ? '<button class="mbtn" data-act="arrStart">Arrange this page</button>' : ''}
   <button class="mbtn" data-act="alerts">${esc(alertsLabel())}</button>
   <button class="mbtn out" data-act="logout">Sign out</button></div></div>`;
 }
@@ -1314,9 +1329,47 @@ function trackTab() {
   T.tab = t; T.t0 = Date.now(); trackSend(t, 0, !T.opened); T.opened = true;
 }
 document.addEventListener('visibilitychange', () => { const T = S.trk; if (!T || !T.tab) return; if (document.hidden) { trackSend(T.tab, Date.now() - T.t0, false); T.t0 = 0; } else T.t0 = Date.now(); });
+// ---- layouts by role, and "Arrange this page" for HQ admins ----
+const layoutRole = () => (S.viewAs === 'public' || !S.who ? 'public' : roleKey());
+async function loadLayout() { try { S.layout = await api('/api/layouts'); } catch { S.layout = S.layout || { mine: {} }; } if (S.who) render(); }
+const myLayout = () => (S.layout && S.layout.mine) || {};
+function layoutTabs(tabs) {
+  const L = myLayout().tabs; if (!L) return tabs; const hid = new Set(L.hidden || []); const keep = tabs.filter(([k]) => !hid.has(k) || (roleKey() === 'hq' && ['admin', 'today'].includes(k)));
+  const ord = L.order || []; return keep.slice().sort((a, b) => { const ia = ord.indexOf(a[0]), ib = ord.indexOf(b[0]); return (ia < 0 ? 999 : ia) - (ib < 0 ? 999 : ib); }) || keep;
+}
+const slug = (t) => String(t || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 50);
+function pageCards() { return [...document.querySelectorAll('#app > .card, #app > details.colcard')].map((el) => ({ el, id: slug((el.querySelector(':scope > h3, :scope > summary') || {}).textContent || '') })).filter((c) => c.id); }
+function applyLayout() {
+  const cards = pageCards(); const A = S.arr && S.arr.on && S.arr.tab === S.tab ? S.arr : null;
+  const L = A ? { order: A.order, hidden: A.hidden } : ((myLayout().pages || {})[S.tab] || {});
+  const ord = L.order || [], hid = new Set(L.hidden || []);
+  if (A) { A.ids = cards.map((c) => c.id); if (!A.order.length) A.order = A.ids.slice(); }
+  const parent = document.getElementById('app'); const anchor = cards.length ? cards[0].el : null;
+  if (cards.length && ord.length) { const sorted = cards.slice().sort((a, b) => { const ia = ord.indexOf(a.id), ib = ord.indexOf(b.id); return (ia < 0 ? 999 : ia) - (ib < 0 ? 999 : ib); }); sorted.forEach((c) => parent.insertBefore(c.el, null)); const tail = document.querySelector('#app > .arrbar'); void tail; }
+  for (const c of cards) { c.el.classList.toggle('arr-hidden', hid.has(c.id) && Boolean(A)); c.el.hidden = hid.has(c.id) && !A; c.el.querySelectorAll(':scope > .arrctl').forEach((x) => x.remove()); if (A) { const d = document.createElement('div'); d.className = 'arrctl'; d.innerHTML = `<button data-act="arrMove" data-id="${c.id}" data-d="-1" aria-label="Move up">▲</button><button data-act="arrMove" data-id="${c.id}" data-d="1" aria-label="Move down">▼</button><button data-act="arrHide" data-id="${c.id}">${hid.has(c.id) ? 'Show' : 'Hide'}</button>`; c.el.prepend(d); } }
+  const old = document.getElementById('arrbar'); if (old) old.remove();
+  if (A) { const bar = document.createElement('div'); bar.id = 'arrbar'; bar.className = 'arrbar'; bar.innerHTML = `<b>Arranging this page for ${esc(({ hq: 'HQ', rc: 'coordinators', volunteer: 'volunteers', public: 'public visitors' })[A.role] || A.role)}.</b> Use ▲ ▼ to move a card and Hide to remove it from their view.<span class="sp"></span><button class="btn sm" data-act="arrSave">Save</button><button class="btn sm sec" data-act="arrReset">Reset to default</button><button class="btn sm ghost" data-act="arrOff">Cancel</button>${A.msg ? `<span class="m">${esc(A.msg)}</span>` : ''}`; parent.prepend(bar); }
+}
+function arrStart() { const cur = (myLayout().pages || {})[S.tab] || {}; S.arr = { on: true, tab: S.tab, role: layoutRole(), order: (cur.order || []).slice(), hidden: (cur.hidden || []).slice(), ids: [], msg: '' }; render(); }
+async function arrAction(a, t) {
+  const A = S.arr; if (!A) return;
+  if (a === 'arrMove') { const o = A.order.length ? A.order : A.ids.slice(); const i = o.indexOf(t.dataset.id); const j = i + Number(t.dataset.d); if (i >= 0 && j >= 0 && j < o.length) { [o[i], o[j]] = [o[j], o[i]]; A.order = o; } render(); }
+  else if (a === 'arrHide') { const h = new Set(A.hidden); h.has(t.dataset.id) ? h.delete(t.dataset.id) : h.add(t.dataset.id); A.hidden = [...h]; render(); }
+  else if (a === 'arrOff') { S.arr = null; render(); }
+  else if (a === 'arrSave' || a === 'arrReset') { try { await api('/api/layouts', { method: 'POST', noView: true, body: a === 'arrReset' ? { role: A.role, tab: A.tab, reset: true } : { role: A.role, tab: A.tab, order: A.order, hidden: A.hidden } }); S.arr = null; await loadLayout(); toast(a === 'arrReset' ? 'Back to the default layout' : 'Layout saved'); } catch (e) { A.msg = e.message; render(); } }
+}
+// HQ desk: HQ works from its own sidebar of HQ pages on wide screens; field pages (My day, My work) are not part of it
+const DESK_GROUPS = [['Today', ['today']], ['Field operations', ['hq', 'regions', 'plan', 'pilot', 'practice']], ['Data quality', ['allq', 'clean', 'phones', 'compare', 'explore']], ['People', ['people']], ['Communication', ['news', 'messages']], ['Reports', ['reports', 'narr', 'payments']], ['System', ['admin', 'usage', 'help']]];
+function renderSide(tabs, badge) {
+  let side = document.getElementById('side'); const on = roleKey() === 'hq' && S.who && !S.viewAs;
+  document.body.classList.toggle('hqdesk', Boolean(on)); if (!on) { if (side) side.remove(); return; }
+  if (!side) { side = document.createElement('aside'); side.id = 'side'; side.setAttribute('aria-label', 'HQ navigation'); document.body.appendChild(side); }
+  const ok = new Set(tabs.map((t) => t[0])), lab = Object.fromEntries(tabs);
+  side.innerHTML = DESK_GROUPS.map(([g, ks]) => { const items = ks.filter((k) => ok.has(k)); return items.length ? `<div class="sg"><h4>${esc(g)}</h4>${items.map((k) => `<button data-tab="${k}" class="${k === S.tab ? 'on' : ''}">${esc(lab[k] || k)}${badge(k)}</button>`).join('')}</div>` : ''; }).join('');
+}
 function render() {
   trackTab();
-  const tabs = TABS[roleKey()].filter(([k]) => tabAllowed(k));
+  const tabs = layoutTabs(TABS[roleKey()].filter(([k]) => tabAllowed(k)));
   if (!tabs.find((t) => t[0] === S.tab)) { const st = startKey(); S.tab = st && tabs.find((t) => t[0] === st) ? st : tabs[0][0]; if (S.tab !== tabs[0][0] && !S.viewAs) { const want = S.tab; setTimeout(() => { if (S.tab === want) selectTab(want); }, 0); } }
   const badge = (k) => (k === 'news' && S.tab !== 'news' && unreadNews().length ? ` <span class="nbadge">${unreadNews().length}</span>` : '');
   let n2 = $('#nav2'); if (!n2) { n2 = document.createElement('nav'); n2.id = 'nav2'; n2.setAttribute('role', 'tablist'); $('#nav').after(n2); }
@@ -1330,6 +1383,7 @@ function render() {
     S.grpLast[cur[0]] = S.tab; bottomBar(groups, cur, badge);
     n2.innerHTML = cur[1].length > 1 ? cur[1].map((k) => `<button role="tab" aria-selected="${k === S.tab}" data-tab="${k}">${lab[k]}</button>`).join('') : ''; n2.hidden = cur[1].length < 2;
   } else { const bb = document.getElementById('bbar'); if (bb) bb.hidden = true; $('#nav').innerHTML = tabs.map(([k, t]) => `<button role="tab" aria-selected="${k === S.tab}" data-tab="${k}">${t}${badge(k)}</button>`).join(''); n2.innerHTML = ''; n2.hidden = true; }
+  renderSide(tabs, badge);
   $('#who').innerHTML = whoHtml(); $('#gsb').hidden = !S.who;
   const pd = S.ov && S.ov.plan_due;
   let planBanner = '';
@@ -1342,6 +1396,7 @@ function render() {
   const newsBanner = un ? `<div class="banner" style="background:var(--surface2)"><b>News:</b> ${esc(un.title)} <a href="#news" data-tab="news"><b>Read</b></a></div>` : '';
   $('#app').innerHTML = previewBanner() + planBanner + (S.tab === 'pilot' ? '' : pilotBanner()) + newsBanner + VIEWS[S.tab]();
   $('#gswrap').hidden = !S.who;
+  applyLayout();
   enhanceCollapsible();
   aiRender();
 }
@@ -2013,6 +2068,7 @@ function loginScreen(msg) {
 async function loadData() {
   const q = S.year ? '?year=' + S.year : '';
   if (!S.who) { S.pub = await api('/api/public' + q); S.cmp = publicCompare(S.pub); return; }
+  loadLayout();
   const vol = S.who.role === 'volunteer';
   if (!vol) api('/api/assign-info').then((r) => { S.info = r.items || []; }).catch(() => { S.info = S.info || []; }); // for information: helpers, grade differences
   // everything the first screen needs is fetched at the same time, not one after another
@@ -2154,6 +2210,10 @@ document.addEventListener('click', async (e) => {
     else if (/^dl[A-Z]/.test(a)) await cleanAction(a, t);
     else if (/^nr[A-Z]/.test(a)) await narrAction(a, t);
     else if (a === 'usFilter') { S.usF = t.dataset.v; render(); }
+    else if (a === 'lyMove') { const E = S.lyEdit[t.dataset.r]; const o = E.order; const i = o.indexOf(t.dataset.k); const j = i + Number(t.dataset.d); if (i >= 0 && j >= 0 && j < o.length) { [o[i], o[j]] = [o[j], o[i]]; } render(); }
+    else if (a === 'lySave' || a === 'lyReset') { const r = t.dataset.r; const E = S.lyEdit[r]; try { await api('/api/layouts', { method: 'POST', noView: true, body: a === 'lyReset' ? { role: r, reset: true } : { role: r, tabs: { hidden: E.hidden, order: E.order } } }); delete S.lyEdit[r]; await loadLayout(); toast('Saved'); } catch (e) { alert(e.message); } }
+    else if (a === 'arrStart') { const um = document.getElementById('um'); if (um) um.hidden = true; arrStart(); }
+    else if (/^arr[A-Z]/.test(a)) await arrAction(a, t);
     else if (a === 'admSub') { S.admSub = t.dataset.v; try { store.set('kf_admsub', S.admSub); } catch {} render(); window.scrollTo(0, 0); }
     else if (/^ms[A-Z]/.test(a)) await msAction(a, t);
     else if (/^ai[A-Z]/.test(a)) await aiAction(a, t);
@@ -2254,6 +2314,7 @@ async function downloadFile(path, name) {
   link.href = url; link.download = name; document.body.appendChild(link); link.click(); link.remove(); URL.revokeObjectURL(url);
 }
 document.addEventListener('change', async (e) => {
+  if (e.target.dataset && e.target.dataset.lyh) { const [r, k] = e.target.dataset.lyh.split(':'); const E = S.lyEdit[r]; const h = new Set(E.hidden); e.target.checked ? h.delete(k) : h.add(k); E.hidden = [...h]; return; }
   if (e.target.id === 'themeSel') { setTheme(e.target.value); return; }
   if (e.target.id === 'nrRegion') { S.nr.region = e.target.value; S.nr.open = null; S.nr.doc = null; await loadNarr(); return; }
   if (e.target.id === 'dfField') { (S.cl ||= {}).editField = e.target.value; render(); return; }

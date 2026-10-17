@@ -16,6 +16,7 @@ import { loadFormJob, saveFormJob, runFormJob, maybeRunFormJob } from './formjob
 import { kv } from './store.js';
 import { buildBrief, aiBrief } from './brief.js';
 import { ask as askAssistant, draftReportText } from './assistant.js';
+import { layoutsFor, saveLayout } from './layouts.js';
 import { recordUsage, recordApi, usageReport } from './usage.js';
 import { assignFlags } from './assign.js';
 import { listNarr, getNarr, saveNarr, compiledHtml } from './narratives.js';
@@ -289,6 +290,8 @@ export default {
       if (path === '/api/news' && method === 'GET') return json(await listNews(env, who));
       if (path === '/api/news/seen' && method === 'POST') { const b = await request.json().catch(() => ({})); return json(await markSeen(env, who, b.ids)); }
       if (path === '/api/news/react' && method === 'POST') { const b = await request.json().catch(() => ({})); const r = await reactNews(env, who, b.id, b.emoji); return r.error ? err(r.error, r.status || 400) : json(r); }
+      if (path === '/api/layouts' && method === 'GET') { const rk = who.role === 'arc' ? 'rc' : who.role; return json(await layoutsFor(env, who, rk)); }
+      if (path === '/api/layouts' && method === 'POST') { const r = await saveLayout(env, who, await request.json().catch(() => ({}))); return r.error ? err(r.error, r.status || 422) : json(r); }
       if (path === '/api/usage' && method === 'POST') { const b = await request.json().catch(() => ({})); await recordUsage(env, who, b); return json({ ok: true }); }
       if (path === '/api/usage/report') { const r = await usageReport(env, who); return r.error ? err(r.error, r.status || 403) : json(r); }
       if (path === '/api/push/subscribe' && method === 'POST') {
