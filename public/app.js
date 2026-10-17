@@ -2317,4 +2317,4 @@ document.addEventListener('keydown', (e) => {
   addEventListener('online', ping); addEventListener('offline', () => set(false)); setInterval(ping, 30000); ping();
 })();
 
-(function () { const el = document.getElementById('tdate'); if (!el) return; const t = () => { const d = new Date(Date.now() + 3 * 3600e3); el.textContent = d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' }); el.title = 'Today, East Africa Time'; }; t(); setInterval(t, 60000); })();
+(function () { const el = document.getElementById('tdate'); if (!el) return; const t = () => { const d = new Date(Date.now() + 3 * 3600e3); const f = new Intl.DateTimeFormat('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' }).formatToParts(d); const g = (t) => (f.find((x) => x.type === t) || {}).value || ''; el.innerHTML = `<span class="dw">${g('weekday')} </span>${g('day')} ${g('month')}`; el.title = 'Today, East Africa Time'; }; t(); setInterval(t, 60000); })();

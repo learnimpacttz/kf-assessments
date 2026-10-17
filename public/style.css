@@ -318,3 +318,8 @@ details.fd>summary.need-l::marker{color:var(--bad)}
 .top .who{margin-left:0}
 
 @media(min-width:721px){.top #nav{flex:0 1 auto;min-width:0;order:5}}
+
+/* phones show the full name; only a very small screen falls back to CC */
+@media(max-width:720px){.top .brand .bl{display:inline!important}.top .brand .bs{display:none!important}.top .brand{flex:0 1 auto;min-width:0;overflow:hidden}.top .brand b{font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block}}
+@media(max-width:430px){.tdate .dw{display:none}.tdate{padding:0 8px}}
+@media(max-width:359px){.top .brand .bl{display:none!important}.top .brand .bs{display:inline!important}}
