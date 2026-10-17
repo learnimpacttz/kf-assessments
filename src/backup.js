@@ -10,12 +10,31 @@ import { loadRecipients, sendMail, saveRecipients } from './digest.js';
 import { setRoster } from './config.js';
 
 const b64 = (buf) => { let s = ''; const a = new Uint8Array(buf); for (let i = 0; i < a.length; i += 0x8000) s += String.fromCharCode(...a.subarray(i, i + 0x8000)); return btoa(s); };
-async function gzip(str) { return new Response(new Blob([str]).stream().pipeThrough(new CompressionStream('gzip'))).arrayBuffer(); }
+// ---- encryption: with the BACKUP_PASSPHRASE secret set, every stored, emailed or downloaded backup is sealed (AES-GCM, key from PBKDF2) ----
+const MAGIC = new TextEncoder().encode('KF4E1'); const ITER = 100000;
+const dkey = async (pass, salt) => { const k = await crypto.subtle.importKey('raw', new TextEncoder().encode(pass), 'PBKDF2', false, ['deriveKey']); return crypto.subtle.deriveKey({ name: 'PBKDF2', salt, iterations: ITER, hash: 'SHA-256' }, k, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']); };
+export async function sealBuf(env, buf) {
+  if (!env.BACKUP_PASSPHRASE) return buf;
+  const salt = crypto.getRandomValues(new Uint8Array(16)), iv = crypto.getRandomValues(new Uint8Array(12));
+  const ct = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, await dkey(env.BACKUP_PASSPHRASE, salt), buf));
+  const out = new Uint8Array(MAGIC.length + 28 + ct.length); out.set(MAGIC, 0); out.set(salt, MAGIC.length); out.set(iv, MAGIC.length + 16); out.set(ct, MAGIC.length + 28); return out.buffer;
+}
+export async function openBuf(env, buf) {
+  const u = new Uint8Array(buf); const sealed = MAGIC.every((b, i) => u[i] === b); if (!sealed) return buf;
+  if (!env.BACKUP_PASSPHRASE) throw new Error('This backup is encrypted and no passphrase is set');
+  const salt = u.slice(MAGIC.length, MAGIC.length + 16), iv = u.slice(MAGIC.length + 16, MAGIC.length + 28), ct = u.slice(MAGIC.length + 28);
+  return crypto.subtle.decrypt({ name: 'AES-GCM', iv }, await dkey(env.BACKUP_PASSPHRASE, salt), ct);
+}
+// everything else the system keeps that cannot be re-read from KoBo
+const EXTRA_KEYS = ['v2:pilot', 'v2:narr', 'v2:layouts', 'v2:guests', 'v2:hq', 'v2:settings', 'v2:news', 'v2:msgs', 'v2:msgs:builtin', 'v2:reports', 'v2:delreq', 'v2:delog', 'v2:corrections', 'v2:approvededits', 'v2:activity', 'v2:usage:users', 'v2:usage:daily', 'v2:devowners', 'v2:calsync'];
+export async function gzip(str) { return new Response(new Blob([str]).stream().pipeThrough(new CompressionStream('gzip'))).arrayBuffer(); }
 
 export async function buildBackup(env, full) {
   const plans = {};
   (await Promise.all(REGIONS.map((r) => getPlan(env, r)))).forEach((p, k) => { plans[REGIONS[k]] = p; });
   const out = { format: 'kf4-backup-1', at: new Date().toISOString(), full: Boolean(full), plans, queries: (await kv(env).get('v2:queries')) || {}, roster: (await kv(env).get('v2:roster')) || null, recipients: await loadRecipients(env), calendar: (await kv(env).get('v2:calcsv:last')) || null };
+  out.extra = {}; for (const k of EXTRA_KEYS) { const v = await kv(env).get(k); if (v !== null && v !== undefined) out.extra[k] = v; }
+  if (full) { out.copies = {}; for (const r of out.extra['v2:delreq'] || []) { const c = await kv(env).get('v2:delcopy:' + r.id); if (c) out.copies['v2:delcopy:' + r.id] = c; } for (const l of out.extra['v2:corrections'] || []) { const c = await kv(env).get('v2:corr:' + l.id); if (c) out.copies['v2:corr:' + l.id] = c; } }
   if (full) { out.states = {}; for (const y of await stateYears(env)) out.states[y] = await loadYear(env, y); }
   return out;
 }
@@ -25,7 +44,7 @@ export async function buildBackup(env, full) {
 export async function runBackup(env, { full = false, email = false, testTo = null } = {}) {
   const data = await buildBackup(env, full);
   const json = JSON.stringify(data);
-  const gz = await gzip(json);
+  const gz = await sealBuf(env, await gzip(json));
   const day = data.at.slice(0, 10);
   const key = `bk:${day}${full ? '-full' : ''}`;
   const meta = { at: data.at, key, bytes: json.length, gz_bytes: gz.byteLength, full: Boolean(full), items: { plans: Object.values(data.plans).filter((p) => p.status === 'locked').length, queries: Object.keys(data.queries).length, years: data.states ? Object.keys(data.states).length : 0 } };
@@ -42,7 +61,7 @@ export async function runBackup(env, { full = false, email = false, testTo = nul
         subject: `${testTo ? '[TEST] ' : ''}KiuFunza 4 · Automated weekly backup · ${day}`,
         html: `<p><b>AUTOMATED BACKUP · NO REPLY NEEDED</b></p><p>Weekly full backup of the field dashboard: field plans and their changes (${meta.items.plans} submitted), queries and replies (${meta.items.queries}), the roster, email recipients and the stored data for ${meta.items.years} year(s). A copy is also kept inside Cloudflare every night. Please keep this file somewhere safe. HQ can restore from it in the Admin tab.</p>`,
         text: `AUTOMATED BACKUP - no reply needed\nKiuFunza 4 weekly backup ${day}. Keep the attachment safe.`,
-        attachments: [{ filename: `kf4-backup-${day}-full.json.gz`, content: b64(gz) }],
+        attachments: [{ filename: `kf4-backup-${day}-full.json.gz${env.BACKUP_PASSPHRASE ? '.enc' : ''}`, content: b64(gz) }],
       });
       emailed = true;
     }
@@ -62,7 +81,7 @@ export async function readStoredBackup(env, key) {
   if (!/^bk:\d{4}-\d\d-\d\d(-full)?$/.test(key || '')) return null;
   const buf = await env.DASHBOARD_KV.get(key, 'arrayBuffer');
   if (!buf) return null;
-  return JSON.parse(await new Response(new Blob([buf]).stream().pipeThrough(new DecompressionStream('gzip'))).text());
+  return JSON.parse(await new Response(new Blob([await openBuf(env, buf)]).stream().pipeThrough(new DecompressionStream('gzip'))).text());
 }
 export async function rawStoredBackup(env, key) {
   if (!/^bk:\d{4}-\d\d-\d\d(-full)?$/.test(key || '')) return null;
@@ -103,7 +122,7 @@ export async function emailLatestFull(env, { testTo = null } = {}) {
     subject: `${testTo ? '[TEST] ' : ''}KiuFunza 4 · Automated weekly backup · copy of ${day}`,
     html: '<p><b>AUTOMATED BACKUP · NO REPLY NEEDED</b></p><p>Weekly full backup of the field dashboard (taken Sunday night): field plans and their changes, queries and replies, the roster, email recipients and the stored data for earlier years. A copy is also kept inside Cloudflare every night. Please keep this file somewhere safe. HQ can restore from it in the Admin tab.</p>',
     text: `AUTOMATED BACKUP - no reply needed\nKiuFunza 4 weekly backup, copy of ${day}. Keep the attachment safe.`,
-    attachments: [{ filename: `kf4-backup-${day}-full.json.gz`, content: b64(gz) }],
+    attachments: [{ filename: `kf4-backup-${day}-full.json.gz${env.BACKUP_PASSPHRASE ? '.enc' : ''}`, content: b64(gz) }],
   });
   await kv(env).put('v2:backup:mailed', { at: new Date().toISOString(), key, to, cc });
   return { emailed: true, key, to, cc };
@@ -117,6 +136,8 @@ export async function restoreBackup(env, data, { states = false } = {}) {
   if (data.queries) { await kv(env).put('v2:queries', data.queries); done.queries = Object.keys(data.queries).length; }
   if (data.roster) { await kv(env).put('v2:roster', data.roster); setRoster(data.roster.staff, data.roster.aliases); done.roster = data.roster.staff.length; }
   if (data.recipients) { await saveRecipients(env, Object.entries(data.recipients).map(([email, r]) => ({ email, ...r }))); done.recipients = Object.keys(data.recipients).length; }
+  if (data.extra) { done.extra = 0; for (const [k, v] of Object.entries(data.extra)) if (EXTRA_KEYS.includes(k)) { await kv(env).put(k, v); done.extra++; } }
+  if (data.copies) { done.copies = 0; for (const [k, v] of Object.entries(data.copies)) if (/^v2:(delcopy|corr):[A-Za-z0-9-]+$/.test(k)) { await kv(env).put(k, v); done.copies++; } }
   if (states && data.states) { for (const [y, Y] of Object.entries(data.states)) if (Y) { await saveYear(env, y, Y); done.years = (done.years || 0) + 1; } }
   return { ok: true, restored: done };
 }

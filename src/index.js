@@ -30,7 +30,7 @@ import { loadQueries, decorate, postQuery, flagKey } from './queries.js';
 import { identify, staffCodes, canSeeRegion } from './auth.js';
 import { forecast, atRiskSchools } from './predict.js';
 import { ensureRoster, changeRoster, rosterOptions } from './roster.js';
-import { runBackup, buildBackup, restoreBackup, maybeRunScheduledBackup, listBackups, readStoredBackup, rawStoredBackup, emailLatestFull } from './backup.js';
+import { sealBuf, gzip, runBackup, buildBackup, restoreBackup, maybeRunScheduledBackup, listBackups, readStoredBackup, rawStoredBackup, emailLatestFull } from './backup.js';
 import { setValidation, koboWho, getValidation, clearValidation } from './kobo.js';
 import { fetchKoboPage } from './kobo.js';
 import { subscribe, unsubscribe, takeAlert, hashEndpoint, pushTo, pushStatus, pushReady, runAlerts } from './push.js';
@@ -701,6 +701,7 @@ export default {
         if (url.searchParams.get('list') === '1') return json({ backups: await listBackups(env), last: await kv(env).get('v2:backup:last') });
         if (url.searchParams.get('key')) { const raw = await rawStoredBackup(env, url.searchParams.get('key')); if (!raw) return err('No such backup', 404); return new Response(raw, { headers: { 'content-type': 'application/gzip', 'content-disposition': `attachment; filename="${url.searchParams.get('key').slice(3)}.json.gz"`, 'cache-control': 'no-store' } }); }
         const data = await buildBackup(env, url.searchParams.get('full') === '1');
+        if (env.BACKUP_PASSPHRASE) return new Response(await sealBuf(env, await gzip(JSON.stringify(data))), { headers: { 'content-type': 'application/octet-stream', 'content-disposition': `attachment; filename="kf4-backup-${data.at.slice(0, 10)}${data.full ? '-full' : ''}.json.gz.enc"`, 'cache-control': 'no-store' } });
         return new Response(JSON.stringify(data), { headers: { 'content-type': 'application/json', 'content-disposition': `attachment; filename="kf4-backup-${data.at.slice(0, 10)}${data.full ? '-full' : ''}.json"`, 'cache-control': 'no-store' } });
       }
       if (path === '/api/admin/restore' && method === 'POST') {
