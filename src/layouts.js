@@ -3,7 +3,7 @@
 import { kv } from './store.js';
 
 const KEY = 'v2:layouts';
-const ROLES = ['hq', 'rc', 'volunteer', 'public'];
+const ROLES = ['hq', 'rc', 'volunteer', 'public', 'guest_board', 'guest_collaborator', 'guest_funder', 'guest_government', 'guest_partner'];
 const clean = (a, n = 60) => [...new Set((Array.isArray(a) ? a : []).map((x) => String(x).toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0, 60)).filter(Boolean))].slice(0, n);
 const load = async (env) => (await kv(env).get(KEY)) || {};
 

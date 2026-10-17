@@ -17,6 +17,8 @@ import { kv } from './store.js';
 import { buildBrief, aiBrief } from './brief.js';
 import { ask as askAssistant, draftReportText } from './assistant.js';
 import { layoutsFor, saveLayout } from './layouts.js';
+const GUEST_REPORTS = ['region_progress']; // aggregate only: no names, no school results
+import { listGuests, guestAction, touchGuest } from './guests.js';
 import { recordUsage, recordApi, usageReport } from './usage.js';
 import { assignFlags } from './assign.js';
 import { listNarr, getNarr, saveNarr, compiledHtml } from './narratives.js';
@@ -172,7 +174,14 @@ export default {
         if (!who) return err('That code was not recognized', 401);
         return json({ who });
       }
+      if (who && who.expired) return err('This invitation has ended. Please ask LearnImpact for a new one.', 401);
       if (!who) return err('Sign in with your access code', 401);
+      if (who.role === 'guest') { // guests see public-facing pages only and change nothing
+        if (!who.viewAs) ctx?.waitUntil?.(touchGuest(env, who.id).catch(() => {}));
+        const okPath = path === '/api/login' || path === '/api/public' || path === '/api/layouts' || path.startsWith('/api/guest/') || (path === '/api/usage' && method === 'POST');
+        if (!okPath || (method !== 'GET' && path !== '/api/usage')) return err('This page is not part of your guest access', 403);
+        if (path === '/api/public') { /* falls through to the shared public handler below */ }
+      }
       { const gate = levelGate(who, method, path); if (gate) return err(gate, 403); }
       if (path.startsWith('/api/') && who.role === 'hq' && /claude|assistant/i.test(who.name || '') && path !== '/api/usage') ctx?.waitUntil?.(recordApi(env, who).catch(() => {})); // tools and AI assistants are tracked too
       if (who.viewAs && method !== 'GET') return err('You are previewing as ' + who.name + '. Previews are read-only, so nothing was changed.', 403);
@@ -274,6 +283,19 @@ export default {
         } catch (e) { return err(String(e.message || e), 500); }
         return err('Not found', 404);
       }
+      // ---------- guest pages: public-facing reports only ----------
+      if (path === '/api/guest/reports') { return json({ reports: GUEST_REPORTS.map((id) => { const t = TEMPLATES.find((x) => x.id === id); return { id, title: t?.title || id, desc: t?.desc || '' }; }), can_download: Boolean(who.can_download) }); }
+      if (path === '/api/guest/report') {
+        const id = url.searchParams.get('id') || ''; if (!GUEST_REPORTS.includes(id)) return err('Not found', 404);
+        const ld = await loadSummary(env, CURRENT_YEAR); const plans = Object.fromEntries(await Promise.all(REGIONS.map(async (r) => [r, await getPlan(env, r)])));
+        const b = buildReport(id, { sum: ld.sum, year: ld.year, rehearsal: ld.rehearsal, queries: await loadQueries(env), plans, today: eatToday() }, {}, null);
+        return json({ ...b, can_download: Boolean(who.can_download) });
+      }
+      if (path === '/api/admin/guests') {
+        if (!(who.role === 'hq' && (who.level || 'admin') === 'admin')) return err('Only an HQ Admin can manage guests', 403);
+        if (method === 'POST') { const r = await guestAction(env, who, await request.json().catch(() => ({}))); return r.error ? err(r.error, r.status || 422) : json(r); }
+        return json(await listGuests(env));
+      }
       // ---------- reports: HQ (all levels) and RCs for their own region; not ARCs or volunteers ----------
       if (path.startsWith('/api/reports')) {
         if (!(who.role === 'hq' || who.role === 'rc' || who.role === 'arc')) return err('Reports are for HQ and the coordinators', 403);
@@ -290,7 +312,7 @@ export default {
       if (path === '/api/news' && method === 'GET') return json(await listNews(env, who));
       if (path === '/api/news/seen' && method === 'POST') { const b = await request.json().catch(() => ({})); return json(await markSeen(env, who, b.ids)); }
       if (path === '/api/news/react' && method === 'POST') { const b = await request.json().catch(() => ({})); const r = await reactNews(env, who, b.id, b.emoji); return r.error ? err(r.error, r.status || 400) : json(r); }
-      if (path === '/api/layouts' && method === 'GET') { const rk = who.role === 'arc' ? 'rc' : who.role; return json(await layoutsFor(env, who, rk)); }
+      if (path === '/api/layouts' && method === 'GET') { const rk = who.role === 'arc' ? 'rc' : who.role === 'guest' ? 'guest_' + who.profile : who.role; return json(await layoutsFor(env, who, rk)); }
       if (path === '/api/layouts' && method === 'POST') { const r = await saveLayout(env, who, await request.json().catch(() => ({}))); return r.error ? err(r.error, r.status || 422) : json(r); }
       if (path === '/api/usage' && method === 'POST') { const b = await request.json().catch(() => ({})); await recordUsage(env, who, b); return json({ ok: true }); }
       if (path === '/api/usage/report') { const r = await usageReport(env, who); return r.error ? err(r.error, r.status || 403) : json(r); }

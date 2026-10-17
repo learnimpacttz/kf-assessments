@@ -7,7 +7,7 @@ const store = { get: (k) => { try { return localStorage.getItem(k); } catch { re
 async function api(path, opts = {}) {
   const headers = { ...(opts.headers || {}) };
   if (S.code && S.viewAs !== 'public') headers['x-access-code'] = S.code;
-  if (S.viewAs && S.viewAs !== 'public' && !opts.noView) headers['x-view-as'] = 'staff:' + S.viewAs;
+  if (S.viewAs && S.viewAs !== 'public' && !opts.noView) headers['x-view-as'] = /^guest:/.test(S.viewAs) ? S.viewAs : 'staff:' + S.viewAs;
   if (opts.body) headers['content-type'] = 'application/json';
   const res = await fetch(path, { ...opts, headers, body: opts.body ? JSON.stringify(opts.body) : undefined });
   const data = await res.json().catch(() => ({}));
@@ -536,11 +536,29 @@ function autoCards(a) {
   }
   return out;
 }
-const PAGE_ROLES = [['hq', 'HQ'], ['rc', 'Coordinators (RC and ARC)'], ['volunteer', 'Volunteers (test admins)'], ['public', 'Public visitors']];
+function guestsCard() {
+  const G = S.guests; if (!G) return '<div class="card" style="margin-top:14px"><h3>Guests</h3><div class="empty">Loading…</div></div>';
+  const prof = Object.entries(G.profiles); const fmtD = (d) => (d ? d.slice(0, 10) : 'no end date');
+  const rows = G.guests.map((g) => `<tr><td><b>${esc(g.name)}</b><div class="m">${esc(g.org || '')} · ${esc(g.email)}</div></td><td>${esc(G.profiles[g.profile] || g.profile)}${g.can_download ? ' <span class="m">· downloads</span>' : ''}</td><td>${g.status === 'active' ? '<span class="pill good">active</span>' : `<span class="pill bad">${esc(g.status)}</span>`}<div class="m">${esc(fmtD(g.expires_at))}</div></td><td>${g.last_seen ? esc(fmtAt(g.last_seen)) : '<span class="m">not yet</span>'}</td><td class="num">${esc(g.code || '')}</td><td style="white-space:nowrap">${g.status === 'revoked' ? `<button class="btn sm sec" data-act="gvAct" data-op="restore" data-id="${g.id}">Restore</button>` : `<button class="btn sm sec" data-act="gvAct" data-op="extend" data-id="${g.id}">+30 days</button> <button class="btn sm ghost" data-act="gvAct" data-op="noexpiry" data-id="${g.id}">No end date</button> <button class="btn sm ghost" data-act="gvAct" data-op="resend" data-id="${g.id}">Resend</button> <button class="btn sm ghost" data-act="gvAct" data-op="reissue" data-id="${g.id}">New code</button> <button class="btn sm ghost" data-act="gvAct" data-op="revoke" data-id="${g.id}">Revoke</button>`}</td></tr>`).join('');
+  return `<div class="card" style="margin-top:14px"><h3>Guests</h3><div class="sub">Invite board members, collaborators, funders, government and partners to see the public pages of the Command Center. They get a code by email, see figures only, and cannot change anything. Each profile can have its own layout (Layouts).</div>
+  <div class="mf" style="display:flex;gap:10px;flex-wrap:wrap"><label>Name<input id="gvName"></label><label>Email<input id="gvEmail" type="email"></label><label>Organization<input id="gvOrg"></label><label>Profile<select id="gvProf">${prof.map(([k, t]) => `<option value="${k}">${esc(t)}</option>`).join('')}</select></label><label>Access ends<select id="gvDays"><option value="30">after 30 days</option><option value="90" selected>after 90 days</option><option value="180">after 6 months</option><option value="365">after a year</option><option value="0">no end date</option></select></label><label>Partner logo link (https)<input id="gvLogo" placeholder="optional"></label></div>
+  <label class="cb"><input type="checkbox" id="gvDl"> Can download the ready-made reports (otherwise view only)</label>
+  <p><button class="btn" data-act="gvCreate">Send invitation</button> <span class="m">${esc(S.gvMsg || '')}</span></p>
+  ${G.guests.length ? `<div class="tbl"><table class="dt"><thead><tr><th>Guest</th><th>Profile</th><th>Status</th><th>Last seen</th><th>Code</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>` : '<div class="m">No guests yet.</div>'}</div>`;
+}
+async function guestUiAction(a, t) {
+  try {
+    if (a === 'gvCreate') { const g = (id) => document.getElementById(id); const body = { action: 'create', name: g('gvName').value, email: g('gvEmail').value, org: g('gvOrg').value, profile: g('gvProf').value, days: Number(g('gvDays').value), can_download: g('gvDl').checked, logo_url: g('gvLogo').value }; S.gvMsg = 'Sending…'; render(); await api('/api/admin/guests', { method: 'POST', body }); S.gvMsg = 'Invitation sent.'; }
+    else { if (t.dataset.op === 'revoke' && !confirm('Revoke this guest? They lose access immediately.')) return; await api('/api/admin/guests', { method: 'POST', body: { action: t.dataset.op, id: t.dataset.id } }); S.gvMsg = 'Done.'; }
+    S.guests = await api('/api/admin/guests');
+  } catch (e) { S.gvMsg = e.message; try { S.guests = await api('/api/admin/guests'); } catch {} }
+  render();
+}
+const PAGE_ROLES = [['hq', 'HQ'], ['rc', 'Coordinators (RC and ARC)'], ['volunteer', 'Volunteers (test admins)'], ['public', 'Public visitors'], ['guest_board', 'Guest: Board'], ['guest_collaborator', 'Guest: Collaborator'], ['guest_funder', 'Guest: Funder'], ['guest_government', 'Guest: Government'], ['guest_partner', 'Guest: Partner']];
 function layoutsCard() {
   const all = (S.layout && S.layout.all) || {}; S.lyEdit ||= {};
   const card = (r, label) => {
-    const base = TABS[r === 'public' ? 'public' : r] || []; const saved = (all[r] && all[r].tabs) || { hidden: [], order: [] };
+    const base = TABS[r === 'public' ? 'public' : r.startsWith('guest_') ? 'guest' : r] || []; const saved = (all[r] && all[r].tabs) || { hidden: [], order: [] };
     const E = (S.lyEdit[r] ||= { hidden: (saved.hidden || []).slice(), order: (saved.order && saved.order.length ? saved.order : base.map((t) => t[0])).slice() });
     const names = Object.fromEntries(base); const list = E.order.filter((k) => names[k]).concat(base.map((t) => t[0]).filter((k) => !E.order.includes(k)));
     return `<div class="card" style="margin-top:14px"><h3>${esc(label)}</h3><div class="sub">Choose which pages this group sees and in what order. Hiding a page only removes it from their menu. What they are allowed to see is decided separately and does not change. To arrange the cards on one page, open that page and use <b>Arrange this page</b> in your account menu (while you are in "View as" for that group, or as HQ).${all[r] && all[r].updated_by ? ` <span class="m">Last changed by ${esc(all[r].updated_by)}.</span>` : ''}</div>
@@ -559,7 +577,7 @@ function viewAdmin() {
     health: () => `${readinessCard(a)}<div class="card"><h3>Data connections</h3><div class="sub">Student tests, sampling and teacher forms are read from KoBo every 5 minutes in field hours</div><div class="tbl"><table><thead><tr><th>Form</th><th>Status</th><th class="r">Records read</th><th>State</th><th>Last complete</th></tr></thead><tbody>${sync}</tbody></table></div></div>
   ${S.ov.unlisted?.length ? `<div class="banner" style="margin-top:14px"><b>Names in KoBo that are not in the staff roster:</b> ${S.ov.unlisted.map(esc).join(', ')}. Their tests still count, but they have no region or access code.</div>` : ''}
 ${storageCard()}${activityCard(a)}`,
-    people: () => `${rosterCard(a)}${hqTeamCard(a)}${devicesCard(a)}  <div class="card" style="margin-top:14px"><h3>Access codes</h3><div class="sub">One code per person. Send each person their own code; do not share this list. HQ code stays with you.</div><div class="tbl"><table><thead><tr><th>Region</th><th>Role</th><th>Name</th><th>Code</th></tr></thead><tbody>${codes}</tbody></table></div></div>`,
+    people: () => `${rosterCard(a)}${hqTeamCard(a)}${guestsCard()}${devicesCard(a)}  <div class="card" style="margin-top:14px"><h3>Access codes</h3><div class="sub">One code per person. Send each person their own code; do not share this list. HQ code stays with you.</div><div class="tbl"><table><thead><tr><th>Region</th><th>Role</th><th>Name</th><th>Code</th></tr></thead><tbody>${codes}</tbody></table></div></div>`,
     messages: () => `${emailScheduleCard(a)}  <div class="card" style="margin-top:14px"><h3>Email list</h3><div class="sub">Who is on the lists. Changes apply after you press Save. This does not send anything.</div>
   ${recipientsTable(a)}
   <div style="margin-top:10px"><button class="btn sm" data-act="saveRec">Save the email list</button></div></div>
@@ -1265,11 +1283,12 @@ function applyBrand() {
 // ---------- shell ----------
 const TABS = {
   public: [['progress', 'Progress'], ['compare', 'Compare']],
+  guest: [['progress', 'Progress'], ['compare', 'Compare'], ['greports', 'Reports']],
   volunteer: [['day', 'My day'], ['pilot', 'Pilot day'], ['news', 'News'], ['work', 'My work'], ['queries', 'My queries'], ['stats', 'My stats'], ['phones', 'Phones'], ['pupils', 'Pupil records'], ['compare', 'Compare'], ['practice', 'Practice (Mafunzo)'], ['help', 'Help']],
   rc: [['region', 'Region'], ['news', 'News'], ['plan', 'Plan & calendar'], ['team', 'My team'], ['pilot', 'Pilot day'], ['allq', 'Queries'], ['phones', 'Phones'], ['compare', 'Compare'], ['reports', 'Reports'], ['narr', 'School reports'], ['clean', 'Data cleaning'], ['explore', 'Data explorer'], ['practice', 'Practice (Mafunzo)'], ['help', 'Help']],
   hq: [['today', 'Today'], ['hq', 'HQ'], ['usage', 'Usage & analytics'], ['news', 'News'], ['messages', 'Write and schedule'], ['clean', 'Data cleaning'], ['regions', 'Regions & plans'], ['plan', 'Plan & calendar'], ['pilot', 'Pilot day'], ['people', 'People'], ['allq', 'Queries'], ['phones', 'Phones'], ['compare', 'Compare'], ['reports', 'Reports'], ['payments', 'Payments'], ['payments', 'Payments'], ['explore', 'Data explorer'], ['admin', 'Admin'], ['help', 'Help'], ['practice', 'Practice (Mafunzo)']],
 };
-const GROUPS = { rc: [['Home', ['region', 'news']], ['Plan', ['plan', 'team', 'pilot']], ['Checks', ['allq', 'clean', 'phones', 'compare', 'explore']], ['Reports', ['reports', 'narr']], ['More', ['practice', 'help']]], volunteer: [['Today', ['day', 'pilot', 'news']], ['My work', ['work', 'queries', 'stats']], ['Team', ['phones', 'pupils', 'compare']], ['More', ['practice', 'help']]] };
+const GROUPS = { public: [['Progress', ['progress']], ['Compare', ['compare']]], guest: [['Progress', ['progress']], ['Compare', ['compare']], ['Reports', ['greports']]], rc: [['Home', ['region', 'news']], ['Plan', ['plan', 'team', 'pilot']], ['Checks', ['allq', 'clean', 'phones', 'compare', 'explore']], ['Reports', ['reports', 'narr']], ['More', ['practice', 'help']]], volunteer: [['Today', ['day', 'pilot', 'news']], ['My work', ['work', 'queries', 'stats']], ['Team', ['phones', 'pupils', 'compare']], ['More', ['practice', 'help']]] };
 const HQ_GROUPS = [['Today', ['today']], ['Field', ['hq', 'regions', 'plan', 'pilot', 'people', 'practice']], ['Checks', ['allq', 'clean', 'phones', 'compare', 'explore']], ['Messages', ['news', 'messages']], ['Reports', ['reports', 'narr', 'payments']], ['Admin', ['admin', 'usage']], ['Help', ['help']]];
 const REPORTS_READY = true;
 const LEVEL_TXT = { admin: 'Admin', editor: 'Editor', viewer: 'Viewer' };
@@ -1280,12 +1299,14 @@ function tabAllowed(k) {
   if (k === 'payments') return hqLevel() === 'admin';
   if (k === 'messages') return hqLevel() !== null;
   if (k === 'reports') return REPORTS_READY && S.who && S.who.role !== 'volunteer';
+  if (k === 'greports') return isGuest();
   if (k === 'usage') return Boolean(S.who && S.who.role === 'hq');
   if (k === 'narr') return Boolean(S.who && S.who.role !== 'volunteer');
   return true;
 }
 const roleKey = () => (!S.who ? 'public' : S.who.role === 'arc' ? 'rc' : S.who.role);
-const VIEWS = { progress: viewProgress, compare: viewCompare, day: viewDay, work: viewWork, queries: viewQueries, stats: viewStats, region: viewRegion, plan: viewPlan, team: viewTeam, explore: viewExplore, hq: viewHQ, regions: viewRegionsHQ, people: viewPeopleHQ, admin: viewAdmin, allq: viewAllQueries, phones: viewPhones, practice: viewPractice, news: viewNews, pilot: viewPilot, payments: viewPayments, pupils: viewPupils, messages: viewMessages, reports: viewReports, narr: viewNarr, usage: viewUsage, clean: viewClean, today: viewToday, help: viewHelp };
+const isGuest = () => Boolean(S.who && S.who.role === 'guest');
+const VIEWS = { progress: viewProgress, compare: viewCompare, day: viewDay, work: viewWork, queries: viewQueries, stats: viewStats, region: viewRegion, plan: viewPlan, team: viewTeam, explore: viewExplore, hq: viewHQ, regions: viewRegionsHQ, people: viewPeopleHQ, admin: viewAdmin, allq: viewAllQueries, phones: viewPhones, practice: viewPractice, news: viewNews, pilot: viewPilot, payments: viewPayments, pupils: viewPupils, messages: viewMessages, reports: viewReports, narr: viewNarr, greports: viewGuestReports, usage: viewUsage, clean: viewClean, today: viewToday, help: viewHelp };
 
 // Admin is long: each card folds away so you can jump to what you need. The first card stays open; your choices are remembered.
 function enhanceCollapsible() {
@@ -1314,6 +1335,7 @@ const GICON = {
   Help: IC('<circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 115 0c0 1.7-2.5 2-2.5 4M12 17h.01"/>'), 'My work': IC('<rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4h6v3H9zM9 12h6M9 16h6"/>'),
   Team: IC('<circle cx="9" cy="8" r="3"/><path d="M3 20c0-3.5 2.7-6 6-6s6 2.5 6 6M16 5a3 3 0 010 6M21 20c0-2.6-1.6-4.7-4-5.6"/>'), More: IC('<circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/>'),
 };
+GICON.Progress = GICON.Today; GICON.Compare = GICON.Checks;
 function bottomBar(groups, cur, badge) {
   let b = document.getElementById('bbar'); if (!b) { b = document.createElement('nav'); b.id = 'bbar'; b.setAttribute('aria-label', 'Main'); document.body.appendChild(b); }
   let sh = document.getElementById('msheet'); if (!sh) { sh = document.createElement('div'); sh.id = 'msheet'; sh.hidden = true; document.body.appendChild(sh); }
@@ -1333,7 +1355,7 @@ function whoHtml() {
   if (!S.who) return '<button class="ghost" data-act="showLogin">Sign in</button>';
   const w = S.who; const ini = String(w.name || '?').replace(/\(.*?\)/g, '').trim().split(/\s+/).map((x) => x[0]).slice(0, 2).join('').toUpperCase() || '?';
   const sub = [w.position, w.region ? title(w.region) : '', w.role === 'hq' ? LEVEL_TXT[hqLevel()] : ''].filter(Boolean).join(' · ');
-  const bell = pushSupported() ? `<button class="ico ${S.alertsOn ? 'on' : ''}" id="alertsBtn" data-act="alerts" title="${esc(alertsLabel())}" aria-label="${esc(alertsLabel())}">${BELL}</button>` : '';
+  const bell = pushSupported() && !isGuest() ? `<button class="ico ${S.alertsOn ? 'on' : ''}" id="alertsBtn" data-act="alerts" title="${esc(alertsLabel())}" aria-label="${esc(alertsLabel())}">${BELL}</button>` : '';
   const back = S.viewAs ? '<button class="ghost" data-act="exitPreview">Back to HQ</button>' : '';
   const rf = `<button class="ico" id="rfb" data-act="refresh" title="Refresh" aria-label="Refresh">${REFRESH}</button>`;
   return `${back}${rf}${bell}<div class="umw"><button class="uav" data-act="umenu" aria-haspopup="true" aria-label="Account menu">${esc(ini)}</button><div class="um" id="um" hidden>
@@ -1342,7 +1364,7 @@ function whoHtml() {
   ${S.viewAs ? '' : `<div class="row"><label>Open the app on</label><select id="startSel" aria-label="Start page"><option value="">The first tab (default)</option>${TABS[roleKey()].filter(([k]) => tabAllowed(k)).map(([k, t]) => `<option value="${k}" ${startKey() === k ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select></div>`}
   <div class="row"><label>Appearance</label><select id="themeSel" aria-label="Appearance"><option value="" ${themePref() === '' ? 'selected' : ''}>Match my phone (automatic)</option><option value="light" ${themePref() === 'light' ? 'selected' : ''}>Light</option><option value="dark" ${themePref() === 'dark' ? 'selected' : ''}>Dark</option></select></div>
   ${isRealHQ() && (S.real || S.who).level === 'admin' && S.who ? '<button class="mbtn" data-act="arrStart">Arrange this page</button>' : ''}
-  <button class="mbtn" data-act="alerts">${esc(alertsLabel())}</button>
+  ${isGuest() ? '' : `<button class="mbtn" data-act="alerts">${esc(alertsLabel())}</button>`}
   <button class="mbtn out" data-act="logout">Sign out</button></div></div>`;
 }
 function pilotBanner() {
@@ -1370,7 +1392,7 @@ function trackTab() {
 }
 document.addEventListener('visibilitychange', () => { const T = S.trk; if (!T || !T.tab) return; if (document.hidden) { trackSend(T.tab, Date.now() - T.t0, false); T.t0 = 0; } else T.t0 = Date.now(); });
 // ---- layouts by role, and "Arrange this page" for HQ admins ----
-const layoutRole = () => (S.viewAs === 'public' || !S.who ? 'public' : roleKey());
+const layoutRole = () => (S.viewAs === 'public' || !S.who ? 'public' : isGuest() ? 'guest_' + S.who.profile : roleKey());
 async function loadLayout() { try { S.layout = await api('/api/layouts'); } catch { S.layout = S.layout || { mine: {} }; } if (S.who) render(); }
 const myLayout = () => (S.layout && S.layout.mine) || {};
 function layoutTabs(tabs) {
@@ -1437,6 +1459,7 @@ function render() {
   $('#app').innerHTML = previewBanner() + planBanner + (S.tab === 'pilot' ? '' : pilotBanner()) + newsBanner + VIEWS[S.tab]();
   $('#gswrap').hidden = !S.who;
   applyLayout();
+  guestChrome();
   enhanceCollapsible();
   aiRender();
 }
@@ -1978,6 +2001,24 @@ async function cleanAction(a, t) {
   render();
 }
 
+// ---------- Guests: view-only pages, partner logo, "Powered by" footer ----------
+async function loadGuestReports() { try { S.gr = { ...(S.gr || {}), list: await api('/api/guest/reports'), err: null }; } catch (e) { S.gr = { ...(S.gr || {}), err: e.message }; } render(); }
+function viewGuestReports() {
+  const G = S.gr; const head = '<div class="pagehead"><div><h2>Reports</h2><p>Summaries prepared for sharing. Figures only: no names of people or of individual school results.</p></div></div>';
+  if (!G || (!G.list && !G.err)) { loadGuestReports(); return head + '<div class="empty">Loading…</div>'; } if (G.err) return head + `<div class="banner bad">${esc(G.err)}</div>`;
+  if (G.open && G.doc) { const d = G.doc; const cols = d.columns || []; return `${head}<button class="btn sm ghost" data-act="grBack">‹ All reports</button><div class="card" style="margin-top:10px"><h3>${esc(d.title)}</h3><div class="tbl"><table class="dt"><thead><tr>${cols.map((c) => `<th class="${c.type === 'num' || c.type === 'pct' ? 'r' : ''}">${esc(c.label)}</th>`).join('')}</tr></thead><tbody>${d.rows.map((r) => `<tr>${cols.map((c) => `<td class="${c.type === 'num' || c.type === 'pct' ? 'r num' : ''}">${esc(c.type === 'pct' && typeof r[c.k] === 'number' ? r[c.k] + '%' : r[c.k] ?? '')}</td>`).join('')}</tr>`).join('')}</tbody></table></div>${S.who.can_download ? '<p style="margin-top:10px"><button class="btn sm" data-act="grCsv">Download as a spreadsheet (CSV)</button></p>' : '<p class="m" style="margin-top:8px">This report is for viewing only.</p>'}</div>`; }
+  return head + G.list.reports.map((r) => `<div class="card" style="margin-top:12px"><h3>${esc(r.title)}</h3><div class="sub">${esc(r.desc)}</div><button class="btn sm" data-act="grOpen" data-id="${esc(r.id)}">Open</button></div>`).join('');
+}
+function guestChrome() {
+  const g = isGuest() ? S.who : null; document.body.classList.toggle('guestview', Boolean(g));
+  let foot = document.getElementById('gfoot'); let wm = document.getElementById('gwm');
+  if (!g) { if (foot) foot.remove(); if (wm) wm.remove(); document.querySelectorAll('.plogo').forEach((x) => x.remove()); return; }
+  if (!foot) { foot = document.createElement('footer'); foot.id = 'gfoot'; document.body.appendChild(foot); }
+  foot.innerHTML = `Powered by <b>LearnImpact Command Center</b>${g.org ? ' · Shared with ' + esc(g.org) : ''}`;
+  const hdr = document.querySelector('header .brand'); let pl = document.querySelector('.plogo');
+  if (g.logo && hdr) { if (!pl) { pl = document.createElement('img'); pl.className = 'plogo'; pl.alt = g.org || 'Partner'; hdr.parentNode.insertBefore(pl, hdr.nextSibling); } if (pl.getAttribute('src') !== g.logo) pl.src = g.logo; } else if (pl) pl.remove();
+  if (!g.can_download) { if (!wm) { wm = document.createElement('div'); wm.id = 'gwm'; document.body.appendChild(wm); } const t = esc(g.name).replace(/'/g, ''); wm.style.backgroundImage = `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='320' height='200'><text x='20' y='110' transform='rotate(-24 160 100)' font-family='sans-serif' font-size='15' fill='%23354062' fill-opacity='0.09'>${encodeURIComponent(t)} · LearnImpact</text></svg>")`; } else if (wm) wm.remove();
+}
 // ---------- Usage and analytics (HQ only) ----------
 async function loadUsage() { try { S.us = await api('/api/usage/report'); S.usErr = null; } catch (e) { S.usErr = e.message; } render(); }
 function viewUsage() {
@@ -2085,13 +2126,14 @@ function viewAsControl() {
   if (!isRealHQ() || !S.staffList.length) return '';
   const groups = [['rc', 'Regional coordinators'], ['arc', 'Assistant coordinators'], ['volunteer', 'Test admins (volunteers)']];
   const opts = groups.map(([r, l]) => `<optgroup label="${l}">${S.staffList.filter((s) => s.role === r).map((s) => `<option value="${s.id}" ${String(S.viewAs) === String(s.id) ? 'selected' : ''}>${esc(title(s.region))} · ${esc(s.name)}</option>`).join('')}</optgroup>`).join('');
-  return `<select id="viewAsSel" class="vsel" aria-label="View as"><option value="">View as: HQ (me)</option><option value="public" ${S.viewAs === 'public' ? 'selected' : ''}>View as: Public visitor</option>${opts}</select>`;
+  return `<select id="viewAsSel" class="vsel" aria-label="View as"><option value="">View as: HQ (me)</option><option value="public" ${S.viewAs === 'public' ? 'selected' : ''}>View as: Public visitor</option>${['board', 'collaborator', 'funder', 'government', 'partner'].map((g) => `<option value="guest:${g}" ${S.viewAs === 'guest:' + g ? 'selected' : ''}>View as: Guest (${g})</option>`).join('')}${opts}</select>`;
 }
 async function setViewAs(val) {
   if (!val) { S.viewAs = null; if (S.real) S.who = S.real; S.real = null; }
   else {
     if (!S.real) S.real = S.who;
     if (val === 'public') { S.viewAs = 'public'; S.who = null; }
+    else if (/^guest:/.test(val)) { S.viewAs = val; S.who = { role: 'guest', name: 'Preview: ' + val.slice(6), profile: val.slice(6), org: '', can_download: false, logo: '', viewAs: true }; }
     else { const p = S.staffList.find((s) => String(s.id) === val); if (!p) return; S.viewAs = val; S.who = { role: p.role, name: p.name, region: p.region, position: p.position, id: p.id, viewAs: true }; }
   }
   S.ov = null; S.pub = null; S.cmp = null; S.pred = null; S.brief = null; S.plan = null; S.allSchools = null; S.workCache = {}; S.tbl = {}; S.qf = null; S.tch = null; S.linked = null; S.exTab = 'assess'; S.exErr = null; S.tab = null; S.cur = null; closeDetail(); S.stale = null;
@@ -2107,7 +2149,7 @@ function loginScreen(msg) {
 
 async function loadData() {
   const q = S.year ? '?year=' + S.year : '';
-  if (!S.who) { S.pub = await api('/api/public' + q); S.cmp = publicCompare(S.pub); return; }
+  if (!S.who || isGuest()) { S.pub = await api('/api/public' + q); S.cmp = publicCompare(S.pub); loadLayout(); return; }
   loadLayout();
   const vol = S.who.role === 'volunteer';
   if (!vol) api('/api/assign-info').then((r) => { S.info = r.items || []; }).catch(() => { S.info = S.info || []; }); // for information: helpers, grade differences
@@ -2161,6 +2203,7 @@ async function loadAdmin() {
   for (const [k, path] of [['hqUsers', '/api/admin/hq-users'], ['settings', '/api/admin/settings'], ['emailSched', '/api/admin/email-schedule'], ['rec', '/api/admin/recipients'], ['push', '/api/admin/push-status'], ['calsync', '/api/admin/calsync'], ['formjob', '/api/admin/formjob'], ['codes', '/api/admin/codes'], ['roster', '/api/admin/roster'], ['devices', '/api/admin/devices'], ['backups', '/api/admin/backup?list=1'], ['activity', '/api/admin/activity']]) set(k, path);
   api('/api/admin/storage').then((r) => { S.storage = r; adminPaint(); }).catch(() => {});
   api('/api/admin/forms').then((r) => { S.forms = r; adminPaint(); }).catch(() => {});
+  api('/api/admin/guests').then((r) => { S.guests = r; adminPaint(); }).catch(() => {});
 }
 
 if (!window.__pilTimer) window.__pilTimer = setInterval(() => { const a = document.activeElement; if (S.who && !document.hidden && S.tab === 'pilot' && !(a && /^(SELECT|INPUT|TEXTAREA)$/.test(a.tagName))) { api('/api/overview' + (S.year ? '?year=' + S.year : '')).then((ov) => { if (ov && ov.status === 'ok') { S.ov = ov; S.pub = ov; } }).catch(() => {}).finally(loadPilot); } }, 60000);
@@ -2249,6 +2292,10 @@ document.addEventListener('click', async (e) => {
     }
     else if (/^dl[A-Z]/.test(a)) await cleanAction(a, t);
     else if (/^nr[A-Z]/.test(a)) await narrAction(a, t);
+    else if (a === 'grOpen') { S.gr.open = t.dataset.id; S.gr.doc = null; render(); try { S.gr.doc = await api('/api/guest/report?id=' + encodeURIComponent(t.dataset.id)); } catch (e) { S.gr.err = e.message; } render(); }
+    else if (a === 'grBack') { S.gr.open = null; S.gr.doc = null; render(); }
+    else if (a === 'grCsv') { const d = S.gr.doc; const q = (v) => '"' + String(v ?? '').replace(/"/g, '""') + '"'; const csv = [d.columns.map((c) => q(c.label)).join(','), ...d.rows.map((r) => d.columns.map((c) => q(r[c.k])).join(','))].join('\n'); const a2 = document.createElement('a'); a2.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' })); a2.download = 'report.csv'; a2.click(); }
+    else if (a === 'gvCreate' || a === 'gvAct') await guestUiAction(a, t);
     else if (a === 'usFilter') { S.usF = t.dataset.v; render(); }
     else if (a === 'lyMove') { const E = S.lyEdit[t.dataset.r]; const o = E.order; const i = o.indexOf(t.dataset.k); const j = i + Number(t.dataset.d); if (i >= 0 && j >= 0 && j < o.length) { [o[i], o[j]] = [o[j], o[i]]; } render(); }
     else if (a === 'lySave' || a === 'lyReset') { const r = t.dataset.r; const E = S.lyEdit[r]; try { await api('/api/layouts', { method: 'POST', noView: true, body: a === 'lyReset' ? { role: r, reset: true } : { role: r, tabs: { hidden: E.hidden, order: E.order } } }); delete S.lyEdit[r]; await loadLayout(); toast('Saved'); } catch (e) { alert(e.message); } }
@@ -2403,6 +2450,7 @@ document.addEventListener('keydown', (e) => {
   setTimeout(() => { checkAlerts(); }, 1500);
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
   try { S.cfg = await api('/api/config'); applyBrand(); } catch { $('#app').innerHTML = '<div class="banner bad">Cannot reach the server.</div>'; return; }
+  { const m = /[#&?]code=([A-Za-z0-9]{6,8})/.exec(location.hash + location.search); if (m) { store.set('kf_code', m[1].toUpperCase()); try { history.replaceState(null, '', location.pathname); } catch {} } }
   const saved = store.get('kf_code');
   if (saved) { S.code = saved; try { S.who = (await api('/api/login')).who; } catch { S.code = null; S.who = null; store.set('kf_code', null); } }
   if (!S.who) { loginScreen(); return; }

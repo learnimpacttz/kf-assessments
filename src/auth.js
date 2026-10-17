@@ -3,6 +3,7 @@
 // browser; every API call sends the code and the Worker decides what it may see.
 import { STAFF, rosterState } from './config.js';
 import { loadHq, hqByCode } from './hq.js';
+import { guestByCode, PROFILES } from './guests.js';
 
 const enc = new TextEncoder();
 let codeCache = null;
@@ -53,11 +54,13 @@ export async function identify(request, env) {
     // HQ can preview the app as any person (training and support). The preview is read-only: see index.js.
     const as = /^staff:(\d+)$/.exec(request.headers.get('x-view-as') || '');
     if (as) { const s = STAFF.find((x) => x.id === Number(as[1])); if (s) return { role: s.role, name: s.name, region: s.region, id: s.id, position: s.position, viewAs: true }; }
+    const ga = /^guest:(\w+)$/.exec(request.headers.get('x-view-as') || ''); if (ga && PROFILES[ga[1]]) return { role: 'guest', name: 'Preview: ' + PROFILES[ga[1]], org: '', profile: ga[1], id: 'g:preview', level: 'viewer', can_download: false, logo: '', viewAs: true, region: null };
     return hqWho;
   }
   const map = await staffCodes(env);
   const s = map && map[code.toUpperCase()];
-  return s ? { role: s.role, name: s.name, region: s.region, id: s.id, position: s.position } : null;
+  if (s) return { role: s.role, name: s.name, region: s.region, id: s.id, position: s.position };
+  return await guestByCode(env, code);
 }
 
 export const canSeeRegion = (who, region) => who && (who.role === 'hq' || who.region === region);
