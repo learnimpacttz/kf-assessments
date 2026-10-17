@@ -7,6 +7,11 @@
 4. Usage: staff who have not opened the app today or have alerts off.
 5. Phones: any "look at this" phone checks for yesterday.
 
+## Talking to people (inside the Command Center)
+- **Message a person, team or school:** open their detail view (click a name or school) > Send a message. They get a phone alert and see it under News; "Got it" shows you who has read it. Sent messages are listed in Messages > Log.
+- **Questions from the field:** the Questions page (HQ) and Ask a question (field). Volunteers ask their coordinator first; unanswered or escalated ones reach HQ. Answering sends the asker an alert. Aim to answer within one working day.
+- **HQ-only notes:** every person, school, region, query and data-cleaning request has private HQ notes. Tag a colleague to alert them. Field staff never see notes.
+
 ## Every evening
 - End-of-day check email arrives automatically. Chase schools started but not complete.
 

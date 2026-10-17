@@ -16,6 +16,7 @@ import { loadFormJob, saveFormJob, runFormJob, maybeRunFormJob } from './formjob
 import { kv } from './store.js';
 import { buildBrief, aiBrief } from './brief.js';
 import { ask as askAssistant, draftReportText } from './assistant.js';
+import { sendDm, dmInbox, dmAck, dmSent, askCreate, askList, askAct, askCounts, notesList, notesAct } from './talk.js';
 import { layoutsFor, saveLayout } from './layouts.js';
 const GUEST_REPORTS = ['region_progress']; // aggregate only: no names, no school results
 import { listGuests, guestAction, touchGuest } from './guests.js';
@@ -323,6 +324,22 @@ export default {
       if (path === '/api/news/react' && method === 'POST') { const b = await request.json().catch(() => ({})); const r = await reactNews(env, who, b.id, b.emoji); return r.error ? err(r.error, r.status || 400) : json(r); }
       if (path === '/api/layouts' && method === 'GET') { const rk = who.role === 'arc' ? 'rc' : who.role === 'guest' ? 'guest_' + who.profile : who.role; return json(await layoutsFor(env, who, rk)); }
       if (path === '/api/layouts' && method === 'POST') { const r = await saveLayout(env, who, await request.json().catch(() => ({}))); return r.error ? err(r.error, r.status || 422) : json(r); }
+      // ---------- direct messages, questions to HQ, HQ-only notes ----------
+      if (path.startsWith('/api/dm') || path.startsWith('/api/ask') || path.startsWith('/api/hqnotes')) {
+        const send = (r) => (r.error ? err(r.error, r.status || 422) : json(r));
+        try {
+          if (path === '/api/dm' && method === 'POST') return send(await sendDm(env, who, await request.json().catch(() => ({}))));
+          if (path === '/api/dm/inbox') return json(await dmInbox(env, who));
+          if (path === '/api/dm/ack' && method === 'POST') return send(await dmAck(env, who, (await request.json().catch(() => ({}))).id));
+          if (path === '/api/dm/sent') return send(await dmSent(env, who, { person: url.searchParams.get('person') || '' }));
+          if (path === '/api/ask/counts') return json(await askCounts(env, who));
+          if (path === '/api/ask' && method === 'GET') return json(await askList(env, who));
+          if (path === '/api/ask' && method === 'POST') { const b = await request.json().catch(() => ({})); return send(b.action === 'create' ? await askCreate(env, who, b) : await askAct(env, who, b)); }
+          if (path === '/api/hqnotes' && method === 'GET') return send(await notesList(env, who, url.searchParams.get('target') || ''));
+          if (path === '/api/hqnotes' && method === 'POST') return send(await notesAct(env, who, await request.json().catch(() => ({}))));
+        } catch (e) { return err(String(e.message || e), 500); }
+        return err('Not found', 404);
+      }
       if (path === '/api/usage' && method === 'POST') { const b = await request.json().catch(() => ({})); await recordUsage(env, who, b); return json({ ok: true }); }
       if (path === '/api/usage/report') { const r = await usageReport(env, who); return r.error ? err(r.error, r.status || 403) : json(r); }
       if (path === '/api/push/subscribe' && method === 'POST') {

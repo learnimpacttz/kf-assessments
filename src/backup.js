@@ -26,7 +26,7 @@ export async function openBuf(env, buf) {
   return crypto.subtle.decrypt({ name: 'AES-GCM', iv }, await dkey(env.BACKUP_PASSPHRASE, salt), ct);
 }
 // everything else the system keeps that cannot be re-read from KoBo
-const EXTRA_KEYS = ['v2:pilot', 'v2:narr', 'v2:layouts', 'v2:guests', 'v2:hq', 'v2:settings', 'v2:news', 'v2:msgs', 'v2:msgs:builtin', 'v2:reports', 'v2:delreq', 'v2:delog', 'v2:corrections', 'v2:approvededits', 'v2:activity', 'v2:usage:users', 'v2:usage:daily', 'v2:devowners', 'v2:calsync'];
+const EXTRA_KEYS = ['v2:pilot', 'v2:narr', 'v2:layouts', 'v2:guests', 'v2:hq', 'v2:settings', 'v2:news', 'v2:msgs', 'v2:msgs:builtin', 'v2:reports', 'v2:delreq', 'v2:delog', 'v2:corrections', 'v2:approvededits', 'v2:activity', 'v2:usage:users', 'v2:usage:daily', 'v2:devowners', 'v2:calsync', 'v2:dm', 'v2:askq', 'v2:hqnotes'];
 export async function gzip(str) { return new Response(new Blob([str]).stream().pipeThrough(new CompressionStream('gzip'))).arrayBuffer(); }
 
 export async function buildBackup(env, full) {

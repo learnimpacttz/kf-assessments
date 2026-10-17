@@ -145,7 +145,7 @@ function flagList(all, { limit = 8, names = true, closed = false } = {}) {
   const one = (f) => {
     const thread = f.q && f.q.thread.length ? `<div class="thread">${f.q.thread.map((m) => `<div><b>${esc(m.by)}</b> <span>${fmtAt(m.at)}</span><br><span data-nt>${esc(m.text)}</span></div>`).join('')}</div>` : '';
     const box = qActions(f);
-    return `<div class="flag ${isOpen(f) ? 'openq' : 'doneq'}"><i class="st ${f.sev}"></i><div style="min-width:0;flex:1"><b>${lk('school', f.school, f.school_name || f.school)} · ${esc(FLAG_LABEL[f.type] || f.type)}${isOpen(f) && f.qk ? (() => { const ab = qAbility(f); return ab.review ? ' <span class="pill good">I review</span>' : ab.respond ? ' <span class="pill warn">I respond</span>' : ''; })() : ''}</b><span>${esc(f.region ? title(f.region) + ' · ' : '')}${esc(f.lga ? title(f.lga) + ' · ' : '')}${f.grade ? 'Grade ' + f.grade + ' · ' : ''}${esc(f.text)}${names && f.admin ? ' · ' + String(f.admin).split(' and ').map((n) => lk('person', n, n)).join(' and ') : ''}${f.date ? ' · ' + shortDate(f.date) : ''}</span>${f.hint ? `<span class="ft">${esc(f.hint)}</span>` : ''}${fixLinks(f)}${phoneHelp(f)}${thread}<details class="fd"><summary>Details to find the records</summary>${flagDetail(f)}</details>${f.qk ? chainHtml(f) : ''}${f.qk ? box : ''}</div></div>`;
+    return `<div class="flag ${isOpen(f) ? 'openq' : 'doneq'}"><i class="st ${f.sev}"></i><div style="min-width:0;flex:1"><b>${lk('school', f.school, f.school_name || f.school)} · ${esc(FLAG_LABEL[f.type] || f.type)}${isOpen(f) && f.qk ? (() => { const ab = qAbility(f); return ab.review ? ' <span class="pill good">I review</span>' : ab.respond ? ' <span class="pill warn">I respond</span>' : ''; })() : ''}</b><span>${esc(f.region ? title(f.region) + ' · ' : '')}${esc(f.lga ? title(f.lga) + ' · ' : '')}${f.grade ? 'Grade ' + f.grade + ' · ' : ''}${esc(f.text)}${names && f.admin ? ' · ' + String(f.admin).split(' and ').map((n) => lk('person', n, n)).join(' and ') : ''}${f.date ? ' · ' + shortDate(f.date) : ''}</span>${f.hint ? `<span class="ft">${esc(f.hint)}</span>` : ''}${fixLinks(f)}${phoneHelp(f)}${thread}<details class="fd"><summary>Details to find the records</summary>${flagDetail(f)}</details>${f.qk ? chainHtml(f) : ''}${f.qk ? box : ''}${f.qk && S.who && S.who.role === 'hq' && !S.viewAs ? noteBtn('query:' + f.qk) : ''}</div></div>`;
   };
   return flags.slice(0, limit).map(one).join('') + (flags.length > limit ? `<div class="note">+ ${flags.length - limit} more in the data explorer.</div>` : '');
 }
@@ -645,7 +645,7 @@ const isVol = () => S.who && S.who.role === 'volunteer';
 const lk = (kind, id, text) => (kind === 'person' && isVol() && S.ov?.mine?.me?.name !== id ? esc(text) : `<a href="#" class="lk" data-open="${esc(kind)}:${esc(id)}">${esc(text)}</a>`);
 const schoolsAll = () => [...(S.who?.role === 'hq' ? S.allSchools || [] : S.ov?.mine?.schools || []), ...(S.pr?.schools || [])];
 const adminsAll = () => (S.who?.role === 'hq' ? S.ov.admins : S.ov?.mine?.admins || (S.ov?.mine?.me ? [S.ov.mine.me] : []));
-const flagsAll = () => (S.who?.role === 'hq' ? S.ov.flags : S.ov?.mine?.flags || []);
+const flagsAll = () => (S.who?.role === 'hq' ? (S.ov && S.ov.flags) || [] : S.ov?.mine?.flags || []);
 const workOf = (name) => S.workCache[name] || (S.ov?.mine?.work_all || {})[name] || (S.ov?.mine?.me?.name === name ? S.ov.mine.work : []) || [];
 S.stack = []; S.cur = null;
 
@@ -655,6 +655,7 @@ function openDetail(spec, push = true) {
   const [kind, ...rest] = spec.split(':'); const id = rest.join(':');
   const body = kind === 'person' ? personCard(id) : kind === 'school' ? schoolCard(id) : kind === 'region' ? regionCard(id) : kind === 'phone' ? phoneCard(id) : '<p>Not found.</p>';
   $('#drawerBody').innerHTML = `<div class="dnav">${S.stack.length ? '<button class="btn sm sec" data-act="dBack">‹ Back</button>' : ''}<button class="btn sm sec" data-act="dClose" style="margin-left:auto">Close ✕</button></div>${body}`;
+  $('#drawerBody').insertAdjacentHTML('beforeend', extrasHtml(kind, id)); hydrateDrawer(kind, id); if (S.who && S.who.role === 'hq') hydrateNotes();
   $('#drawer').hidden = false; if (push !== false || !$('#drawerBody').scrollTop) $('#drawerBody').scrollTop = 0;
   if (kind === 'person' && S.who?.role !== 'volunteer') loadWork(id);
   if ((kind === 'region' || kind === 'school') && S.who?.role === 'hq' && !S.allSchools) ensureSchools();
@@ -1300,12 +1301,12 @@ function applyBrand() {
 const TABS = {
   public: [['progress', 'Progress'], ['compare', 'Compare']],
   guest: [['progress', 'Progress'], ['compare', 'Compare'], ['greports', 'Reports']],
-  volunteer: [['day', 'My day'], ['pilot', 'Pilot day'], ['news', 'News'], ['work', 'My work'], ['queries', 'My queries'], ['stats', 'My stats'], ['phones', 'Phones'], ['pupils', 'Pupil records'], ['compare', 'Compare'], ['practice', 'Practice (Mafunzo)'], ['help', 'Help']],
-  rc: [['region', 'Region'], ['news', 'News'], ['plan', 'Plan & calendar'], ['team', 'My team'], ['pilot', 'Pilot day'], ['allq', 'Queries'], ['phones', 'Phones'], ['compare', 'Compare'], ['reports', 'Reports'], ['narr', 'School reports'], ['clean', 'Data cleaning'], ['explore', 'Data explorer'], ['practice', 'Practice (Mafunzo)'], ['help', 'Help']],
-  hq: [['today', 'Today'], ['hq', 'HQ'], ['usage', 'Usage & analytics'], ['news', 'News'], ['messages', 'Write and schedule'], ['clean', 'Data cleaning'], ['regions', 'Regions & plans'], ['plan', 'Plan & calendar'], ['pilot', 'Pilot day'], ['people', 'People'], ['allq', 'Queries'], ['phones', 'Phones'], ['compare', 'Compare'], ['reports', 'Reports'], ['payments', 'Payments'], ['explore', 'Data explorer'], ['admin', 'Admin'], ['help', 'Help'], ['practice', 'Practice (Mafunzo)']],
+  volunteer: [['day', 'My day'], ['pilot', 'Pilot day'], ['news', 'News'], ['work', 'My work'], ['queries', 'My queries'], ['stats', 'My stats'], ['phones', 'Phones'], ['pupils', 'Pupil records'], ['compare', 'Compare'], ['practice', 'Practice (Mafunzo)'], ['ask', 'Ask a question'], ['help', 'Help']],
+  rc: [['region', 'Region'], ['news', 'News'], ['ask', 'Questions'], ['plan', 'Plan & calendar'], ['team', 'My team'], ['pilot', 'Pilot day'], ['allq', 'Queries'], ['phones', 'Phones'], ['compare', 'Compare'], ['reports', 'Reports'], ['narr', 'School reports'], ['clean', 'Data cleaning'], ['explore', 'Data explorer'], ['practice', 'Practice (Mafunzo)'], ['help', 'Help']],
+  hq: [['today', 'Today'], ['hq', 'HQ'], ['questions', 'Questions'], ['usage', 'Usage & analytics'], ['news', 'News'], ['messages', 'Write and schedule'], ['clean', 'Data cleaning'], ['regions', 'Regions & plans'], ['plan', 'Plan & calendar'], ['pilot', 'Pilot day'], ['people', 'People'], ['allq', 'Queries'], ['phones', 'Phones'], ['compare', 'Compare'], ['reports', 'Reports'], ['payments', 'Payments'], ['explore', 'Data explorer'], ['admin', 'Admin'], ['help', 'Help'], ['practice', 'Practice (Mafunzo)']],
 };
-const GROUPS = { public: [['Progress', ['progress']], ['Compare', ['compare']]], guest: [['Progress', ['progress']], ['Compare', ['compare']], ['Reports', ['greports']]], rc: [['Home', ['region', 'news']], ['Plan', ['plan', 'team', 'pilot']], ['Checks', ['allq', 'clean', 'phones', 'compare', 'explore']], ['Reports', ['reports', 'narr']], ['More', ['practice', 'help']]], volunteer: [['Today', ['day', 'pilot', 'news']], ['My work', ['work', 'queries', 'stats']], ['Team', ['phones', 'pupils', 'compare']], ['More', ['practice', 'help']]] };
-const HQ_GROUPS = [['Today', ['today']], ['Field', ['hq', 'regions', 'plan', 'pilot', 'people', 'practice']], ['Checks', ['allq', 'clean', 'phones', 'compare', 'explore']], ['Messages', ['news', 'messages']], ['Reports', ['reports', 'narr', 'payments']], ['Admin', ['admin', 'usage']], ['Help', ['help']]];
+const GROUPS = { public: [['Progress', ['progress']], ['Compare', ['compare']]], guest: [['Progress', ['progress']], ['Compare', ['compare']], ['Reports', ['greports']]], rc: [['Home', ['region', 'news', 'ask']], ['Plan', ['plan', 'team', 'pilot']], ['Checks', ['allq', 'clean', 'phones', 'compare', 'explore']], ['Reports', ['reports', 'narr']], ['More', ['practice', 'help']]], volunteer: [['Today', ['day', 'pilot', 'news', 'ask']], ['My work', ['work', 'queries', 'stats']], ['Team', ['phones', 'pupils', 'compare']], ['More', ['practice', 'help']]] };
+const HQ_GROUPS = [['Today', ['today']], ['Field', ['hq', 'regions', 'plan', 'pilot', 'people', 'practice']], ['Checks', ['allq', 'clean', 'phones', 'compare', 'explore']], ['Messages', ['news', 'messages', 'questions']], ['Reports', ['reports', 'narr', 'payments']], ['Admin', ['admin', 'usage']], ['Help', ['help']]];
 const REPORTS_READY = true;
 const LEVEL_TXT = { admin: 'Admin', editor: 'Editor', viewer: 'Viewer' };
 const hqLevel = () => (S.who?.role === 'hq' ? S.who.level || 'admin' : null);
@@ -1316,13 +1317,15 @@ function tabAllowed(k) {
   if (k === 'messages') return hqLevel() !== null;
   if (k === 'reports') return REPORTS_READY && S.who && S.who.role !== 'volunteer';
   if (k === 'greports') return isGuest();
+  if (k === 'ask') return Boolean(S.who && ['volunteer', 'rc', 'arc'].includes(S.who.role));
+  if (k === 'questions') return Boolean(S.who && S.who.role === 'hq');
   if (k === 'usage') return Boolean(S.who && S.who.role === 'hq');
   if (k === 'narr') return Boolean(S.who && S.who.role !== 'volunteer');
   return true;
 }
 const roleKey = () => (!S.who ? 'public' : S.who.role === 'arc' ? 'rc' : S.who.role);
 const isGuest = () => Boolean(S.who && S.who.role === 'guest');
-const VIEWS = { progress: viewProgress, compare: viewCompare, day: viewDay, work: viewWork, queries: viewQueries, stats: viewStats, region: viewRegion, plan: viewPlan, team: viewTeam, explore: viewExplore, hq: viewHQ, regions: viewRegionsHQ, people: viewPeopleHQ, admin: viewAdmin, allq: viewAllQueries, phones: viewPhones, practice: viewPractice, news: viewNews, pilot: viewPilot, payments: viewPayments, pupils: viewPupils, messages: viewMessages, reports: viewReports, narr: viewNarr, greports: viewGuestReports, usage: viewUsage, clean: viewClean, today: viewToday, help: viewHelp };
+const VIEWS = { progress: viewProgress, compare: viewCompare, day: viewDay, work: viewWork, queries: viewQueries, stats: viewStats, region: viewRegion, plan: viewPlan, team: viewTeam, explore: viewExplore, hq: viewHQ, regions: viewRegionsHQ, people: viewPeopleHQ, admin: viewAdmin, allq: viewAllQueries, phones: viewPhones, practice: viewPractice, news: () => dmInboxCard() + viewNews(), pilot: viewPilot, payments: viewPayments, pupils: viewPupils, messages: viewMessages, reports: viewReports, narr: viewNarr, ask: viewAsk, questions: viewQuestions, greports: viewGuestReports, usage: viewUsage, clean: viewClean, today: viewToday, help: viewHelp };
 
 // Admin is long: each card folds away so you can jump to what you need. The first card stays open; your choices are remembered.
 function enhanceCollapsible() {
@@ -1444,7 +1447,7 @@ async function arrAction(a, t) {
   else if (a === 'arrSave' || a === 'arrReset') { try { await api('/api/layouts', { method: 'POST', noView: true, body: a === 'arrReset' ? { role: A.role, tab: A.tab, reset: true } : { role: A.role, tab: A.tab, order: A.order, hidden: A.hidden } }); S.arr = null; await loadLayout(); toast(a === 'arrReset' ? 'Back to the default layout' : 'Layout saved'); } catch (e) { A.msg = e.message; render(); } }
 }
 // HQ desk: HQ works from its own sidebar of HQ pages on wide screens; field pages (My day, My work) are not part of it
-const DESK_GROUPS = [['Today', ['today']], ['Field operations', ['hq', 'regions', 'plan', 'pilot', 'practice']], ['Data quality', ['allq', 'clean', 'phones', 'compare', 'explore']], ['People', ['people']], ['Communication', ['news', 'messages']], ['Reports', ['reports', 'narr', 'payments']], ['System', ['admin', 'usage', 'help']]];
+const DESK_GROUPS = [['Today', ['today']], ['Field operations', ['hq', 'regions', 'plan', 'pilot', 'practice']], ['Data quality', ['allq', 'clean', 'phones', 'compare', 'explore']], ['People', ['people']], ['Communication', ['news', 'messages', 'questions']], ['Reports', ['reports', 'narr', 'payments']], ['System', ['admin', 'usage', 'help']]];
 function renderSide(tabs, badge) {
   let side = document.getElementById('side'); const on = roleKey() === 'hq' && S.who && !S.viewAs;
   document.body.classList.toggle('hqdesk', Boolean(on)); if (!on) { if (side) side.remove(); return; }
@@ -1456,7 +1459,7 @@ function render() {
   trackTab();
   const tabs = layoutTabs(TABS[roleKey()].filter(([k]) => tabAllowed(k)));
   if (!tabs.find((t) => t[0] === S.tab)) { const st = startKey(); S.tab = st && tabs.find((t) => t[0] === st) ? st : tabs[0][0]; if (S.tab !== tabs[0][0] && !S.viewAs) { const want = S.tab; setTimeout(() => { if (S.tab === want) selectTab(want); }, 0); } }
-  const badge = (k) => (k === 'news' && S.tab !== 'news' && unreadNews().length ? ` <span class="nbadge">${unreadNews().length}</span>` : '');
+  const badge = (k) => { if (k === 'news' && S.tab !== 'news') { const n = unreadNews().length + ((S.dm && S.dm.unread) || 0); return n ? ` <span class="nbadge">${n}</span>` : ''; } if ((k === 'ask' || k === 'questions') && S.tab !== k && S.askC) { const n = (S.askC.to_answer || 0) + (S.askC.mine_answered || 0); return n ? ` <span class="nbadge">${n}</span>` : ''; } return ''; };
   let n2 = $('#nav2'); if (!n2) { n2 = document.createElement('nav'); n2.id = 'nav2'; n2.setAttribute('role', 'tablist'); $('#nav').after(n2); }
   const GRP = roleKey() === 'hq' ? HQ_GROUPS : GROUPS[roleKey()];
   if (GRP) {
@@ -1480,10 +1483,11 @@ function render() {
   const un = S.tab !== 'news' && S.who && !S.viewAs ? unreadNews()[0] : null;
   const langBanner = S.who && S.who.role === 'volunteer' && !S.viewAs && LANG() === 'en' && !store.get('kf_lang_seen') ? '<div class="banner" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span style="flex:1;min-width:180px"><b>Kiswahili?</b> Unaweza kutumia programu hii kwa Kiswahili. · You can use this app in Swahili.</span><button class="btn sm" data-act="langSw">Tumia Kiswahili</button><button class="btn sm ghost" data-act="langKeep">English</button></div>' : '';
   const newsBanner = un ? `<div class="banner" style="background:var(--surface2)"><b>News:</b> ${esc(un.title)} <a href="#news" data-tab="news"><b>Read</b></a></div>` : '';
-  $('#app').innerHTML = previewBanner() + langBanner + planBanner + (S.tab === 'pilot' ? '' : pilotBanner()) + newsBanner + VIEWS[S.tab]();
+  $('#app').innerHTML = previewBanner() + langBanner + dmBanner() + planBanner + (S.tab === 'pilot' ? '' : pilotBanner()) + newsBanner + VIEWS[S.tab]();
   $('#gswrap').hidden = !S.who;
   applyLayout();
   collapseIntros();
+  if (S.who && S.who.role === 'hq' && !S.viewAs) hydrateNotes();
   guestChrome();
   enhanceCollapsible();
   aiRender();
@@ -1508,6 +1512,8 @@ function viewToday() {
     item(waitingResp.length ? 'warn' : 'good', `${waitingResp.length} quer${waitingResp.length === 1 ? 'y' : 'ies'} waiting for a response, ${inReview.length} in review`, 'Responses come first from the test admin, or from the RC or ARC.' + qLinks(waitingResp), 'allq', 'See all'),
     item(noPlan.length ? 'warn' : 'good', noPlan.length ? `${noPlan.length} region${noPlan.length > 1 ? 's' : ''} without a submitted plan` : 'All regions have submitted their plan', noPlan.length ? noPlan.map((r) => lk('region', r.region, title(r.region))).join(', ') + '. The plan deadline is Fri 16 Oct. Notices and the calendar file depend on it.' : 'The calendar file can now be switched on in Admin.', 'regions', 'Regions and plans'),
     item(bad ? 'bad' : 'good', bad ? `${bad} serious check${bad > 1 ? 's' : ''} open` : 'No serious check open', 'Data and phone checks that need an explanation.' + qLinks(flags.filter((f) => isOpen(f) && f.sev === 'bad' && !f.qk)), 'hq', 'HQ overview'),
+    item(((S.askC && S.askC.to_answer) || 0) ? 'warn' : 'good', ((S.askC && S.askC.to_answer) || 0) ? `${S.askC.to_answer} question${S.askC.to_answer > 1 ? 's' : ''} from the field` : 'No question waiting', 'Field staff and coordinators ask here. The person gets an alert when you answer.', 'questions', 'Questions'),
+    ((S.notesIdx && S.notesIdx.mentions) || []).map((n) => `<div class="tdrow"><i class="st warn"></i><div style="flex:1;min-width:0"><b>${esc(n.by)} tagged you in a note</b><span>${esc(n.text.slice(0, 160))}</span></div><button class="btn sm sec" data-act="ntSeen" data-id="${n.id}">Got it</button></div>`).join(''),
     nextNews ? item('', 'Next scheduled message', `${esc(nextNews.title)} · ${eatTime(nextNews.publish_at)}`, 'news', 'News') : '',
   ].join('');
   const quick = [['reports', 'Reports and downloads'], ['phones', 'Phones today'], ['explore', 'Data explorer'], ['help', 'Help and guides']].filter(([k]) => tabAllowed(k)).map(([k, t]) => `<button class="btn sm sec" data-tab="${k}">${t}</button>`).join(' ');
@@ -1560,7 +1566,7 @@ function viewHelp() {
   const mine = HELP[role] || [];
   return `<div class="pagehead"><div><h2>Help</h2><p>Short answers in plain words. Open any question.</p></div></div>
   ${mine.length ? `<div class="card"><h3>For your role</h3>${mk(mine)}</div>` : ''}<div class="card" style="margin-top:14px"><h3>For everyone</h3>${mk(HELP.common)}</div>
-  <div class="card" style="margin-top:14px"><h3>Still stuck?</h3><div class="sub">Tell your Regional Coordinator. RCs tell HQ.</div></div>`;
+  <div class="card" style="margin-top:14px"><h3>Still stuck?</h3><div class="sub">Use Ask a question (under Today) or tell your Regional Coordinator. RCs tell HQ.</div></div>`;
 }
 
 // ---------- the assistant (HQ) ----------
@@ -1853,7 +1859,7 @@ function viewMessages() {
   const t = M.tab || 'compose'; const d = M.data; const pend = d.jobs.filter((j) => j.status === 'pending').length;
   const bar = `<div class="sel" style="margin:8px 0 12px;flex-wrap:wrap">${MS_TABS.map(([k, n]) => `<button class="btn sm ${k === t ? '' : 'sec'}" data-act="msTab" data-t="${k}">${n}${k === 'jobs' && d.jobs.filter((j) => ['scheduled', 'pending', 'paused'].includes(j.status)).length ? ` (${d.jobs.filter((j) => ['scheduled', 'pending', 'paused'].includes(j.status)).length})` : ''}${k === 'jobs' && pend ? ' ⚑' : ''}</button>`).join('')}</div>`;
   const head = `<div class="pagehead"><div><h2>Messages</h2><p>Write a message, send it now, schedule it once or repeat it. Emails, phone alerts and News all work from here.</p></div></div>${d.sending_on ? '' : '<div class="banner bad"><b>Email sending is switched off in this system.</b> Phone alerts and News still work.</div>'}${M.note ? `<div class="banner" style="background:var(--surface2)">${esc(M.note)}</div>` : ''}`;
-  return head + bar + ({ compose: msCompose, jobs: msJobs, tpl: msTpl, builtin: msBuiltin, log: msLog }[t] || msCompose)();
+  return head + bar + (t === 'log' ? dmSentCard() : '') + ({ compose: msCompose, jobs: msJobs, tpl: msTpl, builtin: msBuiltin, log: msLog }[t] || msCompose)();
 }
 function msCompose() {
   const M = S.msg, d = M.data, D = M.draft || msBlank(); const can = canWrite(); const sc = D.schedule;
@@ -1961,7 +1967,7 @@ function delCard(r) {
   ${a.back ? `<button class="btn sm sec" data-act="dlAct" data-op="send_back" data-id="${r.id}">Send back</button><button class="btn sm ghost" data-act="dlAct" data-op="reject" data-id="${r.id}">Reject</button>` : ''}
   <button class="btn sm ghost" data-act="dlAct" data-op="comment" data-id="${r.id}">Add a note</button>${a.withdraw ? `<button class="btn sm ghost" data-act="dlAct" data-op="withdraw" data-id="${r.id}">Withdraw</button>` : ''}</div></div>`;
   return `<div class="card" style="margin-top:12px;border-left:4px solid ${r.stage === 'deleted' ? 'var(--ink3,#888)' : 'var(--gold)'}"><h3 style="display:flex;justify-content:space-between;gap:8px"><span>${r.type === 'edit' ? chip('Edit: ' + esc(r.field_label || ''), 'teal') + ' ' : ''}${r.ids.length} record${r.ids.length > 1 ? 's' : ''} · ${esc(r.kind === 'sampling' ? 'Sampling' : 'Students assessment')} · ${esc((r.regions || []).map(title).join(', '))}</span><button class="btn sm ghost" data-act="dlOpen" data-id="${open ? '' : r.id}">${open ? 'Close' : 'Open'}</button></h3>
-  <div class="sub">Suggested by ${esc(r.by)} (${esc(r.by_role)}) · ${fmtAt(r.created_at)}</div>${delChain(r)}${r.type === 'edit' ? `<div class="note" style="margin:8px 0"><b>What changes.</b> ${(r.edit_lines || []).slice(0, open ? 60 : 3).map((l) => esc(l.text) + ' <span class="m">(record ' + l.id + ')</span>').join('<br>')}${!open && (r.edit_lines || []).length > 3 ? '<br>…' : ''}${r.edit && r.edit.field === 'grade' ? '<br><span class="m">Only the grade label and the pupil ID change. The questions the pupil was asked stay as they were.</span>' : ''}</div>` : ''}<p style="margin:8px 0"><b>Reason.</b> ${esc(r.reason)}${r.link ? ` <span class="m">Link: ${esc(r.link)}</span>` : ''}</p>
+  <div class="sub">Suggested by ${esc(r.by)} (${esc(r.by_role)}) · ${fmtAt(r.created_at)}</div>${S.who && S.who.role === 'hq' && !S.viewAs ? noteBtn('dr:' + r.id) : ''}${delChain(r)}${r.type === 'edit' ? `<div class="note" style="margin:8px 0"><b>What changes.</b> ${(r.edit_lines || []).slice(0, open ? 60 : 3).map((l) => esc(l.text) + ' <span class="m">(record ' + l.id + ')</span>').join('<br>')}${!open && (r.edit_lines || []).length > 3 ? '<br>…' : ''}${r.edit && r.edit.field === 'grade' ? '<br><span class="m">Only the grade label and the pupil ID change. The questions the pupil was asked stay as they were.</span>' : ''}</div>` : ''}<p style="margin:8px 0"><b>Reason.</b> ${esc(r.reason)}${r.link ? ` <span class="m">Link: ${esc(r.link)}</span>` : ''}</p>
   ${open ? `<details class="fd" open><summary>Records (${r.ids.length})</summary><div class="tbl"><table><thead><tr>${a.initiate || a.resub ? '<th>Remove</th>' : ''}<th>Id</th><th>School</th><th>Grade</th><th>Date</th><th>Enumerator</th><th>Pupil ID</th><th>Time</th></tr></thead><tbody>${items}</tbody></table></div></details><details class="fd" open><summary>History (${r.history.length})</summary>${hist}</details>${r.applied ? `<p class="m">Applied ${r.applied.n} record(s). ${S.who?.role === 'hq' && myLvl() >= 2 ? `<a href="/api/deletions/copy?id=${r.id}" data-dl="${r.id}">Download the saved originals</a>` : ''}</p>` : ''}${r.deleted ? `<p class="m">KoBo count ${r.deleted.before} to ${r.deleted.after}. ${S.who?.role === 'hq' && myLvl() >= 2 ? `<a href="/api/deletions/copy?id=${r.id}" data-dl="${r.id}">Download the saved copy</a>` : ''}</p>` : ''}${actions}` : ''}</div>`;
 }
 function viewClean() {
@@ -2043,6 +2049,92 @@ function guestChrome() {
   const hdr = document.querySelector('header .brand'); let pl = document.querySelector('.plogo');
   if (g.logo && hdr) { if (!pl) { pl = document.createElement('img'); pl.className = 'plogo'; pl.alt = g.org || 'Partner'; hdr.parentNode.insertBefore(pl, hdr.nextSibling); } if (pl.getAttribute('src') !== g.logo) pl.src = g.logo; } else if (pl) pl.remove();
   if (!g.can_download) { if (!wm) { wm = document.createElement('div'); wm.id = 'gwm'; document.body.appendChild(wm); } const t = esc(g.name).replace(/'/g, ''); wm.style.backgroundImage = `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='320' height='200'><text x='20' y='110' transform='rotate(-24 160 100)' font-family='sans-serif' font-size='15' fill='%23354062' fill-opacity='0.09'>${encodeURIComponent(t)} · LearnImpact</text></svg>")`; } else if (wm) wm.remove();
+}
+// ---------- Talking: direct messages, questions to HQ, HQ-only notes ----------
+const hqWrite = () => S.who && S.who.role === 'hq' && hqLevel() !== 'viewer';
+const ageDays = (iso) => Math.floor((Date.now() - Date.parse(iso)) / 864e5);
+async function loadTalk() {
+  if (!S.who || S.viewAs || isGuest()) return; let changed = false;
+  try {
+    if (S.who.role !== 'hq') { const d = await api('/api/dm/inbox'); if (JSON.stringify(d) !== JSON.stringify(S.dm)) { S.dm = d; changed = true; } }
+    else { const n = await api('/api/hqnotes'); if (JSON.stringify([n.counts, n.mentions]) !== JSON.stringify([S.notesIdx && S.notesIdx.counts, S.notesIdx && S.notesIdx.mentions])) { S.notesIdx = n; changed = true; } }
+    const c = await api('/api/ask/counts'); if (JSON.stringify(c) !== JSON.stringify(S.askC)) { S.askC = c; changed = true; }
+  } catch { /* the pages work without it */ }
+  if (changed && !document.activeElement?.closest?.('#app textarea, #drawer textarea')) render();
+}
+// ---- inbox ----
+function dmInboxCard() {
+  const D = S.dm; if (!D || !D.items.length || !S.who || S.who.role === 'hq') return '';
+  return `<div class="card" style="margin-top:12px;border-left:4px solid var(--gold)"><h3>Messages for you</h3>${D.items.slice(0, 8).map((m) => `<div class="flag"><i class="st ${m.read ? 'good' : 'warn'}"></i><div style="flex:1"><b>${esc(m.from)}</b> <span class="m">${esc(fmtAt(m.at))}</span><span style="color:var(--ink);font-size:14px">${esc(m.text)}</span>${m.read ? '' : `<button class="btn sm" data-act="dmAck" data-id="${m.id}" style="margin-top:6px">Got it</button>`}</div></div>`).join('')}</div>`;
+}
+function dmBanner() {
+  const D = S.dm; if (!D || !D.unread || S.tab === 'news' || S.viewAs || !S.who || S.who.role === 'hq') return '';
+  const m = D.items.find((x) => !x.read); return `<div class="banner" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><span style="flex:1;min-width:200px"><b>${D.unread} new message${D.unread > 1 ? 's' : ''}</b> · ${esc(m ? m.from + ': ' + m.text.slice(0, 70) + (m.text.length > 70 ? '…' : '') : '')}</span><button class="btn sm" data-tab="news">Read</button></div>`;
+}
+// ---- drawer extras: message box and HQ notes ----
+function extrasHtml(kind, id) {
+  const w = S.who; if (!w || S.viewAs || isGuest() || !['person', 'school', 'region'].includes(kind)) return '';
+  const canMsg = w.role === 'hq' ? hqLevel() !== 'viewer' : ['rc', 'arc'].includes(w.role); let out = '';
+  if (canMsg) {
+    const what = kind === 'person' ? 'this person' : kind === 'school' ? 'the team at this school' : 'this region';
+    out += `<div class="card dx" style="margin-top:12px"><h3>Send a message</h3><div class="sub">A short note to ${what}. They get a phone alert and see it under News, and you can see who has read it.</div><textarea id="dmText" maxlength="280" rows="2" placeholder="Write the message (up to 280 characters)" style="width:100%"></textarea>${kind === 'region' ? '<label class="m">To <select id="dmRoles"><option value="">Everyone in the region</option><option value="volunteer">Volunteers</option><option value="rc,arc">Coordinators (RC and ARC)</option></select></label>' : ''}<div style="margin-top:6px"><button class="btn sm" data-act="dmSend" data-kind="${kind}" data-id="${esc(id)}">Send</button> <span id="dmMsg" class="m"></span></div><div id="dmSent"></div></div>`;
+  }
+  if (w.role === 'hq') out += `<div class="card dx" style="margin-top:12px" data-notes="${esc(kind + ':' + id)}"><h3>HQ notes</h3><div class="empty">Loading…</div></div>`;
+  return out;
+}
+async function hydrateDrawer(kind, id) {
+  if (kind === 'person' && S.who && (S.who.role === 'hq' || ['rc', 'arc'].includes(S.who.role))) {
+    const st = [...((S.ov && S.ov.staff) || []), ...((S.ov && S.ov.mine && S.ov.mine.staff) || [])].find((x) => x.name === id); if (!st) return;
+    try { const d = await api('/api/dm/sent?person=' + st.id); const el = document.getElementById('dmSent'); if (el) el.innerHTML = d.items.length ? '<h4 style="margin:10px 0 4px">Recent messages to this person</h4>' + d.items.slice(0, 5).map((m) => `<div class="m"><b>${esc(fmtAt(m.at))}</b> · ${esc(m.text)} <span class="pill ${m.unread_names.length ? 'warn' : 'good'}">${m.unread_names.length ? 'not read' : 'read'}</span></div>`).join('') : ''; } catch { /* optional */ }
+  }
+}
+// ---- HQ notes ----
+S.notes ||= {};
+function notesHtml(target) {
+  const N = S.notes[target]; if (!N) return '<div class="empty">Loading…</div>';
+  const list = N.notes.map((n) => `<div class="flag"><i class="st ${n.pinned ? 'warn' : 'good'}"></i><div style="flex:1"><b>${esc(n.by)}</b> <span class="m">${esc(fmtAt(n.at))}${n.pinned ? ' · pinned' : ''}${(n.mentions || []).length ? ' · tagged ' + n.mentions.map((m) => esc((N.people.find((p) => p.id === m) || {}).name || '')).join(', ') : ''}</span><div style="color:var(--ink);font-size:14px;white-space:pre-wrap">${esc(n.text)}</div>${N.can_write ? `<button class="btn sm ghost" data-act="ntAct" data-op="pin" data-id="${n.id}">${n.pinned ? 'Unpin' : 'Pin'}</button> <button class="btn sm ghost" data-act="ntAct" data-op="delete" data-id="${n.id}">Delete</button>` : ''}</div></div>`).join('');
+  const me = String(S.who.id);
+  const form = N.can_write ? `<div class="ntform" style="margin-top:8px"><textarea class="ntText" rows="2" maxlength="800" placeholder="A private note for HQ (field staff never see it)" style="width:100%"></textarea><div class="m" style="margin:4px 0">Tag a colleague: ${N.people.filter((p) => p.id !== me).map((p) => `<label style="margin-right:10px"><input type="checkbox" class="ntM" value="${esc(p.id)}"> ${esc(p.name.split(' ')[0])}</label>`).join('')}</div><button class="btn sm" data-act="ntAdd" data-target="${esc(target)}">Add note</button></div>` : '';
+  return (list || '<div class="m">No notes yet.</div>') + form;
+}
+async function loadNotes(target) { try { S.notes[target] = await api('/api/hqnotes?target=' + encodeURIComponent(target)); } catch { S.notes[target] = { notes: [], people: [], can_write: false }; } paintNotes(target); }
+function paintNotes(target) { document.querySelectorAll('[data-notes]').forEach((el) => { if (el.dataset.notes !== target) return; const h = el.querySelector(':scope > h3'); el.innerHTML = (h ? h.outerHTML : '') + notesHtml(target); }); }
+function hydrateNotes() { document.querySelectorAll('[data-notes]').forEach((el) => { const t = el.dataset.notes; if (S.notes[t]) { if (!el.querySelector('.ntform, .flag, .m')) paintNotes(t); } else if (!el.dataset.loading) { el.dataset.loading = '1'; loadNotes(t); } }); }
+const noteBtn = (target) => { const n = (S.notesIdx && S.notesIdx.counts && S.notesIdx.counts[target]) || 0; return `<details class="fd" data-nd="${esc(target)}"><summary>HQ notes${n ? ' (' + n + ')' : ''}</summary><div data-notes="${esc(target)}"><div class="empty">Loading…</div></div></details>`; };
+document.addEventListener('toggle', (e) => { const d = e.target; if (d && d.dataset && d.dataset.nd && d.open) { const t = d.dataset.nd; const el = d.querySelector('[data-notes]'); if (S.notes[t]) paintNotes(t); else loadNotes(t); void el; } }, true);
+// ---- questions ----
+async function loadAsk() { try { S.ask = await api('/api/ask'); S.askC = S.ask.counts; S.askErr = null; } catch (e) { S.askErr = e.message; } render(); }
+const ASK_ST = { open: ['waiting', 'warn'], escalated: ['with HQ', 'warn'], answered: ['answered', 'good'], closed: ['closed', 'mute'] };
+function askCard(q, mode) {
+  const st = ASK_ST[q.status] || ['', 'mute']; const old = ageDays(q.at); const w = S.ask || {}; const open = q.status === 'open' || q.status === 'escalated';
+  const handler = (S.who.role === 'hq' ? hqWrite() : ['rc', 'arc'].includes(S.who.role) && q.owner === 'rc' && mode === 'team');
+  const ev = q.events.slice(1).map((e) => `<div class="m"><b>${esc(e.by)}</b> · ${esc(fmtAt(e.at))} · ${e.kind === 'answered' ? 'answered' : e.kind === 'escalated' ? 'sent to HQ' : e.kind === 'closed' ? 'closed' : 'follow-up'}<div style="color:var(--ink);font-size:14px">${esc(e.text)}</div></div>`).join('');
+  const own = mode === 'mine';
+  return `<div class="card" style="margin-top:12px;${q.urgent && open ? 'border-left:4px solid var(--bad)' : ''}"><div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><span class="pill ${st[1]}">${st[0]}</span>${q.urgent ? '<span class="pill bad">urgent</span>' : ''}<span class="m">${esc((w.cats || {})[q.cat] || '')}${q.school ? ' · ' + lk('school', q.school, schoolNameOf(q.school)) : ''}</span><span class="m" style="margin-left:auto">${old ? old + ' d ago' : 'today'}${open && old >= 2 ? ' · waiting' : ''}</span></div>${own ? '' : `<div style="margin-top:4px"><b>${lk('person', q.by.name, q.by.name)}</b> <span class="m">${esc(q.by.position || q.by.role)} · ${esc(title(q.by.region || ''))}</span></div>`}<div style="margin:6px 0;white-space:pre-wrap">${esc(q.text)}</div>${ev}
+  ${handler && open ? `<textarea id="aq-${q.id}" rows="2" maxlength="800" placeholder="Write the answer" style="width:100%;margin-top:6px"></textarea><div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px"><button class="btn sm" data-act="askAct" data-op="answer" data-id="${q.id}">Answer</button>${S.who.role !== 'hq' && q.owner === 'rc' ? `<button class="btn sm sec" data-act="askAct" data-op="escalate" data-id="${q.id}">Send to HQ</button>` : ''}<button class="btn sm ghost" data-act="askAct" data-op="close" data-id="${q.id}">Close</button></div>` : ''}
+  ${own && q.status === 'answered' ? `<div class="banner" style="margin-top:6px"><b>Answer:</b> ${esc(q.answer.text)}<div class="m">${esc(q.answer.by)} · ${esc(fmtAt(q.answer.at))}</div></div><textarea id="aq-${q.id}" rows="2" maxlength="800" placeholder="Still stuck? Write a follow-up" style="width:100%;margin-top:6px"></textarea><div style="display:flex;gap:6px;margin-top:6px"><button class="btn sm sec" data-act="askAct" data-op="followup" data-id="${q.id}">Ask again</button><button class="btn sm" data-act="askAct" data-op="close" data-id="${q.id}">That solved it</button></div>` : ''}
+  ${own && open ? `<div class="m" style="margin-top:6px">${q.owner === 'rc' ? 'Your coordinator will answer.' : 'HQ will answer.'}</div>` : ''}</div>`;
+}
+function viewAsk() {
+  const A = S.ask; const head = `<div class="pagehead"><div><h2>${S.who.role === 'volunteer' ? 'Ask a question' : 'Questions'}</h2><p>${S.who.role === 'volunteer' ? 'Stuck or unsure? Ask here. Your coordinator answers first and sends it to HQ if needed. You are told when there is an answer.' : 'Ask HQ a question, and answer the questions your team asks. Anything you cannot answer you can send up to HQ.'}</p></div></div>`;
+  if (S.askErr) return head + `<div class="banner bad">${esc(S.askErr)}</div>`; if (!A) return head + '<div class="empty">Loading…</div>';
+  const schools = ((S.ov && S.ov.mine && S.ov.mine.schools) || []).slice().sort((a, b) => a.name.localeCompare(b.name));
+  const form = `<div class="card"><h3>New question</h3><div class="mf"><label>About<select id="aqCat">${Object.entries(A.cats).map(([k, t]) => `<option value="${k}">${esc(t)}</option>`).join('')}</select></label>${schools.length ? `<label>School (if it is about one)<select id="aqSchool"><option value="">No particular school</option>${schools.map((x) => `<option value="${esc(x.id)}">${esc(x.name)}</option>`).join('')}</select></label>` : ''}</div><textarea id="aqText" rows="3" maxlength="600" placeholder="Write your question in a sentence or two" style="width:100%"></textarea><label class="cb"><input type="checkbox" id="aqUrgent"> This is urgent (it blocks my work today)</label><p><button class="btn" data-act="askSend">Send</button> <span class="m">${esc(S.askMsg || '')}</span></p></div>`;
+  const team = A.others.length ? `<h3 style="margin:16px 0 0">From my team (${A.others.filter((q) => q.status === 'open' || q.status === 'escalated').length} waiting)</h3>${A.others.map((q) => askCard(q, 'team')).join('')}` : '';
+  return head + form + (A.mine.length ? `<h3 style="margin:16px 0 0">My questions</h3>${A.mine.map((q) => askCard(q, 'mine')).join('')}` : '') + team;
+}
+function viewQuestions() {
+  const A = S.ask; const head = `<div class="pagehead"><div><h2>Questions</h2><p>Questions from the field. Volunteers ask their coordinator first; what reaches you was sent up or asked by a coordinator. Answer here and the person gets an alert.</p></div></div>`;
+  if (S.askErr) return head + `<div class="banner bad">${esc(S.askErr)}</div>`; if (!A) return head + '<div class="empty">Loading…</div>';
+  const f = S.qaF || 'todo'; const open = (q) => q.status === 'open' || q.status === 'escalated';
+  const list = A.others.filter((q) => f === 'all' ? true : f === 'todo' ? open(q) && (q.owner === 'hq' || q.status === 'escalated') : f === 'team' ? open(q) && q.owner === 'rc' : q.status === f).sort((a, b) => (Number(b.urgent) - Number(a.urgent)) || (a.at < b.at ? -1 : 1));
+  const cnt = (fn) => A.others.filter(fn).length; const fb = (k, t, n) => `<button class="btn sm ${f === k ? '' : 'sec'}" data-act="qaF" data-v="${k}">${t}${n != null ? ' (' + n + ')' : ''}</button>`;
+  return head + `<div class="sel" style="margin:6px 0 10px;flex-wrap:wrap">${fb('todo', 'For HQ', cnt((q) => open(q) && (q.owner === 'hq' || q.status === 'escalated')))}${fb('team', 'With coordinators', cnt((q) => open(q) && q.owner === 'rc'))}${fb('answered', 'Answered', cnt((q) => q.status === 'answered'))}${fb('closed', 'Closed', cnt((q) => q.status === 'closed'))}${fb('all', 'All', A.others.length)}</div>` + (list.map((q) => askCard(q, 'team')).join('') || '<div class="empty">Nothing here.</div>');
+}
+// ---- HQ: direct messages sent ----
+function dmSentCard() {
+  if (!S.dmSent) { api('/api/dm/sent').then((r) => { S.dmSent = r; render(); }).catch(() => { S.dmSent = { items: [] }; }); return '<div class="card" style="margin-top:14px"><h3>Direct messages</h3><div class="empty">Loading…</div></div>'; }
+  const it = S.dmSent.items; return `<div class="card" style="margin-top:14px"><h3>Direct messages</h3><div class="sub">Short messages sent to a person, team or school from their detail views. Open a person, school or region and use "Send a message".</div>${it.length ? it.slice(0, 15).map((m) => `<div class="flag"><i class="st ${m.unread_names.length ? 'warn' : 'good'}"></i><div style="flex:1"><b>${esc(m.by)}</b> to ${esc(m.label)} <span class="m">${esc(fmtAt(m.at))} · read ${m.read} of ${m.n} · ${m.alerts} phone alert${m.alerts === 1 ? '' : 's'}</span><div style="font-size:14px">${esc(m.text)}</div>${m.unread_names.length ? `<div class="m">Not read yet: ${m.unread_names.map(esc).join(', ')}</div>` : ''}</div></div>`).join('') : '<div class="empty">No messages sent yet.</div>'}</div>`;
 }
 // ---------- Usage and analytics (HQ only) ----------
 async function loadUsage() { try { S.us = await api('/api/usage/report'); S.usErr = null; } catch (e) { S.usErr = e.message; } render(); }
@@ -2175,7 +2267,7 @@ function loginScreen(msg) {
 async function loadData() {
   const q = S.year ? '?year=' + S.year : '';
   if (!S.who || isGuest()) { S.pub = await api('/api/public' + q); S.cmp = publicCompare(S.pub); loadLayout(); return; }
-  loadLayout();
+  loadLayout(); loadTalk();
   const vol = S.who.role === 'volunteer';
   if (!vol) api('/api/assign-info').then((r) => { S.info = r.items || []; }).catch(() => { S.info = S.info || []; }); // for information: helpers, grade differences
   // everything the first screen needs is fetched at the same time, not one after another
@@ -2232,7 +2324,7 @@ async function loadAdmin() {
 }
 
 if (!window.__pilTimer) window.__pilTimer = setInterval(() => { const a = document.activeElement; if (S.who && !document.hidden && S.tab === 'pilot' && !(a && /^(SELECT|INPUT|TEXTAREA)$/.test(a.tagName))) { api('/api/overview' + (S.year ? '?year=' + S.year : '')).then((ov) => { if (ov && ov.status === 'ok') { S.ov = ov; S.pub = ov; } }).catch(() => {}).finally(loadPilot); } }, 60000);
-if (!window.__newsTimer) window.__newsTimer = setInterval(() => { if (S.who && !document.hidden) loadNews(); }, 180000);
+if (!window.__newsTimer) window.__newsTimer = setInterval(() => { if (S.who && !document.hidden) { loadNews(); loadTalk(); } }, 180000);
 async function go() {
   const exm = /^#explore\/(\w+)$/.exec(location.hash);
   if (exm) { S.tab = 'explore'; S.exTab = exm[1]; }
@@ -2243,7 +2335,7 @@ async function go() {
 
 async function selectTab(k) {
   if (k === 'pilot') { S.tab = k; render(); await loadPilot(); return; }
-  S.tab = k; S.selVisit = null; if (S.tab === 'messages') { render(); await loadMsgs(); } if (S.tab === 'clean') { render(); await loadClean(); } if (S.tab === 'payments') { await loadPayments();  return; } if (S.tab === 'plan') { await loadPlan(); } if (S.tab === 'phones') { S.ph = null; render(); await loadPhones(); } if (S.tab === 'practice') { S.pr = null; render(); await loadPractice(); } if (S.tab === 'news') { await openNews(); } if (S.tab === 'reports') { render(); await openReports(); } if (S.tab === 'narr') { render(); await loadNarr(); } if (S.tab === 'usage') { render(); await loadUsage(); } if (S.tab === 'admin') await loadAdmin(); render();
+  S.tab = k; S.selVisit = null; if (S.tab === 'messages') { render(); await loadMsgs(); } if (S.tab === 'clean') { render(); await loadClean(); } if (S.tab === 'payments') { await loadPayments();  return; } if (S.tab === 'plan') { await loadPlan(); } if (S.tab === 'phones') { S.ph = null; render(); await loadPhones(); } if (S.tab === 'practice') { S.pr = null; render(); await loadPractice(); } if (S.tab === 'news') { await openNews(); } if (S.tab === 'reports') { render(); await openReports(); } if (S.tab === 'narr') { render(); await loadNarr(); } if (S.tab === 'ask' || S.tab === 'questions') { render(); await loadAsk(); } if (S.tab === 'usage') { render(); await loadUsage(); } if (S.tab === 'admin') await loadAdmin(); render();
 }
 
 // ---------- refresh: a button and pull-down; also picks up a new version of the app ----------
@@ -2324,6 +2416,25 @@ document.addEventListener('click', async (e) => {
     else if (a === 'langSw') { store.set('kf_lang', 'sw'); store.set('kf_lang_seen', '1'); location.reload(); }
     else if (a === 'langKeep') { store.set('kf_lang_seen', '1'); render(); }
     else if (a === 'introToggle') { const p = t.closest('.pagehead').querySelector('p.intro'); if (p) p.classList.toggle('open'); }
+    else if (a === 'dmSend') {
+      const tx = (document.getElementById('dmText') || {}).value || ''; const kind = t.dataset.kind, id = t.dataset.id; const roles = ((document.getElementById('dmRoles') || {}).value || '').split(',').filter(Boolean);
+      const to = kind === 'person' ? { kind, name: id } : kind === 'school' ? { kind, school: id } : { kind, region: id, roles }; const m = document.getElementById('dmMsg'); if (m) m.textContent = 'Sending…';
+      try { const r = await api('/api/dm', { method: 'POST', body: { to, text: tx } }); if (m) m.textContent = `Sent to ${r.recipients} (${r.label}). ${r.alerts} phone alert${r.alerts === 1 ? '' : 's'} sent.`; const ta = document.getElementById('dmText'); if (ta) ta.value = ''; S.dmSent = null; hydrateDrawer(kind, id); } catch (e) { if (m) m.textContent = e.message; }
+    }
+    else if (a === 'dmAck') { try { await api('/api/dm/ack', { method: 'POST', body: { id: t.dataset.id } }); S.dm = await api('/api/dm/inbox'); } catch {} render(); }
+    else if (a === 'ntAdd') {
+      const box = t.closest('[data-notes]'); const target = t.dataset.target; const text = (box.querySelector('.ntText') || {}).value || ''; const mentions = [...box.querySelectorAll('.ntM:checked')].map((x) => x.value);
+      try { await api('/api/hqnotes', { method: 'POST', body: { action: 'add', target, text, mentions } }); await loadNotes(target); loadTalk(); } catch (e) { alert(e.message); }
+    }
+    else if (a === 'ntAct') { const box = t.closest('[data-notes]'); const target = box.dataset.notes; if (t.dataset.op === 'delete' && !confirm('Delete this note?')) return; try { await api('/api/hqnotes', { method: 'POST', body: { action: t.dataset.op, id: t.dataset.id } }); await loadNotes(target); loadTalk(); } catch (e) { alert(e.message); } }
+    else if (a === 'ntSeen') { try { await api('/api/hqnotes', { method: 'POST', body: { action: 'seen', id: t.dataset.id } }); await loadTalk(); } catch {} render(); }
+    else if (a === 'askSend') {
+      const g = (id) => document.getElementById(id); S.askMsg = 'Sending…'; render();
+      try { await api('/api/ask', { method: 'POST', body: { action: 'create', text: g('aqText').value, cat: g('aqCat').value, school: g('aqSchool') ? g('aqSchool').value : '', urgent: g('aqUrgent').checked } }); S.askMsg = 'Sent. You will get an alert when it is answered.'; } catch (e) { S.askMsg = e.message; }
+      await loadAsk();
+    }
+    else if (a === 'askAct') { const tx = (document.getElementById('aq-' + t.dataset.id) || {}).value || ''; try { await api('/api/ask', { method: 'POST', body: { action: t.dataset.op, id: t.dataset.id, text: tx } }); } catch (e) { alert(e.message); } await loadAsk(); }
+    else if (a === 'qaF') { S.qaF = t.dataset.v; render(); }
     else if (a === 'usFilter') { S.usF = t.dataset.v; render(); }
     else if (a === 'lyMove') { const E = S.lyEdit[t.dataset.r]; const o = E.order; const i = o.indexOf(t.dataset.k); const j = i + Number(t.dataset.d); if (i >= 0 && j >= 0 && j < o.length) { [o[i], o[j]] = [o[j], o[i]]; } render(); }
     else if (a === 'lySave' || a === 'lyReset') { const r = t.dataset.r; const E = S.lyEdit[r]; try { await api('/api/layouts', { method: 'POST', noView: true, body: a === 'lyReset' ? { role: r, reset: true } : { role: r, tabs: { hidden: E.hidden, order: E.order } } }); delete S.lyEdit[r]; await loadLayout(); toast('Saved'); } catch (e) { alert(e.message); } }
