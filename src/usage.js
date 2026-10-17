@@ -1,8 +1,9 @@
 // Usage of the Command Center, kept inside the system: who opens it, which pages, at what hour, from which device,
 // who has phone alerts on, and who is not using it. Only HQ sees the analysis. Nothing leaves the system.
 import { kv } from './store.js';
-import { STAFF, REGIONS, eatToday } from './config.js';
-import { loadHq } from './hq.js';
+import { STAFF, REGIONS, eatToday, staffForKoboName } from './config.js';
+import { loadHq, readActivity } from './hq.js';
+import { loadQueries } from './queries.js';
 
 const USERS = 'v2:usage:users', DAILY = 'v2:usage:daily', SUBS = 'v2:push:subs';
 const keyOf = (w) => String(w.id ?? w.hq_id ?? w.name);
@@ -33,11 +34,31 @@ export async function recordApi(env, who) { // AI assistants and other tools tha
   await recordUsage(env, who, { tab: 'api', dev: 'x' });
 }
 
+// Before counting started there are no page views, but the system did save what people DID (plans, replies, reviews, changes,
+// alerts turned on). Those saved actions show who was active and when, from the first day we have them.
+const SINCE = '2026-10-13';
+async function backfill(env) {
+  const hq = (await loadHq(env)).users; const byHq = new Map(hq.map((u) => [String(u.name).toLowerCase(), u]));
+  const keyFor = (name) => { const st = staffForKoboName(name); if (st) return { k: String(st.id), n: st.name, role: st.role, region: st.region }; const u = byHq.get(String(name).toLowerCase()); if (u) return { k: 'hq:' + u.id, n: u.name, role: 'hq', region: '' }; return null; };
+  const ev = [];
+  for (const e of await readActivity(env)) ev.push([e.who, e.at]);
+  const qs = await loadQueries(env); for (const q of Object.values(qs)) { for (const t of q.thread || []) ev.push([t.by, t.at]); for (const h of q.wf?.history || []) ev.push([h.by, h.at]); }
+  const subs = (await kv(env).get(SUBS)) || {}; for (const sub of Object.values(subs)) if (sub.who?.name) ev.push([sub.who.name, sub.at]);
+  const out = {};
+  for (const [name, at] of ev) { if (!name || !at) continue; const day = new Date(Date.parse(at) + 3 * 3600e3).toISOString().slice(0, 10); if (day < SINCE) continue; const w = keyFor(name); if (!w) continue; const u = (out[w.k] ||= { n: w.n, role: w.role, region: w.region, days: {}, hours: new Array(24).fill(0), acts: 0 }); u.days[day] = (u.days[day] || 0) + 1; u.hours[eatHour(at)] += 1; u.acts += 1; }
+  return out;
+}
 const pct = (a, b) => (b ? Math.round((100 * a) / b) : 0);
 export async function usageReport(env, who) {
   if (who.role !== 'hq') return { error: 'HQ only', status: 403 };
   const users = (await kv(env).get(USERS)) || {}; const dly = (await kv(env).get(DAILY)) || {}; const subs = (await kv(env).get(SUBS)) || {};
-  const today = eatToday(); const days = []; for (let i = 13; i >= 0; i--) { const d = new Date(Date.parse(today + 'T00:00:00Z') - i * 864e5).toISOString().slice(0, 10); const x = dly[d]; days.push({ date: d, views: x?.views || 0, users: x ? Object.keys(x.users).length : 0, sessions: x?.sessions || 0 }); }
+  const back = await backfill(env).catch(() => ({})); const liveFirst = Object.keys(dly).sort()[0] || eatToday();
+  for (const [k, b] of Object.entries(back)) { // fill days before counting started with saved actions, never on top of real page views
+    const u = (users[k] ||= { n: b.n, role: b.role, region: b.region, first: null, sessions: 0, views: 0, ms: 0, tabs: {}, hours: new Array(24).fill(0), dev: { m: 0, d: 0, x: 0 }, days: {}, api: 0, backOnly: true });
+    u.acts = b.acts; for (const [d, n] of Object.entries(b.days)) if (d < liveFirst) { u.days[d] = n; const x = (dly[d] ||= { views: 0, sessions: 0, users: {}, tabs: {}, hours: new Array(24).fill(0), dev: { m: 0, d: 0, x: 0 }, fromActions: true }); x.users[k] = 1; x.actions = (x.actions || 0) + n; }
+    if (!u.last) { const ds = Object.keys(b.days).sort(); u.last = ds.length ? ds[ds.length - 1] + 'T12:00:00.000Z' : null; }
+  }
+  const today = eatToday(); const days = []; for (let i = 13; i >= 0; i--) { const d = new Date(Date.parse(today + 'T00:00:00Z') - i * 864e5).toISOString().slice(0, 10); const x = dly[d]; days.push({ date: d, views: x?.views || 0, users: x ? Object.keys(x.users).length : 0, sessions: x?.sessions || 0, from_actions: Boolean(x?.fromActions) }); }
   const hq = (await loadHq(env)).users.filter((u) => u.active !== false);
   const alertsFor = {}; for (const s of Object.values(subs)) { const id = String(s.who?.id); (alertsFor[id] ||= new Set()).add(s.at); }
   const people = [
@@ -48,11 +69,12 @@ export async function usageReport(env, who) {
   for (const [k, u] of Object.entries(users)) if (!known.has(k)) people.push({ key: k, name: u.n, role: u.role, position: /claude|assistant/i.test(u.n) ? 'AI assistant' : u.role, region: u.region || '' });
   const daysAgo = (iso) => (iso ? Math.floor((Date.parse(today + 'T12:00:00Z') - Date.parse(String(iso).slice(0, 10) + 'T12:00:00Z')) / 864e5) : null);
   const rows = people.map((p) => { const u = users[p.key]; const topTab = u ? Object.entries(u.tabs).sort((a, b) => b[1] - a[1])[0] : null;
-    return { ...p, seen: Boolean(u), last: u?.last || null, ago: u ? daysAgo(new Date(Date.parse(u.last) + 3 * 3600e3).toISOString()) : null, sessions: u?.sessions || 0, views: u?.views || 0, minutes: u ? Math.round(u.ms / 60000) : 0, api: u?.api || 0, top: topTab ? topTab[0] : '', device: u ? (u.dev.m >= u.dev.d ? 'phone' : 'computer') : '', alerts: Boolean(alertsFor[p.key]), active7: u ? Object.keys(u.days).filter((d) => d > new Date(Date.parse(today + 'T00:00:00Z') - 7 * 864e5).toISOString().slice(0, 10)).length : 0 }; });
+    return { ...p, seen: Boolean(u), last: u?.last || null, ago: u ? daysAgo(new Date(Date.parse(u.last) + 3 * 3600e3).toISOString()) : null, sessions: u?.sessions || 0, views: u?.views || 0, minutes: u ? Math.round(u.ms / 60000) : 0, api: u?.api || 0, acts: u?.acts || 0, top: topTab ? topTab[0] : '', device: u ? (u.dev.m >= u.dev.d ? 'phone' : 'computer') : '', alerts: Boolean(alertsFor[p.key]), active7: u ? Object.keys(u.days).filter((d) => d > new Date(Date.parse(today + 'T00:00:00Z') - 7 * 864e5).toISOString().slice(0, 10)).length : 0 }; });
   const field = rows.filter((r) => r.role !== 'hq' && r.position !== 'AI assistant');
   const active7 = field.filter((r) => r.seen && r.ago !== null && r.ago <= 6), activeToday = field.filter((r) => r.ago === 0);
+  const hoursAct = new Array(24).fill(0); for (const b of Object.values(back)) b.hours.forEach((n, i) => (hoursAct[i] += n));
   const hours = new Array(24).fill(0), tabs = {}, dev = { m: 0, d: 0, x: 0 };
-  for (const d of Object.values(dly)) { d.hours.forEach((n, i) => (hours[i] += n)); for (const [t, n] of Object.entries(d.tabs)) tabs[t] = (tabs[t] || 0) + n; dev.m += d.dev.m; dev.d += d.dev.d; dev.x += d.dev.x; }
+  for (const d of Object.values(dly)) { if (d.fromActions) continue; d.hours.forEach((n, i) => (hours[i] += n)); for (const [t, n] of Object.entries(d.tabs)) tabs[t] = (tabs[t] || 0) + n; dev.m += d.dev.m; dev.d += d.dev.d; dev.x += d.dev.x; }
   const byRegion = REGIONS.map((r) => { const f = field.filter((x) => x.region === r); return { region: r, people: f.length, active7: f.filter((x) => x.ago !== null && x.ago <= 6).length, alerts: f.filter((x) => x.alerts).length, never: f.filter((x) => !x.seen).length }; });
   const insights = [];
   const peak = hours.map((n, i) => [i, n]).sort((a, b) => b[1] - a[1]).slice(0, 2).filter((x) => x[1] > 0);
@@ -65,6 +87,6 @@ export async function usageReport(env, who) {
   if (Object.keys(tabs).length && unused.length) insights.push(`Pages nobody has opened yet: ${unused.join(', ')}. Either they are not needed, or people do not know about them.`);
   const mp = pct(dev.m, dev.m + dev.d); if (dev.m + dev.d) insights.push(`${mp}% of page views are on phones. Design every new page for the phone first.`);
   const slow = field.filter((r) => r.seen && r.ago !== null && r.ago >= 3 && r.active7 >= 1); if (slow.length) insights.push(`${slow.length} people used the app earlier this week but not in the last 3 days. Check whether they are still in the field.`);
-  const trackedDays = Object.keys(dly).length; if (trackedDays < 2) insights.splice(0, insights.length, `Counting started ${Object.keys(dly)[0] || today}. Patterns and the "never opened" list become reliable after a few days of use. Phone alerts are already known: ${field.filter((r) => r.alerts).length} of ${field.length} field staff have them on.`);
-  return { as_of: new Date().toISOString(), today, kpis: { people: field.length, active_today: activeToday.length, active_7d: active7.length, never: never, alerts_on: field.filter((r) => r.alerts).length, hq_active_7d: rows.filter((r) => r.role === 'hq' && r.ago !== null && r.ago <= 6).length, hq_total: rows.filter((r) => r.role === 'hq').length }, days, hours, tabs: Object.entries(tabs).sort((a, b) => b[1] - a[1]), device: dev, by_region: byRegion, rows: rows.sort((a, b) => (b.ago === null ? -1 : 0) - (a.ago === null ? -1 : 0) || (a.ago ?? 999) - (b.ago ?? 999)), insights };
+  const trackedDays = Object.values(dly).filter((x) => !x.fromActions).length; if (trackedDays < 3) insights.splice(0, insights.length, `Page views are counted from ${liveFirst}. Before that, activity comes from what people saved in the system (plans, replies, reviews, changes, alerts), starting ${SINCE}. Patterns and the "never opened" list become reliable after a few days of use. Phone alerts are already known: ${field.filter((r) => r.alerts).length} of ${field.length} field staff have them on.`);
+  return { as_of: new Date().toISOString(), live_since: liveFirst, actions_since: SINCE, today, kpis: { people: field.length, active_today: activeToday.length, active_7d: active7.length, never: never, alerts_on: field.filter((r) => r.alerts).length, hq_active_7d: rows.filter((r) => r.role === 'hq' && r.ago !== null && r.ago <= 6).length, hq_total: rows.filter((r) => r.role === 'hq').length }, days, hours, hours_actions: hoursAct, tabs: Object.entries(tabs).sort((a, b) => b[1] - a[1]), device: dev, by_region: byRegion, rows: rows.sort((a, b) => (b.ago === null ? -1 : 0) - (a.ago === null ? -1 : 0) || (a.ago ?? 999) - (b.ago ?? 999)), insights };
 }
