@@ -97,6 +97,7 @@ export async function postQuery(env, who, { key, text, action, decision, note })
     if (!isCoord(who, ri.region) && who.role !== 'hq') return { error: 'Only the region\'s coordinators or HQ can send a reminder', status: 403 };
     if (!ri.st) return { error: 'This query is not about one person, so there is nobody to remind', status: 422 };
     const st0 = stageOf(q); if (st0 !== 'open' && st0 !== 'rework') return { error: 'A response is already with the reviewers.', status: 409 };
+    const lastR = [...q.thread].reverse().find((m) => /^Reminder sent to/.test(m.text || '')); if (lastR && Date.now() - Date.parse(lastR.at) < 4 * 3600e3) return { error: `${ri.st.name} was already reminded at ${new Date(Date.parse(lastR.at) + 3 * 3600e3).toISOString().slice(11, 16)}. Please wait a few hours before reminding again.`, status: 429 };
     q.thread.push({ by: who.name, role: who.role, text: `Reminder sent to ${ri.st.name} to respond`, at: now });
     notify = { to_stage: 'remind', region: ri.region, responder_id: ri.st.id, reviewer: who.name };
   } else if (action === 'resolve') {
