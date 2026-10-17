@@ -259,3 +259,28 @@ details.fd>summary.need-l::marker{color:var(--bad)}
 
 .tdate{font:600 12.5px var(--f-display,inherit);color:#fff;opacity:.92;white-space:nowrap;padding:3px 9px;border:1px solid rgba(255,255,255,.35);border-radius:999px;flex:none}
 @media(max-width:380px){.tdate{font-size:11px;padding:2px 6px}}
+
+/* the connection light: a small lit bulb, green when online, red when offline */
+.net{width:8px;height:8px;margin-left:0;background:radial-gradient(circle at 35% 30%,#d6ffe5 0,#34d27b 45%,#0d7a3c 100%);box-shadow:0 0 0 1px rgba(0,0,0,.25),0 0 6px 1px rgba(52,210,123,.75)}
+.net:not(.on){background:radial-gradient(circle at 35% 30%,#ffd9d2 0,#f0563c 45%,#9c2412 100%);box-shadow:0 0 0 1px rgba(0,0,0,.25),0 0 6px 1px rgba(240,86,60,.75)}
+/* top bar: one row, also on the phone */
+.top .in{flex-wrap:nowrap;gap:7px}
+.top .in img{height:24px;width:auto}
+.top .brand{flex:1 1 auto;min-width:0}
+.tdate{font-size:11.5px;padding:2px 7px}
+.top .gswrap{flex:0 1 190px;min-width:0}
+.top .gswrap input{padding:5px 12px;font-size:13px}
+.top .ico{width:30px;height:30px}
+.top .uav{flex:none}
+@media(max-width:720px){
+  .top .brand{display:none}
+  .top .who{margin-left:auto;gap:4px}
+  .top .gswrap{position:static}
+  .top .gswrap.open{position:fixed;left:8px;right:8px;top:calc(env(safe-area-inset-top,0px) + 6px);z-index:70;max-width:none;flex:none}
+  .top .gswrap.open input{background:var(--brand);padding:9px 14px;font-size:15px}
+}
+@media(max-width:380px){.tdate{display:none}}
+
+.ubars{display:flex;align-items:flex-end;gap:3px;height:110px;margin-top:8px}.ub{flex:1;min-width:0;height:100%;display:flex;flex-direction:column;justify-content:flex-end;align-items:center}.ub i{display:block;width:100%;background:var(--teal);border-radius:3px 3px 0 0;min-height:2px}.ub span{font-size:9.5px;color:var(--ink3);margin-top:3px}
+.hbar{display:grid;grid-template-columns:130px 1fr 40px;gap:8px;align-items:center;margin:5px 0}.hbar span{font-size:13px}.hbar i{display:block;height:12px;background:var(--teal);border-radius:6px}.hbar b{text-align:right;font-size:12.5px}
+.kpi small{font-size:12px;color:var(--ink3);font-weight:400}

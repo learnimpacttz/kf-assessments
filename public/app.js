@@ -1205,10 +1205,10 @@ const TABS = {
   public: [['progress', 'Progress'], ['compare', 'Compare']],
   volunteer: [['day', 'My day'], ['pilot', 'Pilot day'], ['news', 'News'], ['work', 'My work'], ['queries', 'My queries'], ['stats', 'My stats'], ['phones', 'Phones'], ['pupils', 'Pupil records'], ['compare', 'Compare'], ['practice', 'Practice (Mafunzo)'], ['help', 'Help']],
   rc: [['region', 'Region'], ['news', 'News'], ['plan', 'Plan & calendar'], ['team', 'My team'], ['pilot', 'Pilot day'], ['allq', 'Queries'], ['phones', 'Phones'], ['compare', 'Compare'], ['reports', 'Reports'], ['narr', 'School reports'], ['clean', 'Data cleaning'], ['explore', 'Data explorer'], ['practice', 'Practice (Mafunzo)'], ['help', 'Help']],
-  hq: [['today', 'Today'], ['hq', 'HQ'], ['news', 'News'], ['messages', 'Write and schedule'], ['clean', 'Data cleaning'], ['regions', 'Regions & plans'], ['plan', 'Plan & calendar'], ['pilot', 'Pilot day'], ['people', 'People'], ['allq', 'Queries'], ['phones', 'Phones'], ['compare', 'Compare'], ['reports', 'Reports'], ['payments', 'Payments'], ['payments', 'Payments'], ['explore', 'Data explorer'], ['admin', 'Admin'], ['help', 'Help'], ['practice', 'Practice (Mafunzo)']],
+  hq: [['today', 'Today'], ['hq', 'HQ'], ['usage', 'Usage & analytics'], ['news', 'News'], ['messages', 'Write and schedule'], ['clean', 'Data cleaning'], ['regions', 'Regions & plans'], ['plan', 'Plan & calendar'], ['pilot', 'Pilot day'], ['people', 'People'], ['allq', 'Queries'], ['phones', 'Phones'], ['compare', 'Compare'], ['reports', 'Reports'], ['payments', 'Payments'], ['payments', 'Payments'], ['explore', 'Data explorer'], ['admin', 'Admin'], ['help', 'Help'], ['practice', 'Practice (Mafunzo)']],
 };
 const GROUPS = { rc: [['Home', ['region', 'news']], ['Plan', ['plan', 'team', 'pilot']], ['Checks', ['allq', 'clean', 'phones', 'compare', 'explore']], ['Reports', ['reports', 'narr']], ['More', ['practice', 'help']]], volunteer: [['Today', ['day', 'pilot', 'news']], ['My work', ['work', 'queries', 'stats']], ['Team', ['phones', 'pupils', 'compare']], ['More', ['practice', 'help']]] };
-const HQ_GROUPS = [['Today', ['today']], ['Field', ['hq', 'regions', 'plan', 'pilot', 'people', 'practice']], ['Checks', ['allq', 'clean', 'phones', 'compare', 'explore']], ['Messages', ['news', 'messages']], ['Reports', ['reports', 'narr', 'payments']], ['Admin', ['admin']], ['Help', ['help']]];
+const HQ_GROUPS = [['Today', ['today']], ['Field', ['hq', 'regions', 'plan', 'pilot', 'people', 'practice']], ['Checks', ['allq', 'clean', 'phones', 'compare', 'explore']], ['Messages', ['news', 'messages']], ['Reports', ['reports', 'narr', 'payments']], ['Admin', ['admin', 'usage']], ['Help', ['help']]];
 const REPORTS_READY = true;
 const LEVEL_TXT = { admin: 'Admin', editor: 'Editor', viewer: 'Viewer' };
 const hqLevel = () => (S.who?.role === 'hq' ? S.who.level || 'admin' : null);
@@ -1218,11 +1218,12 @@ function tabAllowed(k) {
   if (k === 'payments') return hqLevel() === 'admin';
   if (k === 'messages') return hqLevel() !== null;
   if (k === 'reports') return REPORTS_READY && S.who && S.who.role !== 'volunteer';
+  if (k === 'usage') return Boolean(S.who && S.who.role === 'hq');
   if (k === 'narr') return Boolean(S.who && S.who.role !== 'volunteer');
   return true;
 }
 const roleKey = () => (!S.who ? 'public' : S.who.role === 'arc' ? 'rc' : S.who.role);
-const VIEWS = { progress: viewProgress, compare: viewCompare, day: viewDay, work: viewWork, queries: viewQueries, stats: viewStats, region: viewRegion, plan: viewPlan, team: viewTeam, explore: viewExplore, hq: viewHQ, regions: viewRegionsHQ, people: viewPeopleHQ, admin: viewAdmin, allq: viewAllQueries, phones: viewPhones, practice: viewPractice, news: viewNews, pilot: viewPilot, payments: viewPayments, pupils: viewPupils, messages: viewMessages, reports: viewReports, narr: viewNarr, clean: viewClean, today: viewToday, help: viewHelp };
+const VIEWS = { progress: viewProgress, compare: viewCompare, day: viewDay, work: viewWork, queries: viewQueries, stats: viewStats, region: viewRegion, plan: viewPlan, team: viewTeam, explore: viewExplore, hq: viewHQ, regions: viewRegionsHQ, people: viewPeopleHQ, admin: viewAdmin, allq: viewAllQueries, phones: viewPhones, practice: viewPractice, news: viewNews, pilot: viewPilot, payments: viewPayments, pupils: viewPupils, messages: viewMessages, reports: viewReports, narr: viewNarr, usage: viewUsage, clean: viewClean, today: viewToday, help: viewHelp };
 
 // Admin is long: each card folds away so you can jump to what you need. The first card stays open; your choices are remembered.
 function enhanceCollapsible() {
@@ -1264,6 +1265,8 @@ function bottomBar(groups, cur, badge) {
 }
 const REFRESH = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.6-6.4"/><path d="M21 4v5h-5"/></svg>';
 const BELL = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>';
+const themePref = () => { try { return localStorage.getItem('kf_theme') || ''; } catch { return ''; } };
+function setTheme(v) { try { v ? localStorage.setItem('kf_theme', v) : localStorage.removeItem('kf_theme'); } catch {} if (v) document.documentElement.setAttribute('data-theme', v); else document.documentElement.removeAttribute('data-theme'); const m = document.querySelector('meta[name="theme-color"]'); if (m) m.content = '#354062'; }
 function whoHtml() {
   if (!S.who) return '<button class="ghost" data-act="showLogin">Sign in</button>';
   const w = S.who; const ini = String(w.name || '?').replace(/\(.*?\)/g, '').trim().split(/\s+/).map((x) => x[0]).slice(0, 2).join('').toUpperCase() || '?';
@@ -1275,6 +1278,7 @@ function whoHtml() {
   <div class="who2"><b>${esc(w.name)}</b><span>${esc(sub)}</span></div>
   ${viewAsControl() ? `<div class="row"><label>View the app as</label>${viewAsControl()}</div>` : ''}
   ${S.viewAs ? '' : `<div class="row"><label>Open the app on</label><select id="startSel" aria-label="Start page"><option value="">The first tab (default)</option>${TABS[roleKey()].filter(([k]) => tabAllowed(k)).map(([k, t]) => `<option value="${k}" ${startKey() === k ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select></div>`}
+  <div class="row"><label>Appearance</label><select id="themeSel" aria-label="Appearance"><option value="" ${themePref() === '' ? 'selected' : ''}>Match my phone (automatic)</option><option value="light" ${themePref() === 'light' ? 'selected' : ''}>Light</option><option value="dark" ${themePref() === 'dark' ? 'selected' : ''}>Dark</option></select></div>
   <button class="mbtn" data-act="alerts">${esc(alertsLabel())}</button>
   <button class="mbtn out" data-act="logout">Sign out</button></div></div>`;
 }
@@ -1289,7 +1293,21 @@ function pilotBanner() {
   else line = leadsG ? `You <b>lead the sampling</b> in Gr ${leadsG}.` : helpsG ? `You <b>run the sampling</b> in Gr ${helpsG}.` : 'You <b>oversee the sampling</b> and guide the test admins.';
   return `<div class="banner" style="background:var(--gold);color:var(--on-gold)"><b>Pilot day, ${esc(dayName(d.day))}:</b> ${esc(title(c.name))} with ${esc(c.regions.filter((r) => r !== me.region).map(title).join(''))}${c.start ? ' · starts ' + esc(c.start) : ''}. ${line} <a href="#pilot" data-tab="pilot"><b>Open Pilot day</b></a></div>`;
 }
+// ---- usage tracking (kept inside the system; only HQ sees the analysis) ----
+const isPhone = () => (window.matchMedia && window.matchMedia('(max-width:720px)').matches) || /Mobi|Android|iPhone/i.test(navigator.userAgent);
+function trackSend(tab, ms, open) {
+  if (!S.who || S.viewAs || !S.code || !tab) return;
+  try { fetch('/api/usage', { method: 'POST', keepalive: true, headers: { 'content-type': 'application/json', 'x-access-code': S.code }, body: JSON.stringify({ tab, ms, open: Boolean(open), dev: isPhone() ? 'm' : 'd' }) }).catch(() => {}); } catch { /* tracking never blocks the app */ }
+}
+function trackTab() {
+  if (!S.who || S.viewAs) return; const t = S.tab; const T = (S.trk ||= { tab: null, t0: 0, opened: false });
+  if (T.tab === t) return;
+  if (T.tab) trackSend(T.tab, Date.now() - T.t0, false);
+  T.tab = t; T.t0 = Date.now(); trackSend(t, 0, !T.opened); T.opened = true;
+}
+document.addEventListener('visibilitychange', () => { const T = S.trk; if (!T || !T.tab) return; if (document.hidden) { trackSend(T.tab, Date.now() - T.t0, false); T.t0 = 0; } else T.t0 = Date.now(); });
 function render() {
+  trackTab();
   const tabs = TABS[roleKey()].filter(([k]) => tabAllowed(k));
   if (!tabs.find((t) => t[0] === S.tab)) { const st = startKey(); S.tab = st && tabs.find((t) => t[0] === st) ? st : tabs[0][0]; if (S.tab !== tabs[0][0] && !S.viewAs) { const want = S.tab; setTimeout(() => { if (S.tab === want) selectTab(want); }, 0); } }
   const badge = (k) => (k === 'news' && S.tab !== 'news' && unreadNews().length ? ` <span class="nbadge">${unreadNews().length}</span>` : '');
@@ -1856,6 +1874,30 @@ async function cleanAction(a, t) {
   render();
 }
 
+// ---------- Usage and analytics (HQ only) ----------
+async function loadUsage() { try { S.us = await api('/api/usage/report'); S.usErr = null; } catch (e) { S.usErr = e.message; } render(); }
+function viewUsage() {
+  const head = '<div class="pagehead"><div><h2>Usage & analytics</h2><p>How the Command Center is used: who opens it, which pages, when, on what device, and who has phone alerts on. This stays inside the system and only HQ sees it.</p></div></div>';
+  if (S.usErr) return head + `<div class="banner bad">${esc(S.usErr)}</div>`; const U = S.us; if (!U) return head + '<div class="empty">Loading…</div>';
+  const k = U.kpis; const mx = (a) => Math.max(1, ...a);
+  const bars = (vals, labels, cls = '') => { const m = mx(vals); return `<div class="ubars ${cls}">${vals.map((v, i) => `<div class="ub" title="${esc(labels[i])}: ${v}"><i style="height:${Math.round((v / m) * 100)}%"></i><span>${esc(labels[i])}</span></div>`).join('')}</div>`; };
+  const trend = bars(U.days.map((d) => d.users), U.days.map((d) => d.date.slice(8)));
+  const hrs = bars(U.hours.slice(5, 23), U.hours.slice(5, 23).map((_, i) => String(i + 5)));
+  const tabLabel = (t) => ({ day: 'My day', work: 'My work', queries: 'My queries', allq: 'Queries', news: 'News', plan: 'Plan & calendar', region: 'Region', hq: 'HQ', today: 'Today', pilot: 'Pilot day', phones: 'Phones', reports: 'Reports', narr: 'School reports', clean: 'Data cleaning', explore: 'Data explorer', compare: 'Compare', stats: 'My stats', pupils: 'Pupil records', practice: 'Practice', help: 'Help', admin: 'Admin', usage: 'Usage', team: 'My team', people: 'People', regions: 'Regions & plans', messages: 'Messages', payments: 'Payments', progress: 'Progress' }[t] || t);
+  const topTabs = U.tabs.slice(0, 10); const tm = mx(topTabs.map((x) => x[1]));
+  const tabsHtml = topTabs.map(([t, n]) => `<div class="hbar"><span>${esc(tabLabel(t))}</span><i style="width:${Math.round((n / tm) * 100)}%"></i><b>${n}</b></div>`).join('') || '<div class="empty">No page views yet. They appear as people use the app.</div>';
+  const reg = U.by_region.filter((r) => r.people).map((r) => `<tr><td><b>${esc(title(r.region))}</b></td><td class="r num">${r.people}</td><td class="r num">${r.active7}</td><td class="r num">${r.never}</td><td class="r num">${r.alerts}</td></tr>`).join('');
+  const ago = (r) => (!r.seen ? '<span class="pill bad">never</span>' : r.ago === 0 ? '<span class="pill good">today</span>' : `${r.ago} d ago`);
+  const rows = U.rows.filter((r) => S.usF === 'quiet' ? (!r.seen || r.ago >= 3) && r.position !== 'AI assistant' : S.usF === 'hq' ? r.role === 'hq' || r.position === 'AI assistant' : true).slice(0, 400).map((r) => `<tr class="click" data-open="person:${esc(r.name)}"><td><b>${esc(r.name)}</b><div class="m">${esc(r.position)}${r.region ? ' · ' + esc(title(r.region)) : ''}</div></td><td>${ago(r)}</td><td class="r num">${r.sessions}</td><td class="r num">${r.views}${r.api ? ` <span class="m">+${r.api} calls</span>` : ''}</td><td class="r num">${r.minutes}</td><td>${esc(tabLabel(r.top))}</td><td>${esc(r.device)}</td><td>${r.alerts ? chip('on', 'good') : chip('off', 'warn')}</td></tr>`).join('');
+  const ins = U.insights.length ? `<div class="card" style="margin-top:12px;border-left:4px solid var(--gold)"><h3>What this suggests</h3>${U.insights.map((t) => `<div class="flag"><i class="st good"></i><div><span style="color:var(--ink);font-size:14px">${esc(t)}</span></div></div>`).join('')}</div>` : '';
+  const f = S.usF || 'all'; const fb = (v, t) => `<button class="btn sm ${f === v ? '' : 'sec'}" data-act="usFilter" data-v="${v}">${t}</button>`;
+  return `${head}<div class="kpis"><div class="kpi"><div class="l">Field staff who opened it today</div><div class="v num">${k.active_today}<small> of ${k.people}</small></div></div><div class="kpi"><div class="l">Opened in the last 7 days</div><div class="v num">${k.active_7d}<small> of ${k.people}</small></div></div><div class="kpi"><div class="l">Never opened</div><div class="v num">${k.never}</div></div><div class="kpi"><div class="l">Phone alerts on</div><div class="v num">${k.alerts_on}<small> of ${k.people}</small></div></div><div class="kpi"><div class="l">HQ active in 7 days</div><div class="v num">${k.hq_active_7d}<small> of ${k.hq_total}</small></div></div></div>${ins}
+  <div class="pgrid"><div class="card"><h3>People opening it, last 14 days</h3>${trend}</div><div class="card"><h3>Busy hours (East Africa Time)</h3>${hrs}<div class="m">Phones: ${U.device.m} page views · computers: ${U.device.d}</div></div></div>
+  <div class="card" style="margin-top:12px"><h3>Pages people open most</h3>${tabsHtml}</div>
+  <div class="card" style="margin-top:12px"><h3>By region</h3><div class="tbl"><table><thead><tr><th>Region</th><th class="r">People</th><th class="r">Opened in 7 days</th><th class="r">Never opened</th><th class="r">Alerts on</th></tr></thead><tbody>${reg}</tbody></table></div></div>
+  <div class="card" style="margin-top:12px"><h3>Everyone</h3><div class="sel" style="margin:6px 0">${fb('all', 'All')}${fb('quiet', 'Not using it (3+ days or never)')}${fb('hq', 'HQ and AI assistants')}</div><div class="tbl"><table><thead><tr><th>Person</th><th>Last opened</th><th class="r">Sessions</th><th class="r">Page views</th><th class="r">Minutes</th><th>Most used page</th><th>Device</th><th>Alerts</th></tr></thead><tbody>${rows}</tbody></table></div><div class="m" style="margin-top:6px">Counting started ${esc(U.as_of.slice(0, 10))}; earlier use is not included. AI assistants are counted by their calls to the system.</div></div>`;
+}
+
 // ---------- School narrative reports (RC and ARC write, after the visit) ----------
 async function loadNarr(school) {
   const N = (S.nr ||= { lang: store.get('kf_nlang') || 'en' }); N.err = null;
@@ -2027,7 +2069,7 @@ async function go() {
 
 async function selectTab(k) {
   if (k === 'pilot') { S.tab = k; render(); await loadPilot(); return; }
-  S.tab = k; S.selVisit = null; if (S.tab === 'messages') { render(); await loadMsgs(); } if (S.tab === 'clean') { render(); await loadClean(); } if (S.tab === 'payments') { await loadPayments();  return; } if (S.tab === 'plan') { await loadPlan(); } if (S.tab === 'phones') { S.ph = null; render(); await loadPhones(); } if (S.tab === 'practice') { S.pr = null; render(); await loadPractice(); } if (S.tab === 'news') { await openNews(); } if (S.tab === 'reports') { render(); await openReports(); } if (S.tab === 'narr') { render(); await loadNarr(); } if (S.tab === 'admin') await loadAdmin(); render();
+  S.tab = k; S.selVisit = null; if (S.tab === 'messages') { render(); await loadMsgs(); } if (S.tab === 'clean') { render(); await loadClean(); } if (S.tab === 'payments') { await loadPayments();  return; } if (S.tab === 'plan') { await loadPlan(); } if (S.tab === 'phones') { S.ph = null; render(); await loadPhones(); } if (S.tab === 'practice') { S.pr = null; render(); await loadPractice(); } if (S.tab === 'news') { await openNews(); } if (S.tab === 'reports') { render(); await openReports(); } if (S.tab === 'narr') { render(); await loadNarr(); } if (S.tab === 'usage') { render(); await loadUsage(); } if (S.tab === 'admin') await loadAdmin(); render();
 }
 
 // ---------- refresh: a button and pull-down; also picks up a new version of the app ----------
@@ -2101,6 +2143,7 @@ document.addEventListener('click', async (e) => {
     }
     else if (/^dl[A-Z]/.test(a)) await cleanAction(a, t);
     else if (/^nr[A-Z]/.test(a)) await narrAction(a, t);
+    else if (a === 'usFilter') { S.usF = t.dataset.v; render(); }
     else if (/^ms[A-Z]/.test(a)) await msAction(a, t);
     else if (/^ai[A-Z]/.test(a)) await aiAction(a, t);
     else if (a === 'stDel') await storageAction(t);
@@ -2200,6 +2243,7 @@ async function downloadFile(path, name) {
   link.href = url; link.download = name; document.body.appendChild(link); link.click(); link.remove(); URL.revokeObjectURL(url);
 }
 document.addEventListener('change', async (e) => {
+  if (e.target.id === 'themeSel') { setTheme(e.target.value); return; }
   if (e.target.id === 'nrRegion') { S.nr.region = e.target.value; S.nr.open = null; S.nr.doc = null; await loadNarr(); return; }
   if (e.target.id === 'dfField') { (S.cl ||= {}).editField = e.target.value; render(); return; }
   if (e.target.dataset?.rc !== undefined && S.rep?.edit) { const k = e.target.dataset.rc; const H = new Set(S.rep.edit.hidden || []); if (e.target.checked) H.delete(k); else H.add(k); S.rep.edit.hidden = [...H]; repSync(); render(); return; }

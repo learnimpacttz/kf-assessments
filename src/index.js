@@ -16,6 +16,7 @@ import { loadFormJob, saveFormJob, runFormJob, maybeRunFormJob } from './formjob
 import { kv } from './store.js';
 import { buildBrief, aiBrief } from './brief.js';
 import { ask as askAssistant, draftReportText } from './assistant.js';
+import { recordUsage, recordApi, usageReport } from './usage.js';
 import { assignFlags } from './assign.js';
 import { listNarr, getNarr, saveNarr, compiledHtml } from './narratives.js';
 import { TEMPLATES, buildReport, listReports, getReport, saveReport, deleteReport } from './reports.js';
@@ -172,6 +173,7 @@ export default {
       }
       if (!who) return err('Sign in with your access code', 401);
       { const gate = levelGate(who, method, path); if (gate) return err(gate, 403); }
+      if (path.startsWith('/api/') && who.role === 'hq' && /claude|assistant/i.test(who.name || '') && path !== '/api/usage') ctx?.waitUntil?.(recordApi(env, who).catch(() => {})); // tools and AI assistants are tracked too
       if (who.viewAs && method !== 'GET') return err('You are previewing as ' + who.name + '. Previews are read-only, so nothing was changed.', 403);
 
       // ---------- role-aware overview ----------
@@ -287,6 +289,8 @@ export default {
       if (path === '/api/news' && method === 'GET') return json(await listNews(env, who));
       if (path === '/api/news/seen' && method === 'POST') { const b = await request.json().catch(() => ({})); return json(await markSeen(env, who, b.ids)); }
       if (path === '/api/news/react' && method === 'POST') { const b = await request.json().catch(() => ({})); const r = await reactNews(env, who, b.id, b.emoji); return r.error ? err(r.error, r.status || 400) : json(r); }
+      if (path === '/api/usage' && method === 'POST') { const b = await request.json().catch(() => ({})); await recordUsage(env, who, b); return json({ ok: true }); }
+      if (path === '/api/usage/report') { const r = await usageReport(env, who); return r.error ? err(r.error, r.status || 403) : json(r); }
       if (path === '/api/push/subscribe' && method === 'POST') {
         const b = await request.json();
         const r = await subscribe(env, who, b.subscription);
