@@ -89,9 +89,9 @@ function chainHtml(f) {
     else if (ix === i && st !== 'approved') { cls = 'cur'; sub = 'waiting'; }
     return `<div class="cs ${cls}"><b>${label}</b><small>${sub}</small></div>`;
   }).join('<i>›</i>');
-  const resp = w.response ? `<div class="resp"><b>Response</b> by ${esc(w.response.by)}${w.response.on_behalf_of ? ' for ' + esc(w.response.on_behalf_of) : ''} · ${fmtAt(w.response.at)}${w.response.edited_by ? ` · <span class="pill warn">edited by ${esc(w.response.edited_by)}</span>` : ''}<br>${esc(w.response.text)}</div>` : '';
-  const back = st === 'rework' && w.rework_note ? `<div class="resp bad"><b>Sent back:</b> ${esc(w.rework_note)}</div>` : '';
-  const hist = H.length ? `<details class="fd"><summary>History (${H.length})</summary>${H.map((h) => `<div class="hrow"><b>${esc(h.by)}</b> <span class="m">${esc(h.role || '')} · ${fmtAt(h.at)}</span> ${esc(ACT_TXT[h.action] || h.action)}${h.on_behalf_of ? ' for ' + esc(h.on_behalf_of) : ''}${h.text ? `<div class="m">${esc(h.text)}</div>` : ''}${h.before ? `<div class="m">Was: ${esc(h.before)}</div>` : ''}</div>`).join('')}${S.who && S.who.role === 'hq' && hqLevel() === 'admin' && !/mundo|joram/i.test(S.who.name || '') && st !== 'approved' ? `<button class="btn sm ghost" data-act="qClose" data-k="${esc(f.qk)}">Close without the chain (Admin)</button>` : ''}</details>` : '';
+  const resp = w.response ? `<div class="resp"><b>Response</b> by ${esc(w.response.by)}${w.response.on_behalf_of ? ' for ' + esc(w.response.on_behalf_of) : ''} · ${fmtAt(w.response.at)}${w.response.edited_by ? ` · <span class="pill warn">edited by ${esc(w.response.edited_by)}</span>` : ''}<br><span data-nt>${esc(w.response.text)}</span></div>` : '';
+  const back = st === 'rework' && w.rework_note ? `<div class="resp bad"><b>Sent back:</b> <span data-nt>${esc(w.rework_note)}</span></div>` : '';
+  const hist = H.length ? `<details class="fd"><summary>History (${H.length})</summary>${H.map((h) => `<div class="hrow"><b>${esc(h.by)}</b> <span class="m">${esc(h.role || '')} · ${fmtAt(h.at)}</span> ${esc(ACT_TXT[h.action] || h.action)}${h.on_behalf_of ? ' for ' + esc(h.on_behalf_of) : ''}${h.text ? `<div class="m" ${h.action === 'skipped' ? '' : 'data-nt'}>${esc(h.text)}</div>` : ''}${h.before ? `<div class="m"><span>Was:</span> <span data-nt>${esc(h.before)}</span></div>` : ''}</div>`).join('')}${S.who && S.who.role === 'hq' && hqLevel() === 'admin' && !/mundo|joram/i.test(S.who.name || '') && st !== 'approved' ? `<button class="btn sm ghost" data-act="qClose" data-k="${esc(f.qk)}">Close without the chain (Admin)</button>` : ''}</details>` : '';
   return `<div class="chain" title="${esc(STAGE_TXT[st])}">${steps}</div><div class="m" style="margin:4px 0"><b>${esc(STAGE_TXT[st])}</b></div>${resp}${back}${hist}`;
 }
 function qActions(f) {
@@ -143,7 +143,7 @@ function flagList(all, { limit = 8, names = true, closed = false } = {}) {
   if (!flags.length) return '<div class="empty">No open flags. Nothing needs a call right now.</div>';
   const canResolve = S.who && S.who.role !== 'volunteer';
   const one = (f) => {
-    const thread = f.q && f.q.thread.length ? `<div class="thread">${f.q.thread.map((m) => `<div><b>${esc(m.by)}</b> <span>${fmtAt(m.at)}</span><br>${esc(m.text)}</div>`).join('')}</div>` : '';
+    const thread = f.q && f.q.thread.length ? `<div class="thread">${f.q.thread.map((m) => `<div><b>${esc(m.by)}</b> <span>${fmtAt(m.at)}</span><br><span data-nt>${esc(m.text)}</span></div>`).join('')}</div>` : '';
     const box = qActions(f);
     return `<div class="flag ${isOpen(f) ? 'openq' : 'doneq'}"><i class="st ${f.sev}"></i><div style="min-width:0;flex:1"><b>${lk('school', f.school, f.school_name || f.school)} · ${esc(FLAG_LABEL[f.type] || f.type)}${isOpen(f) && f.qk ? (() => { const ab = qAbility(f); return ab.review ? ' <span class="pill good">I review</span>' : ab.respond ? ' <span class="pill warn">I respond</span>' : ''; })() : ''}</b><span>${esc(f.region ? title(f.region) + ' · ' : '')}${esc(f.lga ? title(f.lga) + ' · ' : '')}${f.grade ? 'Grade ' + f.grade + ' · ' : ''}${esc(f.text)}${names && f.admin ? ' · ' + String(f.admin).split(' and ').map((n) => lk('person', n, n)).join(' and ') : ''}${f.date ? ' · ' + shortDate(f.date) : ''}</span>${f.hint ? `<span class="ft">${esc(f.hint)}</span>` : ''}${fixLinks(f)}${phoneHelp(f)}${thread}<details class="fd"><summary>Details to find the records</summary>${flagDetail(f)}</details>${f.qk ? chainHtml(f) : ''}${f.qk ? box : ''}</div></div>`;
   };
@@ -1365,6 +1365,7 @@ function bottomBar(groups, cur, badge) {
 }
 const REFRESH = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.6-6.4"/><path d="M21 4v5h-5"/></svg>';
 const BELL = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>';
+const LANG = () => store.get('kf_lang') || 'en';
 const themePref = () => { try { return localStorage.getItem('kf_theme') || ''; } catch { return ''; } };
 function setTheme(v) { try { v ? localStorage.setItem('kf_theme', v) : localStorage.removeItem('kf_theme'); } catch {} if (v) document.documentElement.setAttribute('data-theme', v); else document.documentElement.removeAttribute('data-theme'); const m = document.querySelector('meta[name="theme-color"]'); if (m) m.content = '#354062'; }
 function whoHtml() {
@@ -1378,6 +1379,7 @@ function whoHtml() {
   <div class="who2"><b>${esc(w.name)}</b><span>${esc(sub)}</span></div>
   ${viewAsControl() ? `<div class="row"><label>View the app as</label>${viewAsControl()}</div>` : ''}
   ${S.viewAs ? '' : `<div class="row"><label>Open the app on</label><select id="startSel" aria-label="Start page"><option value="">The first tab (default)</option>${TABS[roleKey()].filter(([k]) => tabAllowed(k)).map(([k, t]) => `<option value="${k}" ${startKey() === k ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select></div>`}
+  <div class="row"><label>Lugha · Language</label><select id="langSel" aria-label="Language"><option value="en" ${LANG() === 'en' ? 'selected' : ''}>English</option><option value="sw" ${LANG() === 'sw' ? 'selected' : ''}>Kiswahili</option></select></div>
   <div class="row"><label>Appearance</label><select id="themeSel" aria-label="Appearance"><option value="" ${themePref() === '' ? 'selected' : ''}>Match my phone (automatic)</option><option value="light" ${themePref() === 'light' ? 'selected' : ''}>Light</option><option value="dark" ${themePref() === 'dark' ? 'selected' : ''}>Dark</option></select></div>
   ${isRealHQ() && (S.real || S.who).level === 'admin' && S.who ? '<button class="mbtn" data-act="arrStart">Arrange this page</button>' : ''}
   ${isGuest() ? '' : `<button class="mbtn" data-act="alerts">${esc(alertsLabel())}</button>`}
@@ -1394,6 +1396,10 @@ function pilotBanner() {
   else if (me.role === 'rc') line = c.lead === me.id ? 'You <b>lead the day</b>.' : `You <b>support the lead</b> and oversee <b>${mine.support ? 'Gr ' + mine.support : 'one grade (to be set)'}</b>.${leadsG ? ' You <b>lead the sampling</b> in Gr ' + leadsG + '.' : ''}`;
   else line = leadsG ? `You <b>lead the sampling</b> in Gr ${leadsG}.` : helpsG ? `You <b>run the sampling</b> in Gr ${helpsG}.` : 'You <b>oversee the sampling</b> and guide the test admins.';
   return `<div class="banner" style="background:var(--gold);color:var(--on-gold)"><b>Pilot day, ${esc(dayName(d.day))}:</b> ${esc(title(c.name))} with ${esc(c.regions.filter((r) => r !== me.region).map(title).join(''))}${c.start ? ' · starts ' + esc(c.start) : ''}. ${line} <a href="#pilot" data-tab="pilot"><b>Open Pilot day</b></a></div>`;
+}
+// On phones the long page introductions fold behind a small (i) so the real content starts higher
+function collapseIntros() {
+  document.querySelectorAll('#app .pagehead').forEach((h) => { const p = h.querySelector('p'), t = h.querySelector('h2'); if (!p || !t || t.querySelector('.ib') || (p.textContent || '').length < 70) return; p.classList.add('intro'); const b = document.createElement('button'); b.type = 'button'; b.className = 'ib'; b.dataset.act = 'introToggle'; b.setAttribute('aria-label', 'About this page'); b.setAttribute('title', 'About this page'); b.textContent = 'i'; t.appendChild(b); });
 }
 // ---- usage tracking (kept inside the system; only HQ sees the analysis) ----
 const isPhone = () => (window.matchMedia && window.matchMedia('(max-width:720px)').matches) || /Mobi|Android|iPhone/i.test(navigator.userAgent);
@@ -1472,10 +1478,12 @@ function render() {
     planBanner = `<div class="banner ${left <= 0 ? 'bad' : ''}"><b>Plan not submitted.</b> ${left > 0 ? `Due ${dayName(pd.deadline)} (${left} day${left > 1 ? 's' : ''} left).` : left === 0 ? 'Due TODAY.' : 'Overdue.'} Notices to schools depend on it. <a href="#plan" data-tab="plan"><b>Open Plan &amp; calendar</b></a></div>`;
   }
   const un = S.tab !== 'news' && S.who && !S.viewAs ? unreadNews()[0] : null;
+  const langBanner = S.who && S.who.role === 'volunteer' && !S.viewAs && LANG() === 'en' && !store.get('kf_lang_seen') ? '<div class="banner" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span style="flex:1;min-width:180px"><b>Kiswahili?</b> Unaweza kutumia programu hii kwa Kiswahili. · You can use this app in Swahili.</span><button class="btn sm" data-act="langSw">Tumia Kiswahili</button><button class="btn sm ghost" data-act="langKeep">English</button></div>' : '';
   const newsBanner = un ? `<div class="banner" style="background:var(--surface2)"><b>News:</b> ${esc(un.title)} <a href="#news" data-tab="news"><b>Read</b></a></div>` : '';
-  $('#app').innerHTML = previewBanner() + planBanner + (S.tab === 'pilot' ? '' : pilotBanner()) + newsBanner + VIEWS[S.tab]();
+  $('#app').innerHTML = previewBanner() + langBanner + planBanner + (S.tab === 'pilot' ? '' : pilotBanner()) + newsBanner + VIEWS[S.tab]();
   $('#gswrap').hidden = !S.who;
   applyLayout();
+  collapseIntros();
   guestChrome();
   enhanceCollapsible();
   aiRender();
@@ -2313,6 +2321,9 @@ document.addEventListener('click', async (e) => {
     else if (a === 'grBack') { S.gr.open = null; S.gr.doc = null; render(); }
     else if (a === 'grCsv') { const d = S.gr.doc; const q = (v) => '"' + String(v ?? '').replace(/"/g, '""') + '"'; const csv = [d.columns.map((c) => q(c.label)).join(','), ...d.rows.map((r) => d.columns.map((c) => q(r[c.k])).join(','))].join('\n'); const a2 = document.createElement('a'); a2.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' })); a2.download = 'report.csv'; a2.click(); }
     else if (a === 'gvCreate' || a === 'gvAct') await guestUiAction(a, t);
+    else if (a === 'langSw') { store.set('kf_lang', 'sw'); store.set('kf_lang_seen', '1'); location.reload(); }
+    else if (a === 'langKeep') { store.set('kf_lang_seen', '1'); render(); }
+    else if (a === 'introToggle') { const p = t.closest('.pagehead').querySelector('p.intro'); if (p) p.classList.toggle('open'); }
     else if (a === 'usFilter') { S.usF = t.dataset.v; render(); }
     else if (a === 'lyMove') { const E = S.lyEdit[t.dataset.r]; const o = E.order; const i = o.indexOf(t.dataset.k); const j = i + Number(t.dataset.d); if (i >= 0 && j >= 0 && j < o.length) { [o[i], o[j]] = [o[j], o[i]]; } render(); }
     else if (a === 'lySave' || a === 'lyReset') { const r = t.dataset.r; const E = S.lyEdit[r]; try { await api('/api/layouts', { method: 'POST', noView: true, body: a === 'lyReset' ? { role: r, reset: true } : { role: r, tabs: { hidden: E.hidden, order: E.order } } }); delete S.lyEdit[r]; await loadLayout(); toast('Saved'); } catch (e) { alert(e.message); } }
@@ -2418,6 +2429,7 @@ async function downloadFile(path, name) {
   link.href = url; link.download = name; document.body.appendChild(link); link.click(); link.remove(); URL.revokeObjectURL(url);
 }
 document.addEventListener('change', async (e) => {
+  if (e.target.id === 'langSel') { store.set('kf_lang', e.target.value); store.set('kf_lang_seen', '1'); location.reload(); return; }
   if (e.target.dataset && e.target.dataset.lyh) { const [r, k] = e.target.dataset.lyh.split(':'); const E = S.lyEdit[r]; const h = new Set(E.hidden); e.target.checked ? h.delete(k) : h.add(k); E.hidden = [...h]; return; }
   if (e.target.id === 'themeSel') { setTheme(e.target.value); return; }
   if (e.target.id === 'nrRegion') { S.nr.region = e.target.value; S.nr.open = null; S.nr.doc = null; await loadNarr(); return; }
@@ -2485,3 +2497,5 @@ document.addEventListener('keydown', (e) => {
 })();
 
 (function () { const el = document.getElementById('tdate'); if (!el) return; const t = () => { const d = new Date(Date.now() + 3 * 3600e3); const f = new Intl.DateTimeFormat('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' }).formatToParts(d); const g = (t) => (f.find((x) => x.type === t) || {}).value || ''; el.innerHTML = `<span class="dw">${g('weekday')} </span>${g('day')} ${g('month')}`; el.title = 'Today, East Africa Time'; }; t(); setInterval(t, 60000); })();
+
+if (store.get('kf_lang') === 'sw' && window.swStart) window.swStart();

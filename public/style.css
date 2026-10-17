@@ -361,3 +361,8 @@ body.guestview{padding-bottom:36px}
 @media print{body.guestview *{display:none!important}body.guestview::after{content:'Printing is not available for this access.';display:block;padding:20px}}
 @media(max-width:720px){body.guestview #gfoot{bottom:calc(60px + env(safe-area-inset-bottom,0px));border-top:0;background:transparent}body.guestview{padding-bottom:110px}}
 @media(min-width:900px){body.hqdesk header.top{margin-inline:-12px}}
+
+.lang-sw .phbox p:not(.sw){display:none}
+
+.ib{display:none;margin-left:8px;width:22px;height:22px;border-radius:50%;border:1.5px solid var(--ink3);background:transparent;color:var(--ink2);font:700 12px var(--f-display);cursor:pointer;vertical-align:middle;padding:0;line-height:1}
+@media(max-width:720px){.ib{display:inline-block}.pagehead p.intro{display:none}.pagehead p.intro.open{display:block}}
