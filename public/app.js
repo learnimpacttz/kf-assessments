@@ -1,4 +1,4 @@
-// KiuFunza 4 Field Command Centre: one page, tabs depend on who signed in.
+// KiuFunza 4 Field Command Center: one page, tabs depend on who signed in.
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const S = { ph: null, phDate: null, phRegion: null, phErr: null, daysCache: {}, koboConfirm: null, restoreData: null, rosterMsg: null, daysRows: null, exTab: 'assess', tch: null, linked: null, exErr: null, real: null, viewAs: null, staffList: [], pred: null, brief: null, qOpen: null, cfg: null, code: null, who: null, tab: null, ov: null, pub: null, cmp: null, plan: null, year: null, explore: { q: '', lga: '', sub: 'schools' }, planRegion: null, selVisit: null, adm: null };
@@ -1885,7 +1885,7 @@ async function cleanAction(a, t) {
 // ---------- Usage and analytics (HQ only) ----------
 async function loadUsage() { try { S.us = await api('/api/usage/report'); S.usErr = null; } catch (e) { S.usErr = e.message; } render(); }
 function viewUsage() {
-  const head = '<div class="pagehead"><div><h2>Usage & analytics</h2><p>How the Command Centre is used: who opens it, which pages, when, on what device, and who has phone alerts on. This stays inside the system and only HQ sees it.</p></div></div>';
+  const head = '<div class="pagehead"><div><h2>Usage & analytics</h2><p>How the Command Center is used: who opens it, which pages, when, on what device, and who has phone alerts on. This stays inside the system and only HQ sees it.</p></div></div>';
   if (S.usErr) return head + `<div class="banner bad">${esc(S.usErr)}</div>`; const U = S.us; if (!U) return head + '<div class="empty">Loading…</div>';
   const k = U.kpis; const mx = (a) => Math.max(1, ...a);
   const bars = (vals, labels, cls = '') => { const m = mx(vals); return `<div class="ubars ${cls}">${vals.map((v, i) => `<div class="ub" title="${esc(labels[i])}: ${v}"><i style="height:${Math.round((v / m) * 100)}%"></i><span>${esc(labels[i])}</span></div>`).join('')}</div>`; };

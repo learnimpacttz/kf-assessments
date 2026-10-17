@@ -1,4 +1,4 @@
-// Usage of the Command Centre, kept inside the system: who opens it, which pages, at what hour, from which device,
+// Usage of the Command Center, kept inside the system: who opens it, which pages, at what hour, from which device,
 // who has phone alerts on, and who is not using it. Only HQ sees the analysis. Nothing leaves the system.
 import { kv } from './store.js';
 import { STAFF, REGIONS, eatToday, staffForKoboName } from './config.js';

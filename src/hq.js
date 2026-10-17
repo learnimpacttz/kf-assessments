@@ -86,7 +86,7 @@ export function levelGate(who, method, path) {
 }
 
 // ---- settings: brand names and targets ----
-export const BRAND_DEFAULT = { platform: 'Field Command Centre', programme: 'KiuFunza 4 Endline 2026', tagline: 'LearnImpact · A Strong Foundation in Reading, Writing and Arithmetic (3Rs) for Every Child', assistant: '' };
+export const BRAND_DEFAULT = { platform: 'Field Command Center', programme: 'KiuFunza 4 Endline 2026', tagline: 'LearnImpact · A Strong Foundation in Reading, Writing and Arithmetic (3Rs) for Every Child', assistant: '' };
 export const BRAND = { ...BRAND_DEFAULT };
 export const assistantName = () => (BRAND.assistant && BRAND.assistant.trim()) || `${BRAND.platform} Assistant`;
 const TARGET_DEFAULT = Object.fromEntries(Object.entries(TARGETS).map(([k, v]) => [k, { good: v.good, warn: v.warn }]));
