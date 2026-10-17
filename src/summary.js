@@ -69,6 +69,7 @@ const hms = (t) => `${String(Math.floor(t / 3600)).padStart(2, '0')}:${String(Ma
 const sname = (id) => (SCHOOL_BY_ID[id]?.name || PRACTICE_BY_ID[id]?.name || id).trim();
 
 // What one phone did in one day, in time order. Thresholds are deliberately forgiving: a flag means "look", not "wrong".
+const gradeTesters = (sc, g) => { const dg = (sc.dayGrade || {})[sc.last]; return dg && dg[g] ? dg[g].slice(0, 3).join(' and ') : ''; }; // the people who tested that grade on the last visit day
 export function analyseDay(date, events) {
   const flags = [];
   const byDev = {}; const byName = {};
@@ -292,9 +293,9 @@ export function summarize(Y, { year, bands, today, owners = {}, practice = false
     if (sc.done) nSchoolsDone += 1;
     for (const g of [1, 2, 3]) {
       const G = sc.g[g];
-      if (G.av > G.target && G.target > 0) flags.push({ sev: 'warn', type: 'over', school: sc.id, grade: g, admin: sc.admins[0] || '', date: sc.last, text: `Grade ${g}: ${G.av} tested, target ${G.target}`, hint: 'More pupils than the sample. Check for extras.' });
-      if (sc.started && sc.last < today && !G.done && G.n > 0) flags.push({ sev: 'warn', type: 'short', school: sc.id, grade: g, admin: sc.admins[0] || '', date: sc.last, text: `Grade ${g}: ${G.av} of ${G.target} tested, visit already ended`, hint: 'Use the replacement list or revisit.' });
-      if (hasSampling && G.n > 0 && G.att === null) flags.push({ sev: 'warn', type: 'nosample', school: sc.id, grade: g, admin: sc.admins[0] || '', date: sc.last, text: `Grade ${g}: pupils tested but no sampling record found`, hint: 'The sampling form may not have been submitted.' });
+      if (G.av > G.target && G.target > 0) flags.push({ sev: 'warn', type: 'over', school: sc.id, grade: g, admin: gradeTesters(sc, g) || sc.admins[0] || '', date: sc.last, text: `Grade ${g}: ${G.av} tested, target ${G.target}`, hint: 'More pupils than the sample. Check for extras.' });
+      if (sc.started && sc.last < today && !G.done && G.n > 0) flags.push({ sev: 'warn', type: 'short', school: sc.id, grade: g, admin: gradeTesters(sc, g) || sc.admins[0] || '', date: sc.last, text: `Grade ${g}: ${G.av} of ${G.target} tested, visit already ended`, hint: 'Use the replacement list or revisit.' });
+      if (hasSampling && G.n > 0 && G.att === null) flags.push({ sev: 'warn', type: 'nosample', school: sc.id, grade: g, admin: gradeTesters(sc, g) || sc.admins[0] || '', date: sc.last, text: `Grade ${g}: pupils tested but no sampling record found`, hint: 'The sampling form may not have been submitted.' });
     }
     reg.schools.push(sc.id);
   }
