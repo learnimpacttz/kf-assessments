@@ -1302,7 +1302,7 @@ const TABS = {
   guest: [['progress', 'Progress'], ['compare', 'Compare'], ['greports', 'Reports']],
   volunteer: [['day', 'My day'], ['pilot', 'Pilot day'], ['news', 'News'], ['work', 'My work'], ['queries', 'My queries'], ['stats', 'My stats'], ['phones', 'Phones'], ['pupils', 'Pupil records'], ['compare', 'Compare'], ['practice', 'Practice (Mafunzo)'], ['help', 'Help']],
   rc: [['region', 'Region'], ['news', 'News'], ['plan', 'Plan & calendar'], ['team', 'My team'], ['pilot', 'Pilot day'], ['allq', 'Queries'], ['phones', 'Phones'], ['compare', 'Compare'], ['reports', 'Reports'], ['narr', 'School reports'], ['clean', 'Data cleaning'], ['explore', 'Data explorer'], ['practice', 'Practice (Mafunzo)'], ['help', 'Help']],
-  hq: [['today', 'Today'], ['hq', 'HQ'], ['usage', 'Usage & analytics'], ['news', 'News'], ['messages', 'Write and schedule'], ['clean', 'Data cleaning'], ['regions', 'Regions & plans'], ['plan', 'Plan & calendar'], ['pilot', 'Pilot day'], ['people', 'People'], ['allq', 'Queries'], ['phones', 'Phones'], ['compare', 'Compare'], ['reports', 'Reports'], ['payments', 'Payments'], ['payments', 'Payments'], ['explore', 'Data explorer'], ['admin', 'Admin'], ['help', 'Help'], ['practice', 'Practice (Mafunzo)']],
+  hq: [['today', 'Today'], ['hq', 'HQ'], ['usage', 'Usage & analytics'], ['news', 'News'], ['messages', 'Write and schedule'], ['clean', 'Data cleaning'], ['regions', 'Regions & plans'], ['plan', 'Plan & calendar'], ['pilot', 'Pilot day'], ['people', 'People'], ['allq', 'Queries'], ['phones', 'Phones'], ['compare', 'Compare'], ['reports', 'Reports'], ['payments', 'Payments'], ['explore', 'Data explorer'], ['admin', 'Admin'], ['help', 'Help'], ['practice', 'Practice (Mafunzo)']],
 };
 const GROUPS = { public: [['Progress', ['progress']], ['Compare', ['compare']]], guest: [['Progress', ['progress']], ['Compare', ['compare']], ['Reports', ['greports']]], rc: [['Home', ['region', 'news']], ['Plan', ['plan', 'team', 'pilot']], ['Checks', ['allq', 'clean', 'phones', 'compare', 'explore']], ['Reports', ['reports', 'narr']], ['More', ['practice', 'help']]], volunteer: [['Today', ['day', 'pilot', 'news']], ['My work', ['work', 'queries', 'stats']], ['Team', ['phones', 'pupils', 'compare']], ['More', ['practice', 'help']]] };
 const HQ_GROUPS = [['Today', ['today']], ['Field', ['hq', 'regions', 'plan', 'pilot', 'people', 'practice']], ['Checks', ['allq', 'clean', 'phones', 'compare', 'explore']], ['Messages', ['news', 'messages']], ['Reports', ['reports', 'narr', 'payments']], ['Admin', ['admin', 'usage']], ['Help', ['help']]];
@@ -1385,6 +1385,7 @@ function whoHtml() {
 }
 function pilotBanner() {
   if (!S.who || S.viewAs || !['volunteer', 'rc', 'arc'].includes(S.who.role)) return '';
+  if (S.ov && S.ov.today && S.cfg && S.cfg.pilot_day && Date.parse(S.ov.today) > Date.parse(S.cfg.pilot_day) + 2 * 864e5) return ''; // the pilot day is over: the banner has done its job
   if (!S.pil) { S.pil = { loading: true }; loadPilot(); return ''; }
   const d = S.pil.data; if (!d) return ''; const c = d.schools.find((x) => x.mine); if (!c) return '';
   const me = S.who; let line; const mine = [...c.staff[me.region].rc, ...c.staff[me.region].arc, ...c.staff[me.region].volunteers].find((x) => x.id === me.id) || {};

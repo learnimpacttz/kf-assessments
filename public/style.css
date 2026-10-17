@@ -360,3 +360,4 @@ body.guestview{padding-bottom:36px}
 .plogo{height:26px;max-width:110px;object-fit:contain;background:#fff;border-radius:6px;padding:2px 6px}
 @media print{body.guestview *{display:none!important}body.guestview::after{content:'Printing is not available for this access.';display:block;padding:20px}}
 @media(max-width:720px){body.guestview #gfoot{bottom:calc(60px + env(safe-area-inset-bottom,0px));border-top:0;background:transparent}body.guestview{padding-bottom:110px}}
+@media(min-width:900px){body.hqdesk header.top{margin-inline:-12px}}

@@ -21,6 +21,7 @@ const GUEST_REPORTS = ['region_progress']; // aggregate only: no names, no schoo
 import { listGuests, guestAction, touchGuest } from './guests.js';
 import { recordUsage, recordApi, usageReport } from './usage.js';
 import { assignFlags } from './assign.js';
+import { isBlocked, recordFail } from './ratelimit.js';
 import { listNarr, getNarr, saveNarr, compiledHtml } from './narratives.js';
 import { TEMPLATES, buildReport, listReports, getReport, saveReport, deleteReport } from './reports.js';
 import { loadHq, hqChange, hqList, hqByCode, codeFor, levelGate, applySettings, settingsView, saveSettings, logActivity, readActivity, activityLabel, BRAND, assistantName } from './hq.js';
@@ -60,6 +61,7 @@ async function readYears(env) {
   const y = env.DASHBOARD_KV ? await env.DASHBOARD_KV.get('years', { type: 'json', cacheTtl: 30 }) : null;
   return y && y.length ? y : (await kv(env).get('v2:years')) || [];
 }
+let AS_CACHE = { k: '', t: 0, v: null };
 async function loadSummary(env, wanted) {
   const years = await readYears(env);
   let year = wanted && years.includes(wanted) ? wanted : years.includes(CURRENT_YEAR) ? CURRENT_YEAR : years[years.length - 1];
@@ -71,7 +73,7 @@ async function loadSummary(env, wanted) {
     const earlier = years.filter((y) => y !== CURRENT_YEAR).pop();
     if (earlier) { year = earlier; sum = await readSummary(env, year); }
   }
-  if (sum && year === CURRENT_YEAR) { try { const as = await assignFlags(env, sum, eatToday()); sum = { ...sum, flags: [...(sum.flags || []), ...as.flags], info: as.info }; } catch { /* the other checks still show */ } }
+  if (sum && year === CURRENT_YEAR) { try { const ck = String(sum.as_of) + eatToday(); const as = (AS_CACHE.k === ck && Date.now() - AS_CACHE.t < 60e3) ? AS_CACHE.v : await assignFlags(env, sum, eatToday()); AS_CACHE = { k: ck, t: Date.now(), v: as }; sum = { ...sum, flags: [...(sum.flags || []), ...as.flags], info: as.info }; } catch { /* the other checks still show */ } }
   return { years, sum, year, rehearsal: year !== CURRENT_YEAR };
 }
 
@@ -126,6 +128,10 @@ async function notifyQuery(env, n) {
   else if (n.to_stage === 'approved') await pushTo(env, (w) => w.id === n.responder_id || coord(w), { title: 'Response approved', body: 'A query response went through every review and is approved.', url: '/#queries' });
 }
 
+// headers every response carries
+function secure(res) {
+  try { const r = new Response(res.body, res); const h = r.headers; h.set('X-Content-Type-Options', 'nosniff'); h.set('X-Frame-Options', 'DENY'); h.set('Referrer-Policy', 'no-referrer'); h.set('Strict-Transport-Security', 'max-age=31536000'); h.set('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=()'); h.set('Content-Security-Policy', "frame-ancestors 'none'; base-uri 'self'; object-src 'none'"); return r; } catch { return res; }
+}
 export default {
   // every write is noted in the activity log (who, what, when) after it succeeds
   async fetch(request, env, ctx) {
@@ -136,7 +142,7 @@ export default {
       const job = (async () => { try { let body = {}; try { body = JSON.parse(bodyText || '{}'); } catch { /* not json */ } const lab = activityLabel(url0.pathname, body); if (lab) { const who = await identify(request, env); if (who && !who.viewAs) await logActivity(env, who, lab.action, lab.detail); } } catch { /* logging never blocks the work */ } })();
       if (ctx && ctx.waitUntil) ctx.waitUntil(job); else await job;
     }
-    return res;
+    return secure(res);
   },
 
   async handle(request, env, ctx) {
@@ -168,7 +174,10 @@ export default {
       if (path === '/api/push/config') return json({ public_key: env.VAPID_PUBLIC || null, ready: pushReady(env) });
       if (path === '/api/push/alert') return json(await takeAlert(env, (url.searchParams.get('h') || '').slice(0, 40)));
 
+      const ip = request.headers.get('cf-connecting-ip') || '';
+      if (request.headers.get('x-access-code') && (await isBlocked(env, ip))) return err('Too many wrong codes from this network. Please wait 15 minutes and try again.', 429);
       const who = await identify(request, env);
+      if (!who && request.headers.get('x-access-code')) ctx?.waitUntil?.(recordFail(env, ip).catch(() => {}));
 
       if (path === '/api/login') {
         if (!who) return err('That code was not recognized', 401);
