@@ -170,6 +170,7 @@ export function summarize(Y, { year, bands, today, owners = {}, practice = false
   const work = {}; // admin -> recent rows [date, school, grade, tested, avg_min]
   const hasSampling = Boolean(Y.nsamp);
   const visitTeam = {}; // school|date -> Set(enumerator)
+  const cellN = {}; // date|school|grade|person -> records, so a check can say how many records it touches
   for (const [key, c] of Object.entries(Y.cells)) {
     const [date, schoolId, grade, enumRaw] = key.split('|'); const enumerator = canon(enumRaw);
     const sc = schools[schoolId];
@@ -181,6 +182,7 @@ export function summarize(Y, { year, bands, today, owners = {}, practice = false
     if (enumerator) { const da = (sc.dayAdmins[date] ||= []); if (!da.includes(enumerator)) da.push(enumerator); }
     if (enumerator && c.av > 0) { const dg = ((sc.dayGrade ||= {})[date] ||= {}); const gl = (dg[grade] ||= []); if (!gl.includes(enumerator)) gl.push(enumerator); }
     (visitTeam[schoolId + '|' + date] ||= new Set()).add(enumerator);
+    cellN[`${date}|${schoolId}|${grade}|${enumerator}`] = (cellN[`${date}|${schoolId}|${grade}|${enumerator}`] || 0) + c.n;
     const d = ((daily[date] ||= {})[sc.region] = (daily[date][sc.region] || 0) + c.av);
     void d;
 
@@ -391,6 +393,11 @@ export function summarize(Y, { year, bands, today, owners = {}, practice = false
   nat.pace = r1(paceAll);
   nat.projected = remainingAll <= 0 ? 'done' : paceAll > 0 ? addWorkingDays(today, Math.ceil(remainingAll / paceAll)) : null;
 
+  // how many pupil records each check touches (0 for checks about a school or a phone rather than records); used by the clean rate
+  for (const f of flags) {
+    if (['fast', 'slow', 'window', 'gps', 'edited', 'latesub'].includes(f.type)) f.n = cellN[`${f.date}|${f.school}|${f.grade}|${f.admin}`] || 0;
+    else if (f.type === 'dup') f.n = (f.recs || []).length || 1; else if (f.type === 'notlist') f.n = parseInt(f.text, 10) || 1; else f.n = 0;
+  }
   return { year, as_of: new Date().toISOString(), today, bands, devices, tl_dates: tlDates, national: nat, regions, schools, admins: adminList, flags: flags.slice(0, 1500), days: Object.fromEntries(Object.entries(dayMap).map(([who, m]) => [who, Object.entries(m).sort().map(([d, v]) => [d, v.s.size, v.n, v.h0 === 99 ? null : v.h0, v.h1 < 0 ? null : v.h1])])), work: Object.fromEntries(Object.entries(work).map(([k, v]) => [k, v.sort((x, y) => (x[0] < y[0] ? 1 : -1)).slice(0, 80)])) };
 }
 

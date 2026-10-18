@@ -16,6 +16,7 @@ import { loadFormJob, saveFormJob, runFormJob, maybeRunFormJob } from './formjob
 import { kv } from './store.js';
 import { buildBrief, aiBrief } from './brief.js';
 import { ask as askAssistant, draftReportText } from './assistant.js';
+import { computeBridge, buildUpdate, saveSnapshot, listSnapshots, getMilestones, saveMilestones, AUDIENCES } from './bridge.js';
 import { sendDm, dmInbox, dmAck, dmSent, askCreate, askList, askAct, askCounts, notesList, notesAct } from './talk.js';
 import { layoutsFor, saveLayout } from './layouts.js';
 const GUEST_REPORTS = ['region_progress']; // aggregate only: no names, no school results
@@ -38,7 +39,7 @@ import { subscribe, unsubscribe, takeAlert, hashEndpoint, pushTo, pushStatus, pu
 import { tick, syncStatus, recomputeSummaries, resetAll, resetKind, loadState, loadYear, saveYear, stateYears, clearPractice, restartRebuildFrom, seedFirstIds } from './sync.js';
 import { getPlan, submitPlan, saveDraft, changeVisit, markNotice, withNotices } from './plan.js';
 import {
-  devCode as devCodeOf, REGIONS, PARTNERS, REASONS, DAY_REASONS, PRACTICE_BY_ID, PRACTICE_REGION, PLAN_DEADLINE, FIELD_START, FIELD_END, PILOT_DAY, TRAINING_START, CURRENT_YEAR, STAFF, rosterState, staffForKoboName, SCHOOLS_BY_REGION, SCHOOL_BY_ID, eatToday,
+  devCode as devCodeOf, REGIONS, PARTNERS, REASONS, DAY_REASONS, PRACTICE_BY_ID, PRACTICE_REGION, PLAN_DEADLINE, FIELD_START, FIELD_END, PILOT_DAY, TRAINING_START, CURRENT_YEAR, STAFF, rosterState, addDays, isWorkingDay, staffForKoboName, SCHOOLS_BY_REGION, SCHOOL_BY_ID, eatToday,
   TARGET_PER_GRADE, DODOMA_TARGET_PER_GRADE, NOTICE_AEK_WORKING_DAYS, NOTICE_HT_WORKING_DAYS,
 } from './config.js';
 
@@ -129,6 +130,23 @@ async function notifyQuery(env, n) {
   else if (n.to_stage === 'approved') await pushTo(env, (w) => w.id === n.responder_id || coord(w), { title: 'Response approved', body: 'A query response went through every review and is approved.', url: '/#queries' });
 }
 
+// ---- the HQ Bridge ----
+const BR = new Map();
+async function bridgeFor(env, who, force = false) {
+  const key = String(who.id) + ':' + (who.review_level || 0); const hit = BR.get(key); if (!force && hit && Date.now() - hit.t < 30000) return hit.v;
+  const { sum } = await loadSummary(env, CURRENT_YEAR); if (!sum) return null; const today = eatToday();
+  let quota = null; try { const st = await storageView(env); const ser = ((sum.national && sum.national.series) || []).filter((x) => x[0] >= FIELD_START).slice(-5); const per = ser.length >= 3 ? Math.round((ser.reduce((a, x) => a + x[1], 0) / ser.length) * 1.1) : 0; /* real field days only: the pilot day is one big spike */ if (st && st.submissions_limit != null) { quota = { used: st.submissions_period, limit: st.submissions_limit, per_day: per, runs_out: null }; if (per > 0) { let left = Math.max(0, st.submissions_limit - st.submissions_period), d = today; while (left > 0 && d < '2027-03-01') { d = addDays(d, 1); if (isWorkingDay(d)) left -= per; } if (left <= 0) quota.runs_out = d; } } } catch { /* the Bridge works without it */ }
+  let pred = null; try { pred = { ...(await forecast(env, sum, today)), at_risk: await atRiskSchools(env, sum, today, null) }; } catch { /* optional */ }
+  const v = { br: await computeBridge(env, who, { sum, queries: await loadQueries(env), today, quota, pred }), sum }; BR.set(key, { t: Date.now(), v }); return v;
+}
+async function mondayDraft(env) {
+  const day = eatToday(); const ran = (await kv(env).get('v2:bridge:ran')) || {}; if (ran.monday === day) return null; ran.monday = day; await kv(env).put('v2:bridge:ran', ran);
+  const sys = { role: 'hq', level: 'admin', review_level: 3, name: 'Command Center', id: 'system' }; const v = await bridgeFor(env, sys, true); if (!v) return null;
+  const u = await buildUpdate(env, 'ed', v.br, v.sum.national ? v.sum : v.sum); await saveSnapshot(env, sys, { audience: 'ed', text: u.text, numbers: u.numbers, draft: true });
+  const bs = (await kv(env).get('v2:bridge:settings')) || { ed_email: true }; const hq = (await loadHq(env)).users.find((x) => x.id === 'h3'); let emailed = false;
+  if (bs.ed_email !== false && hq && hq.email && env.EMAIL_ENABLED === 'true') { await sendMail(env, hq.email, { subject: `Your Monday update draft · ${day}`, html: `<pre style="font:14px/1.5 system-ui,sans-serif;white-space:pre-wrap">${u.text.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]))}</pre><p>Edit and save it in the Command Center: Bridge, Management update.</p>`, text: u.text + '\n\nEdit and save it in the Command Center: Bridge, Management update.' }).catch(() => {}); emailed = true; }
+  return { drafted: true, emailed };
+}
 // headers every response carries
 function secure(res) {
   try { const r = new Response(res.body, res); const h = r.headers; h.set('X-Content-Type-Options', 'nosniff'); h.set('X-Frame-Options', 'DENY'); h.set('Referrer-Policy', 'no-referrer'); h.set('Strict-Transport-Security', 'max-age=31536000'); h.set('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=()'); h.set('Content-Security-Policy', "frame-ancestors 'none'; base-uri 'self'; object-src 'none'"); return r; } catch { return res; }
@@ -276,6 +294,19 @@ export default {
       if (path === '/api/assign-info') { // for information only: helpers, grade differences, planned people with no records
         if (who.role === 'volunteer') return json({ items: [] });
         const { sum } = await loadSummary(env, CURRENT_YEAR); return json({ items: ((sum && sum.info) || []).filter((x) => who.role === 'hq' || x.region === who.region) });
+      }
+      // ---------- the HQ Bridge ----------
+      if (path.startsWith('/api/bridge')) {
+        if (who.role !== 'hq') return err('HQ only', 403);
+        try {
+          if (path === '/api/bridge') { const v = await bridgeFor(env, who, url.searchParams.get('fresh') === '1'); return v ? json(v.br) : json({ status: 'waiting' }); }
+          if (path === '/api/bridge/update') { const v = await bridgeFor(env, who); if (!v) return err('No data yet', 404); const aud = url.searchParams.get('audience') || 'ed'; const u = await buildUpdate(env, aud, v.br, v.sum); return json({ audience: aud, audiences: AUDIENCES, ...u }); }
+          if (path === '/api/bridge/snapshots') return json({ items: await listSnapshots(env) });
+          if (path === '/api/bridge/snapshot' && method === 'POST') { if ((who.level || 'admin') === 'viewer') return err('Not allowed', 403); const b = await request.json().catch(() => ({})); return json(await saveSnapshot(env, who, b)); }
+          if (path === '/api/bridge/milestones' && method === 'GET') return json({ milestones: await getMilestones(env), settings: (await kv(env).get('v2:bridge:settings')) || { ed_email: true } });
+          if (path === '/api/bridge/milestones' && method === 'POST') { const b = await request.json().catch(() => ({})); if (b.ed_email !== undefined) { if ((who.level || 'admin') !== 'admin') return err('Only an HQ Admin', 403); await kv(env).put('v2:bridge:settings', { ed_email: Boolean(b.ed_email) }); } if (b.milestones) { const r = await saveMilestones(env, who, b.milestones); if (r.error) return err(r.error, r.status || 422); } BR.clear(); return json({ ok: true }); }
+        } catch (e) { return err(String(e.message || e), 500); }
+        return err('Not found', 404);
       }
       // ---------- narrative report per school (RC/ARC write, HQ and the region read) ----------
       if (path.startsWith('/api/narratives')) {
@@ -959,6 +990,7 @@ export default {
       try { const fj = await maybeRunFormJob(env); if (fj) console.log('formjob ' + JSON.stringify(fj).slice(0, 600)); } catch (e) { console.error('form job failed: ' + (e && e.message)); }
       try { const nw = await runDueNews(env); if (nw.length) console.log('news ' + JSON.stringify(nw)); if (new Date().getUTCMinutes() % 15 === 0) { const ms = await checkMilestones(env); if (ms && ms.length) console.log('milestones ' + JSON.stringify(ms)); } } catch (e) { console.error('news failed: ' + (e && e.message)); }
       try { const mj = await runDueMessages(env); if (mj) console.log('messages ' + JSON.stringify(mj).slice(0, 500)); } catch (e) { console.error('messages failed: ' + (e && e.message)); }
+      if (hhmm === '04:00' && new Date().getUTCDay() === 1) { try { const md = await mondayDraft(env); if (md) console.log('monday draft ' + JSON.stringify(md)); } catch (e) { console.error('monday draft failed: ' + (e && e.message)); } }
       const bk = await maybeRunScheduledBackup(env); if (bk) console.log('backup ' + JSON.stringify(bk));
       const dg = await maybeRunScheduledDigests(env);
       if (dg) console.log('digest ' + JSON.stringify(dg).slice(0, 500));
