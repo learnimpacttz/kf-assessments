@@ -7,7 +7,7 @@ const store = { get: (k) => { try { return localStorage.getItem(k); } catch { re
 async function api(path, opts = {}) {
   const headers = { ...(opts.headers || {}) };
   if (S.code && S.viewAs !== 'public') headers['x-access-code'] = S.code;
-  if (S.viewAs && S.viewAs !== 'public' && !opts.noView) headers['x-view-as'] = /^guest:/.test(S.viewAs) ? S.viewAs : 'staff:' + S.viewAs;
+  if (S.viewAs && S.viewAs !== 'public' && !opts.noView) headers['x-view-as'] = /^(guest|hq):/.test(S.viewAs) ? S.viewAs : 'staff:' + S.viewAs;
   if (opts.body) headers['content-type'] = 'application/json';
   const res = await fetch(path, { ...opts, headers, body: opts.body ? JSON.stringify(opts.body) : undefined });
   const data = await res.json().catch(() => ({}));
@@ -30,6 +30,8 @@ const kpi = (l, v, s = '', go = '') => `<div class="kpi${go ? ' click' : ''}"${g
 const bar = (p, color) => `<div class="bar"><i style="width:${Math.min(100, p)}%;${color ? 'background:' + color : ''}"></i></div>`;
 const statusPill = (s) => (s.done ? '<span class="pill good">Complete</span>' : s.started ? '<span class="pill warn">In progress</span>' : '<span class="pill mute">Not started</span>');
 
+// finish dates follow this year's plan first (see predict.js); the older run-rate in the summary is only a fallback
+const finishOf = (regionOrNull, fallback) => { const x = regionOrNull ? S.pred?.regions?.[regionOrNull] : S.pred?.national; return x && x.likely && (x.plan_finish || fallback !== undefined) ? x.likely : fallback; };
 function regionState(r) {
   if (r.total && r.done >= r.total) return 'good';
   if (!r.started) return 'mute';
@@ -186,7 +188,7 @@ function viewProgress() {
   const o = S.pub; if (!o || o.status === 'waiting') return waiting();
   const n = o.national;
   return `${dataBanner()}<div class="pagehead"><div><h2>KiuFunza 4 · Endline ${esc(o.year)}</h2><p>Progress across ${o.regions.length} regions. Aggregate only: no names, no school results.</p></div></div>
-  <div class="grid kpis">${kpi('Schools complete', `${fmt(n.done)}<small> / ${fmt(n.schools)}</small>`, pc(n.done, n.schools) + '% of schools')}${kpi('Pupils tested', fmt(n.tested), 'of ' + fmt(n.target) + ' sampled')}${kpi('Schools started', fmt(n.started), '')}${kpi('Projected finish', n.projected === 'done' ? 'Done' : n.projected ? shortDate(n.projected) : '–', 'at the last 5 days\' pace')}</div>
+  <div class="grid kpis">${kpi('Schools complete', `${fmt(n.done)}<small> / ${fmt(n.schools)}</small>`, pc(n.done, n.schools) + '% of schools')}${kpi('Pupils tested', fmt(n.tested), 'of ' + fmt(n.target) + ' sampled')}${kpi('Schools started', fmt(n.started), '')}${kpi('Projected finish', n.projected === 'done' ? 'Done' : finishOf(null, n.projected) ? shortDate(finishOf(null, n.projected)) : '–', 'at the last 5 days\' pace')}</div>
   <div class="card" style="margin-top:14px">${ring(n.tested, n.target, { label: `${fmt(n.tested)} of ${fmt(n.target)} sampled pupils tested`, sub: `${n.done} of ${n.schools} schools complete`, size: 112 })}</div>
   <div class="grid two" style="margin-top:14px"><div class="card"><h3>Regions</h3><div class="sub">Schools complete out of planned</div>${tiles(o.regions)}</div>
   <div class="card"><h3>Tests per day</h3><div class="sub">All regions</div>${barChart(n.series)}</div></div>`;
@@ -253,7 +255,7 @@ function viewRegion() {
   }).join('');
   const neededPerDay = remaining > 0 ? remaining / Math.max(1, workingLeft(o.today)) : 0;
   return `${dataBanner()}<div class="pagehead"><div><h2>Habari, ${esc((S.who.name || '').split(' ')[0])}</h2><p>${esc(S.who.role === 'arc' ? 'Assistant Regional Coordinator' : 'Regional Coordinator')} · ${esc(title(r.region))} · ${dayName(o.today)} · ${r.total} schools · target ${tpg} pupils per grade per school</p></div></div>
-  <div class="grid kpis">${kpi('Schools complete', `${r.done}<small> / ${r.total}</small>`, pc(r.done, r.total) + '%')}${kpi('Pupils tested', fmt(r.tested), 'of ' + fmt(r.target))}${kpi('Open flags', flags.length, flags.filter((f) => f.sev === 'bad').length + ' need a call', 'allq')}${kpi('Pace', r.pace + ' / day', 'schools per field day, last 5 days')}${kpi('Projected finish', r.projected === 'done' ? 'Done' : r.projected ? shortDate(r.projected) : '–', r.behind ? 'after the 4 Dec close' : 'before the 4 Dec close')}</div>
+  <div class="grid kpis">${kpi('Schools complete', `${r.done}<small> / ${r.total}</small>`, pc(r.done, r.total) + '%')}${kpi('Pupils tested', fmt(r.tested), 'of ' + fmt(r.target))}${kpi('Open flags', flags.length, flags.filter((f) => f.sev === 'bad').length + ' need a call', 'allq')}${kpi('Pace', r.pace + ' / day', 'schools per field day, last 5 days')}${kpi('Projected finish', r.projected === 'done' ? 'Done' : finishOf(r.region, r.projected) ? shortDate(finishOf(r.region, r.projected)) : '–', r.behind ? 'after the 4 Dec close' : 'before the 4 Dec close')}</div>
   ${queryPrompt()}
   <div class="card" style="margin-top:14px">${ring(r.tested, r.target, { label: `${fmt(r.tested)} of ${fmt(r.target)} pupils tested`, sub: `${r.done} of ${r.total} schools complete` })}</div>${weekStrip()}
   ${ownSection()}
@@ -423,7 +425,7 @@ function viewHQ() {
   const types = Object.entries(byType).sort((a, b) => b[1] - a[1]);
   const mx = Math.max(1, ...types.map((t) => t[1]));
   return `${dataBanner()}<div class="pagehead"><div><h2>HQ command center</h2><p>All regions · ${esc(o.year)}</p></div></div>
-  <div class="grid kpis">${kpi('Schools complete', `${fmt(n.done)}<small> / ${fmt(n.schools)}</small>`, pc(n.done, n.schools) + '%', 'regions')}${kpi('Pupils tested', fmt(n.tested), 'of ' + fmt(n.target), 'compare')}${kpi('Open flags', fmt(openF.length), bad + ' serious', 'allq')}${kpi('Regions at risk', atRisk, 'projected after 4 Dec', 'regions')}${kpi('Projected finish', n.projected === 'done' ? 'Done' : n.projected ? shortDate(n.projected) : '–', 'at current pace')}</div>
+  <div class="grid kpis">${kpi('Schools complete', `${fmt(n.done)}<small> / ${fmt(n.schools)}</small>`, pc(n.done, n.schools) + '%', 'regions')}${kpi('Pupils tested', fmt(n.tested), 'of ' + fmt(n.target), 'compare')}${kpi('Open flags', fmt(openF.length), bad + ' serious', 'allq')}${kpi('Regions at risk', atRisk, 'projected after 4 Dec', 'regions')}${kpi('Projected finish', n.projected === 'done' ? 'Done' : finishOf(null, n.projected) ? shortDate(finishOf(null, n.projected)) : '–', S.pred?.national?.plan_finish ? 'following the plan' : 'at current pace')}</div>
   ${S.brief ? '<div style="margin-top:14px">' + briefCard() + '</div>' : ''}<div style="margin-top:14px">${forecastCard()}</div>${heatCard()}${funnelCard()}${lateCard()}<div class="card" style="margin-top:14px"><h3>Regions</h3><div class="sub">Schools complete out of ${fmt(n.schools)}</div>${tiles(o.regions)}</div>
   <div class="grid two" style="margin-top:14px"><div class="card"><h3>Flags to act on</h3><div class="sub">Newest checks across all regions</div>${flagList(openF.slice().sort((a, b) => (a.sev === 'bad' ? 0 : 1) - (b.sev === 'bad' ? 0 : 1)), { limit: 12 })}</div>
   <div style="display:grid;gap:14px;align-content:start"><div class="card"><h3>Checks running</h3><div class="sub">Open flags by type</div>${types.map(([t, c]) => `<div style="display:flex;gap:10px;align-items:center;padding:6px 0;border-bottom:1px solid var(--line)"><span style="flex:1">${esc(FLAG_LABEL[t] || t)}</span>${bar(pc(c, mx))}<span class="num" style="width:34px;text-align:right">${c}</span></div>`).join('') || '<div class="empty">No flags.</div>'}</div>
@@ -431,7 +433,7 @@ function viewHQ() {
 }
 function viewRegionsHQ() {
   const o = S.ov;
-  const rows = o.regions.map((r) => { const p = o.plans[r.region] || {}; return `<tr class="click" data-open="region:${esc(r.region)}"><td><b>${esc(title(r.region))}</b> <span class="pill mute">${esc(r.partner || '')}</span></td><td class="num r">${r.done}/${r.total}</td><td class="num r">${fmt(r.tested)}/${fmt(r.target)}</td><td>${bar(pc(r.tested, r.target))}</td><td class="num r">${r.pace}</td><td>${r.projected === 'done' ? 'Done' : r.projected ? shortDate(r.projected) : '–'}</td><td>${p.status === 'locked' ? `<span class="pill good">submitted</span> <span style="font-size:12px;color:var(--ink3)">${p.changes} changes${p.late_changes ? ', ' + p.late_changes + ' late' : ''}</span>` : '<span class="pill bad">not submitted</span>'}</td></tr>`; }).join('');
+  const rows = o.regions.map((r) => { const p = o.plans[r.region] || {}; return `<tr class="click" data-open="region:${esc(r.region)}"><td><b>${esc(title(r.region))}</b> <span class="pill mute">${esc(r.partner || '')}</span></td><td class="num r">${r.done}/${r.total}</td><td class="num r">${fmt(r.tested)}/${fmt(r.target)}</td><td>${bar(pc(r.tested, r.target))}</td><td class="num r">${r.pace}</td><td>${r.projected === 'done' ? 'Done' : finishOf(r.region, r.projected) ? shortDate(finishOf(r.region, r.projected)) : '–'}</td><td>${p.status === 'locked' ? `<span class="pill good">submitted</span> <span style="font-size:12px;color:var(--ink3)">${p.changes} changes${p.late_changes ? ', ' + p.late_changes + ' late' : ''}</span>` : '<span class="pill bad">not submitted</span>'}</td></tr>`; }).join('');
   return `${dataBanner()}<div class="pagehead"><div><h2>Regions and plans</h2><p>Progress, pace and whether each coordinator has submitted the field plan</p></div></div><div class="card"><div class="tbl"><table><thead><tr><th>Region</th><th class="r">Schools</th><th class="r">Pupils</th><th>Progress</th><th class="r">Pace/day</th><th>Finish</th><th>Field plan</th></tr></thead><tbody>${rows}</tbody></table></div></div>${calendarChangesCard(o.calendar_changes || [])}`;
 }
 function calendarChangesCard(list) {
@@ -708,7 +710,7 @@ function regionCard(r) {
   const schools = schoolsAll().filter((s) => s.region === r || !s.region).slice().sort((a, b) => a.done - b.done || a.name.localeCompare(b.name));
   const p = S.ov.plans?.[r];
   return `<h2>${esc(title(r))}</h2><p class="m">${esc(partnerOf(r) || 'Training region')}</p>
-  <div class="grid kpis" style="margin-top:12px">${kpi('Schools complete', `${R.done}<small> / ${R.total}</small>`)}${kpi('Pupils tested', fmt(R.tested), 'of ' + fmt(R.target))}${kpi('Pace', R.pace + ' / day')}${kpi('Projected finish', R.projected === 'done' ? 'Done' : R.projected ? shortDate(R.projected) : '–')}</div>
+  <div class="grid kpis" style="margin-top:12px">${kpi('Schools complete', `${R.done}<small> / ${R.total}</small>`)}${kpi('Pupils tested', fmt(R.tested), 'of ' + fmt(R.target))}${kpi('Pace', R.pace + ' / day')}${kpi('Projected finish', R.projected === 'done' ? 'Done' : finishOf(R.region, R.projected) ? shortDate(finishOf(R.region, R.projected)) : '–', S.pred?.regions?.[R.region]?.plan_finish ? 'following the plan' : '')}</div>
   ${p ? `<p style="margin-top:10px">Field plan: ${p.status === 'locked' ? `<span class="pill good">submitted</span> ${p.changes} change(s), ${p.late_changes} late` : '<span class="pill bad">not submitted</span>'}</p>` : ''}
   <h3 style="margin:16px 0 4px">Tests per day</h3>${barChart(R.series)}
   <h3 style="margin:16px 0 4px">Schools</h3><div class="tbl"><table><thead><tr><th>School</th><th>LGA</th><th>Status</th></tr></thead><tbody>${schools.map((s) => `<tr><td>${lk('school', s.id, s.name)}</td><td>${esc(title(s.lga))}</td><td>${statusPill(s)}</td></tr>`).join('') || '<tr><td colspan="3" class="empty">Open the Data explorer to load schools.</td></tr>'}</tbody></table></div>`;
@@ -1330,6 +1332,16 @@ const isGuest = () => Boolean(S.who && S.who.role === 'guest');
 const VIEWS = { progress: viewProgress, compare: viewCompare, day: viewDay, work: viewWork, queries: viewQueries, stats: viewStats, region: viewRegion, plan: viewPlan, team: viewTeam, explore: viewExplore, hq: viewHQ, regions: viewRegionsHQ, people: viewPeopleHQ, admin: viewAdmin, allq: viewAllQueries, phones: viewPhones, practice: viewPractice, news: () => dmInboxCard() + viewNews(), pilot: viewPilot, payments: viewPayments, pupils: viewPupils, messages: viewMessages, reports: viewReports, narr: viewNarr, ask: viewAsk, questions: viewQuestions, greports: viewGuestReports, usage: viewUsage, clean: viewClean, today: viewToday, help: viewHelp };
 
 // Admin is long: each card folds away so you can jump to what you need. The first card stays open; your choices are remembered.
+// On a phone, a wide table becomes a stack of small cards so nothing hides behind a sideways scroll
+function stackTables() {
+  if (window.innerWidth > 640 || S.tab === 'admin' || S.tab === 'phones') return;
+  document.querySelectorAll('#app table:not(.kv):not(.stk)').forEach((t) => {
+    if (t.closest('#bv-reg,#bv-targets') || t.classList.contains('nostack')) return;
+    const heads = [...t.querySelectorAll('thead th')].map((h) => h.textContent.trim()); if (heads.length < 4) return;
+    t.classList.add('stack');
+    t.querySelectorAll('tbody tr').forEach((tr) => { [...tr.children].forEach((td, i) => { if (td.colSpan > 1) return; td.setAttribute('data-l', heads[i] || ''); }); });
+  });
+}
 function enhanceCollapsible() {
   if (S.tab !== 'admin' && !(S.tab === 'today' && S.who && S.who.role === 'hq')) return;
   let first = true;
@@ -1344,7 +1356,7 @@ function enhanceCollapsible() {
     card.replaceWith(d);
   });
   const ds = [...document.querySelectorAll('#app details.colcard')]; const head = document.querySelector('#app .pagehead');
-  if (head && ds.length > 3 && !document.querySelector('#app .jump')) { const j = document.createElement('div'); j.className = 'jump'; ds.forEach((d, i) => { const t = d.querySelector('summary').textContent.trim(); const b = document.createElement('button'); b.textContent = t.length > 22 ? t.slice(0, 21) + '…' : t; b.onclick = () => { d.open = true; d.scrollIntoView({ behavior: 'smooth', block: 'start' }); }; j.appendChild(b); }); head.after(j); }
+  if (head && ds.length > 3 && !document.querySelector('#app .jump')) { const j = document.createElement('div'); j.className = 'jump'; const go = (d) => { d.open = true; d.scrollIntoView({ behavior: 'smooth', block: 'start' }); }; const sel = document.createElement('select'); sel.setAttribute('aria-label', 'Jump to a section'); sel.innerHTML = '<option value="">Jump to a section…</option>' + ds.map((d, i) => `<option value="${i}">${esc(d.querySelector('summary').textContent.trim())}</option>`).join(''); sel.onchange = () => { if (sel.value !== '') go(ds[Number(sel.value)]); sel.value = ''; }; j.appendChild(sel); ds.forEach((d) => { const t = d.querySelector('summary').textContent.trim(); const b = document.createElement('button'); b.className = 'jchip'; b.textContent = t.length > 22 ? t.slice(0, 21) + '…' : t; b.onclick = () => go(d); j.appendChild(b); }); head.after(j); }
 }
 const startKey = () => (S.who && !S.viewAs ? store.get('kf_start:' + roleKey() + ':' + (S.who.id ?? S.who.name)) : null);
 const IC = (d) => `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
@@ -1451,13 +1463,18 @@ async function arrAction(a, t) {
 // HQ desk: HQ works from its own sidebar of HQ pages on wide screens; field pages (My day, My work) are not part of it
 const DESK_GROUPS = [['Today', ['today']], ['Field operations', ['hq', 'regions', 'plan', 'pilot', 'practice']], ['Data quality', ['allq', 'clean', 'phones', 'compare', 'explore']], ['People', ['people']], ['Communication', ['news', 'messages', 'questions']], ['Reports', ['reports', 'narr', 'payments']], ['System', ['admin', 'usage', 'help']]];
 function renderSide(tabs, badge) {
-  let side = document.getElementById('side'); const on = roleKey() === 'hq' && S.who && !S.viewAs;
+  let side = document.getElementById('side'); const on = roleKey() === 'hq' && S.who && (!S.viewAs || /^hq:/.test(S.viewAs));
   document.body.classList.toggle('hqdesk', Boolean(on)); if (!on) { if (side) side.remove(); return; }
   if (!side) { side = document.createElement('aside'); side.id = 'side'; side.setAttribute('aria-label', 'HQ navigation'); document.body.appendChild(side); }
   const ok = new Set(tabs.map((t) => t[0])), lab = Object.fromEntries(tabs);
   const DO = { coordination: ['Today', 'Field operations', 'Data quality', 'People', 'Communication', 'Reports', 'System'], management: ['Today', 'Reports', 'People', 'Data quality', 'Field operations', 'Communication', 'System'], leadership: ['Today', 'Reports', 'Communication', 'Field operations', 'Data quality', 'People', 'System'] }[deskNow()];
   const DG = DO ? DESK_GROUPS.slice().sort((x, y) => (DO.indexOf(x[0]) < 0 ? 99 : DO.indexOf(x[0])) - (DO.indexOf(y[0]) < 0 ? 99 : DO.indexOf(y[0]))) : DESK_GROUPS;
   side.innerHTML = DG.map(([g, ks]) => { const items = ks.filter((k) => ok.has(k)); return items.length ? `<div class="sg"><h4>${esc(g)}</h4>${items.map((k) => `<button data-tab="${k}" class="${k === S.tab ? 'on' : ''}">${esc(lab[k] || k)}${badge(k)}</button>`).join('')}</div>` : ''; }).join('');
+}
+function backBar() {
+  if (!S.backTo || S.backTo === S.tab) return '';
+  const nm = (TABS[roleKey()].find((t) => t[0] === S.backTo) || [])[1]; if (!nm) return '';
+  return `<div class="backbar"><button class="btn sm" data-act="goBack" aria-label="Back to ${esc(nm)}">‹ Back to ${esc(nm)}</button></div>`;
 }
 function render() {
   trackTab();
@@ -1485,15 +1502,15 @@ function render() {
     planBanner = `<div class="banner ${left <= 0 ? 'bad' : ''}"><b>Plan not submitted.</b> ${left > 0 ? `Due ${dayName(pd.deadline)} (${left} day${left > 1 ? 's' : ''} left).` : left === 0 ? 'Due TODAY.' : 'Overdue.'} Notices to schools depend on it. <a href="#plan" data-tab="plan"><b>Open Plan &amp; calendar</b></a></div>`;
   }
   const un = S.tab !== 'news' && S.who && !S.viewAs ? unreadNews()[0] : null;
-  const langBanner = S.who && S.who.role === 'volunteer' && !S.viewAs && LANG() === 'en' && !store.get('kf_lang_seen') ? '<div class="banner" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span style="flex:1;min-width:180px"><b>Kiswahili?</b> Unaweza kutumia programu hii kwa Kiswahili. · You can use this app in Swahili.</span><button class="btn sm" data-act="langSw">Tumia Kiswahili</button><button class="btn sm ghost" data-act="langKeep">English</button></div>' : '';
+  const langBanner = S.who && S.who.role === 'volunteer' && S.tab === 'day' && !S.viewAs && LANG() === 'en' && !store.get('kf_lang_seen') ? '<div class="banner" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span style="flex:1;min-width:180px"><b>Kiswahili?</b> Unaweza kutumia programu hii kwa Kiswahili. · You can use this app in Swahili.</span><button class="btn sm" data-act="langSw">Tumia Kiswahili</button><button class="btn sm ghost" data-act="langKeep">English</button></div>' : '';
   const newsBanner = un ? `<div class="banner" style="background:var(--surface2)"><b>News:</b> ${esc(un.title)} <a href="#news" data-tab="news"><b>Read</b></a></div>` : '';
-  $('#app').innerHTML = previewBanner() + langBanner + dmBanner() + planBanner + (S.tab === 'pilot' ? '' : pilotBanner()) + newsBanner + VIEWS[S.tab]();
+  $('#app').innerHTML = previewBanner() + langBanner + dmBanner() + planBanner + (S.tab === 'pilot' ? '' : pilotBanner()) + newsBanner + backBar() + VIEWS[S.tab]();
   $('#gswrap').hidden = !S.who;
   applyLayout();
   collapseIntros();
   if (S.who && S.who.role === 'hq' && !S.viewAs) hydrateNotes();
   guestChrome();
-  enhanceCollapsible();
+  enhanceCollapsible(); stackTables();
   aiRender();
 }
 
@@ -1560,7 +1577,7 @@ function bvKpis(T) {
     send: `<h4>Where sending is slowest</h4><div class="m">Per person: Reports > Who sends records early. ${visitPct != null ? 'Visits on the planned day: ' + visitPct + '%.' : ''}</div><div style="margin-top:6px">${act('Open the report', 'reports')} ${act('Open phones', 'phones')}</div>`,
     people: `<h4>Who is using the app</h4><div class="m">${b.people.active_today} of ${b.people.total} opened it today; ${b.people.alerts_on} have alerts on. ${b.questions.hq} question${b.questions.hq === 1 ? '' : 's'} wait for HQ.</div><div style="margin-top:6px">${act('Usage & analytics', 'usage')} ${act('Questions', 'questions')}</div>`,
   };
-  return `<div class="grid kpis" id="bvk">${cards.map(([k, l, v, t2, bar, st]) => `<button class="kpi bvk" data-act="bvK" data-k="${k}" aria-expanded="${S.bv.open === k}"><span class="l">${l}</span><span class="v num">${v}</span><span class="t">${t2}</span>${bar}<span>${pill(st[0], st[1])} <span class="t">${S.bv.open === k ? 'tap to close' : 'tap to open here'}</span></span></button>`).join('')}</div>${S.bv.open ? `<div class="bvpanel">${panels[S.bv.open]}</div>` : ''}`;
+  return `<div class="grid kpis" id="bvk">${cards.map(([k, l, v, t2, bar, st]) => `<button class="kpi bvk s-${st[0]}" data-act="bvK" data-k="${k}" aria-expanded="${S.bv.open === k}"><span class="l">${l}</span><span class="v num">${v}</span><span class="t">${t2}</span>${bar}<span>${pill(st[0], st[1])} <span class="t">${S.bv.open === k ? 'tap to close' : 'tap to open here'}</span></span></button>`).join('')}</div>${S.bv.open ? `<div class="bvpanel"><button class="xbtn" data-act="bvK" data-k="${S.bv.open}" aria-label="Close">×</button>${panels[S.bv.open]}</div>` : ''}`;
 }
 function bvNeeds() {
   const items = [...S.br.needs]; const m = (S.notesIdx && S.notesIdx.mentions) || [];
@@ -1594,7 +1611,7 @@ function bvBoard(T) {
   const [k, dir] = S.bv.sort; const rows = T.regs.slice().sort((a, b) => (typeof a[k] === 'string' ? a[k].localeCompare(b[k]) * -dir : ((a[k] ?? -1) - (b[k] ?? -1)) * dir));
   const th = (key, lab, cls = '') => `<th class="${cls}" style="cursor:pointer" data-act="bvSort" data-k="${key}">${lab}${S.bv.sort[0] === key ? (S.bv.sort[1] > 0 ? ' ▲' : ' ▼') : ''}</th>`;
   const pill = (v, hi, lo) => (v == null ? '<span class="m">–</span>' : `<span class="pill ${v >= hi ? 'good' : v >= lo ? 'warn' : 'bad'}">${v >= hi ? '✓' : v >= lo ? '!' : '▲'} ${v}%</span>`);
-  return `<div class="tbl"><table class="dt"><thead><tr>${th('region', 'Region')}${th('partner', 'Partner')}${th('pctT', 'Tested against target')}<th>7-day pace</th>${th('p', 'On time', 'r')}${th('likely', 'Finish', 'r')}${th('cleanPct', 'Clean', 'r')}${th('openQ', 'Checks', 'r')}${th('overdue', 'Overdue', 'r')}${th('late', 'Late notices', 'r')}</tr></thead><tbody>${rows.map((r) => `<tr class="click ${S.bv.row === r.region ? 'on' : ''}" data-act="bvRow" data-r="${r.region}"><td><b>${esc(title(r.region))}</b></td><td>${esc(r.partner)}</td><td style="min-width:150px"><span class="num">${r.pctT}%</span> <span class="m num">(${fmt(r.tested)})</span>${bvBar(r.tested, r.planned, r.target)}</td><td>${bvSpark(r.last7)}</td><td class="r">${pill(r.p, 80, 45)}</td><td class="r num">${r.likely ? esc(shortDate(r.likely)) : '–'}</td><td class="r">${pill(r.cleanPct == null ? null : Math.round(r.cleanPct), 95, 85)}</td><td class="r num">${r.openQ}</td><td class="r num">${r.overdue || 0}</td><td class="r num">${r.late}</td></tr>${S.bv.row === r.region ? `<tr class="bvx"><td colspan="10"><div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center"><div class="m" style="flex:1;min-width:220px"><b>${esc(title(r.region))}</b> · ${r.done} of ${r.total} schools complete${r.needs != null ? ' · needs ' + r.needs + ' schools a day' : ''}</div><button class="btn sm" data-open="region:${esc(r.region)}">Open region (message, notes)</button><button class="btn sm sec" data-act="bvGo" data-tab="allq" data-region="${esc(r.region)}">Checks (${r.openQ})</button><button class="btn sm sec" data-act="bvGo" data-tab="plan" data-region="${esc(r.region)}">Plan and notices</button></div></td></tr>` : ''}`).join('')}</tbody></table></div>`;
+  return `<div class="tbl"><table class="dt"><thead><tr>${th('region', 'Region')}${th('partner', 'Partner')}${th('pctT', 'Tested against target')}<th>7-day pace</th>${th('p', 'On time', 'r')}${th('likely', 'Finish', 'r')}${th('cleanPct', 'Clean', 'r')}${th('openQ', 'Checks', 'r')}${th('overdue', 'Overdue', 'r')}${th('late', 'Late notices', 'r')}</tr></thead><tbody>${rows.map((r) => `<tr class="click ${S.bv.row === r.region ? 'on' : ''}" data-act="bvRow" data-r="${r.region}"><td><b>${esc(title(r.region))}</b></td><td>${esc(r.partner)}</td><td style="min-width:150px"><span class="num">${r.pctT}%</span> <span class="m num">(${fmt(r.tested)})</span>${bvBar(r.tested, r.planned, r.target)}</td><td>${bvSpark(r.last7)}</td><td class="r">${pill(r.p, 80, 45)}</td><td class="r num">${r.likely ? esc(shortDate(r.likely)) : '–'}</td><td class="r">${pill(r.cleanPct == null ? null : Math.round(r.cleanPct), 95, 85)}</td><td class="r num">${r.openQ}</td><td class="r num">${r.overdue || 0}</td><td class="r num">${r.late}</td></tr>${S.bv.row === r.region ? `<tr class="bvx"><td colspan="10"><div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center"><button class="xbtn" data-act="bvRow" data-r="${r.region}" aria-label="Close">×</button><div class="m" style="flex:1;min-width:220px"><b>${esc(title(r.region))}</b> · ${esc(r.partner)} · ${r.done} of ${r.total} schools complete${r.needs != null ? ' · needs ' + r.needs + ' schools a day' : ''}<br>Predicted finish ${r.likely ? esc(shortDate(r.likely)) : 'n/a'} · clean ${r.cleanPct == null ? 'n/a' : r.cleanPct + '%'} · ${r.openQ} open checks, ${r.overdue || 0} overdue · ${r.late} late notices</div><button class="btn sm" data-open="region:${esc(r.region)}">Open region (message, notes)</button><button class="btn sm sec" data-act="bvGo" data-tab="allq" data-region="${esc(r.region)}">Checks (${r.openQ})</button><button class="btn sm sec" data-act="bvGo" data-tab="plan" data-region="${esc(r.region)}">Plan and notices</button></div></td></tr>` : ''}`).join('')}</tbody></table></div>`;
 }
 function bvClean() {
   const q = S.br.queries, c = S.br.clean, fu = q.funnel; const steps = [['Checks raised', fu.raised], ['Answered', fu.answered], ['Team reviewed', fu.team], ['First HQ review', fu.hq1], ['Approved', fu.approved]]; const mx = Math.max(1, fu.raised);
@@ -1610,10 +1627,10 @@ function bvWarn(T) {
 }
 function bvTargets(T) {
   const b = S.br, f = b.field, c = b.clean; const adm = hqLevel() === 'admin';
-  const row = (n, tg, now, proj, k, owner, date) => `<tr><td><b>${n}</b></td><td class="r num">${tg}</td><td class="r num">${now}</td><td class="r num">${proj}</td><td><span class="pill ${k}">${k === 'good' ? '✓ on track' : k === 'warn' ? '! watch' : '▲ behind'}</span></td><td>${esc(owner)}</td><td>${esc(date)}</td></tr>`;
+  const row = (n, tg, now, proj, k, owner, date) => `<tr class="click ${S.bv.trow === n ? 'on' : ''}" data-act="bvTRow" data-id="${esc(n)}"><td><b>${n}</b></td><td class="r num">${tg}</td><td class="r num">${now}</td><td class="r num">${proj}</td><td><span class="pill ${k}">${k === 'good' ? '✓ on track' : k === 'warn' ? '! watch' : '▲ behind'}</span></td><td>${esc(owner)}</td><td>${esc(date)}</td></tr>${S.bv.trow === n ? `<tr class="bvx"><td colspan="7"><button class="xbtn" data-act="bvTRow" data-id="${esc(n)}" aria-label="Close">×</button><b>${n}</b>: target ${tg}, now ${now}${proj ? ', projected ' + esc(proj) : ''}. Owner: ${esc(owner)}. Date: ${esc(date)}.</td></tr>` : ''}`;
   let same = 0, sn = 0; for (const a of S.ov.admins || []) { const x = a.sub_all; if (x) { same += x.same || 0; sn += x.n || 0; } } const samePct = sn ? Math.round((100 * same) / sn) : null; const nat = S.pred && S.pred.national;
   const fld = [row('Pupils tested', fmt(T.target), fmt(T.tested), bvProj() ? `by ${shortDate(nat.likely)}` : 'needs a plan', T.tested >= T.planned * 0.97 || f.phase === 'before' ? 'good' : T.tested >= T.planned * 0.88 ? 'warn' : 'bad', 'Regional Coordinators', shortDate(f.end)), row('Schools complete', T.schools, T.done, '', 'good', 'Regional Coordinators', shortDate(f.end)), row('Sent the same day', '95%', samePct == null ? '–' : samePct + '%', '', samePct == null || samePct >= 95 ? 'good' : samePct >= 80 ? 'warn' : 'bad', 'Regional Coordinators', 'ongoing'), row('Data clean rate', '95%', c.rate + '%', '', c.rate >= 95 ? 'good' : c.rate >= 85 ? 'warn' : 'bad', 'HQ', 'ongoing')].join('');
-  const after = b.milestones.filter((m) => m.id !== 'field_close').map((m) => { const k = m.status === 'done' ? 'good' : m.days_left < 0 ? 'bad' : m.days_left < 7 && m.status === 'not started' ? 'warn' : 'good'; const st = adm ? `<select data-ms="${esc(m.id)}" aria-label="Status of ${esc(m.label)}">${['not started', 'in progress', 'done'].map((s) => `<option ${m.status === s ? 'selected' : ''}>${s}</option>`).join('')}</select>` : esc(m.status); return `<tr><td><b>${esc(m.label)}</b></td><td class="r num">${esc(shortDate(m.date))}</td><td class="r num">${m.days_left >= 0 ? m.days_left + ' days' : Math.abs(m.days_left) + ' days late'}</td><td>${st}</td><td><span class="pill ${k}">${k === 'good' ? '✓' : k === 'warn' ? '!' : '▲'} ${m.status === 'done' ? 'done' : m.days_left < 0 ? 'late' : 'ahead'}</span></td><td>${esc(m.owner)}</td></tr>`; }).join('');
+  const after = b.milestones.filter((m) => m.id !== 'field_close').map((m) => { const k = m.status === 'done' ? 'good' : m.days_left < 0 ? 'bad' : m.days_left < 7 && m.status === 'not started' ? 'warn' : 'good'; const st = adm ? `<select data-ms="${esc(m.id)}" aria-label="Status of ${esc(m.label)}">${['not started', 'in progress', 'done'].map((s) => `<option ${m.status === s ? 'selected' : ''}>${s}</option>`).join('')}</select>` : esc(m.status); return `<tr class="click ${S.bv.trow === m.id ? 'on' : ''}" data-act="bvTRow" data-id="${esc(m.id)}"><td><b>${esc(m.label)}</b></td><td class="r num">${esc(shortDate(m.date))}</td><td class="r num">${m.days_left >= 0 ? m.days_left + ' days' : Math.abs(m.days_left) + ' days late'}</td><td>${st}</td><td><span class="pill ${k}">${k === 'good' ? '✓' : k === 'warn' ? '!' : '▲'} ${m.status === 'done' ? 'done' : m.days_left < 0 ? 'late' : 'ahead'}</span></td><td>${esc(m.owner)}</td></tr>${S.bv.trow === m.id ? `<tr class="bvx"><td colspan="6"><button class="xbtn" data-act="bvTRow" data-id="${esc(m.id)}" aria-label="Close">×</button><b>${esc(m.label)}</b>: ${esc(shortDate(m.date))} (${m.days_left >= 0 ? m.days_left + ' days left' : Math.abs(m.days_left) + ' days late'}), status ${esc(m.status)}, owner ${esc(m.owner)}.</td></tr>` : ''}`; }).join('');
   return `<div class="tbl"><table class="dt"><thead><tr><th>By the end of field work</th><th class="r">Target</th><th class="r">Now</th><th class="r">Projected</th><th>Status</th><th>Owner</th><th>Date</th></tr></thead><tbody>${fld}</tbody></table></div><div class="tbl" style="margin-top:10px"><table class="dt"><thead><tr><th>After field work</th><th class="r">Date</th><th class="r">Left</th><th>Status</th><th>Signal</th><th>Owner</th></tr></thead><tbody>${after}</tbody></table></div>${adm ? `<details class="fd" style="margin-top:8px"><summary>Change dates (HQ Admin)</summary>${b.milestones.filter((m) => m.id !== 'field_close').map((m) => `<label class="m" style="display:flex;gap:8px;align-items:center;margin:4px 0"><span style="flex:1">${esc(m.label)}</span><input type="date" data-msd="${esc(m.id)}" value="${esc(m.date)}"></label>`).join('')}<label class="m" style="display:flex;gap:8px;margin-top:6px"><input type="checkbox" id="bvEdMail" ${S.bv.edMail === false ? '' : 'checked'}> Email Michael the Monday draft at 07:00</label></details>` : ''}<div class="m" style="margin-top:6px">Dates and owners can be changed by an HQ Admin right here. Cleaning is due ${S.br.milestones.find((m) => m.id === 'cleaning') ? esc(shortDate(S.br.milestones.find((m) => m.id === 'cleaning').date)) : ''}, before field work closes: records sent after that date need a final sweep.</div>`;
 }
 function bvUpdateCard() {
@@ -1622,11 +1639,24 @@ function bvUpdateCard() {
   return `<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px"><label class="m">For <select id="bvAud">${Object.entries(auds).map(([k, v]) => `<option value="${k}" ${S.bv.aud === k ? 'selected' : ''}>${v}</option>`).join('')}</select></label><span class="note">${S.bv.aud === 'ed' ? 'A draft is made every Monday at 07:00 and emailed to Michael. Edit it here before the one-on-one.' : 'Aggregate only: no names, no queue details. Share after the program ends.'}</span></div><textarea id="bvText" rows="12" style="width:100%" aria-label="Management update text">${esc(U ? U.text : 'Loading…')}</textarea><div class="acts" style="margin-top:8px"><button class="btn" data-act="bvCopy">Copy text</button><button class="btn sec" data-act="bvDownload">Download (.txt)</button><button class="btn sec" data-act="bvSave">Save as the update for this week</button><button class="btn ghost" data-act="bvReload">Rewrite from the numbers</button></div><span class="m" id="bvMsg"></span>${snaps.length ? `<h4 style="margin:12px 0 4px">Earlier updates</h4>${snaps.slice(0, 5).map((x) => `<div class="m"><b>${esc(fmtAt(x.at))}</b> · ${esc(auds[x.audience] || x.audience)}${x.draft ? ' · Monday draft' : ''} <button class="btn sm ghost" data-act="bvLoad" data-id="${esc(x.id)}">Load</button></div>`).join('')}` : ''}`;
 }
 const DESKS = { coordination: 'Coordination', management: 'Management', leadership: 'Leadership', systems: 'Systems' };
-const deskNow = () => { let d = null; try { d = store.get('kf_desk'); } catch { /* ignore */ } return DESKS[d] ? d : (S.who && S.who.desk) || 'systems'; };
+const deskNow = () => { if (S.viewAs && /^hq:/.test(S.viewAs) && DESKS[S.who.desk]) return S.who.desk; let d = null; try { d = store.get('kf_desk'); } catch { /* ignore */ } return DESKS[d] ? d : (S.who && S.who.desk) || 'systems'; };
 function bvOps() {
-  const items = S.bv.ops || []; const adm = hqLevel() !== 'viewer'; const rank = { blocked: 0, 'in progress': 1, 'not started': 2, done: 3 };
-  const rows = items.slice().sort((a, b) => (rank[a.status] - rank[b.status]) || String(a.due || '9').localeCompare(String(b.due || '9'))).map((x) => `<tr><td><b>${esc(x.title)}</b>${x.note ? `<div class="m">${esc(x.note)}</div>` : ''}</td><td>${esc(x.owner)}</td><td class="r num">${x.due ? esc(shortDate(x.due)) : ''}</td><td>${adm ? `<select data-opst="${esc(x.id)}">${['not started', 'in progress', 'blocked', 'done'].map((t) => `<option ${x.status === t ? 'selected' : ''}>${t}</option>`).join('')}</select>` : esc(x.status)}</td>${adm ? `<td><button class="btn sm ghost" data-act="bvOpDel" data-id="${esc(x.id)}" aria-label="Remove">×</button></td>` : ''}</tr>`).join('');
-  return `${items.length ? `<div class="tbl"><table class="dt"><thead><tr><th>Item</th><th>Owner</th><th class="r">Due</th><th>Status</th>${adm ? '<th></th>' : ''}</tr></thead><tbody>${rows}</tbody></table></div>` : '<div class="empty">Nothing tracked yet. Add procurement, contracts and other operational items below.</div>'}${adm ? `<div class="opadd"><input id="opT" placeholder="Item, for example: Contract for printing" aria-label="Item"><input id="opO" placeholder="Owner" aria-label="Owner"><input id="opD" type="date" aria-label="Due"><button class="btn sm" data-act="bvOpAdd">Add</button></div>` : ''}`;
+  const items = S.bv.ops || []; const adm = hqLevel() !== 'viewer'; const rank = { blocked: 0, 'in progress': 1, 'not started': 2, done: 3 }; const today = S.ov.today;
+  const days = (d) => Math.round((Date.parse(d) - Date.parse(today)) / 86400000);
+  const rows = items.slice().sort((a, b) => (rank[a.status] - rank[b.status]) || String(a.due || '9').localeCompare(String(b.due || '9'))).map((x) => {
+    const dd = x.due ? days(x.due) : null; const k = x.status === 'done' ? 'good' : x.status === 'blocked' || (dd != null && dd < 0) ? 'bad' : dd != null && dd <= 7 ? 'warn' : 'mute';
+    const chip = x.status === 'done' ? 'done' : dd == null ? 'no date' : dd < 0 ? Math.abs(dd) + ' d late' : dd === 0 ? 'today' : 'in ' + dd + ' d';
+    const open = S.bv.opOpen === x.id;
+    return `<div class="opr s-${k}"><button class="ophd" data-act="bvOpRow" data-id="${esc(x.id)}" aria-expanded="${open}"><span class="optt">${esc(x.title)}</span><span class="pill ${k}">${chip}</span></button>${open ? `<div class="opbd"><div class="m">${esc(x.owner || 'no owner')} · ${x.due ? 'due ' + esc(shortDate(x.due)) : 'no due date'} · ${esc(x.status)}</div>${x.note ? `<div class="opn">${esc(x.note)}</div>` : ''}${adm ? `<div class="acts"><label class="m">Status <select data-opst="${esc(x.id)}">${['not started', 'in progress', 'blocked', 'done'].map((t2) => `<option ${x.status === t2 ? 'selected' : ''}>${t2}</option>`).join('')}</select></label><button class="btn sm danger" data-act="bvOpDel" data-id="${esc(x.id)}">Remove</button><button class="btn sm sec" data-act="bvOpRow" data-id="${esc(x.id)}">Close ×</button></div>` : `<div class="acts"><button class="btn sm sec" data-act="bvOpRow" data-id="${esc(x.id)}">Close ×</button></div>`}</div>` : ''}</div>`;
+  }).join('');
+  const names = ((S.ov && S.ov.admins) || []).length ? [] : [];
+  const owners = ['Rogate Maro', 'Chogohe Edwin Mundo', 'Joram Joas', 'Michael Kamukulu'];
+  return `${items.length ? `<div class="oplist">${rows}</div>` : '<div class="empty">Nothing tracked yet. Add procurement, contracts and other operational items below.</div>'}${adm ? `<details class="opadd"><summary class="btn sm">+ Add an item</summary><div class="opform"><input id="opT" placeholder="Item, for example: Contract for printing" aria-label="Item"><select id="opO" aria-label="Owner">${owners.map((o) => `<option>${esc(o)}</option>`).join('')}</select><input id="opD" type="date" aria-label="Due"><button class="btn sm" data-act="bvOpAdd">Add</button></div></details>` : ''}`;
+}
+function bvTalk() {
+  const q = S.br.questions.hq; const rcs = (S.staffList || []).filter((x) => x.role === 'rc' || x.role === 'arc');
+  const regs = (S.cfg.regions || []).filter((r) => r !== 'DODOMA');
+  return `<div class="talk"><div class="acts"><button class="btn sm ${q ? '' : 'sec'}" data-act="bvGo" data-tab="questions">Questions${q ? ' (' + q + ' waiting)' : ''}</button><button class="btn sm sec" data-act="bvGo" data-tab="messages">Direct messages</button><button class="btn sm sec" data-act="bvGo" data-tab="news">News</button></div><div class="opform"><select id="tkReg" aria-label="Message a regional team"><option value="">Message a regional team…</option>${regs.map((r) => `<option value="${r}">${title(r)} team</option>`).join('')}</select><select id="tkPer" aria-label="Message a coordinator"><option value="">Message a coordinator…</option>${rcs.map((x) => `<option value="${esc(x.name)}">${esc(x.name)} · ${esc((x.position || x.role).toString().slice(0, 4))} ${esc(title(x.region))}</option>`).join('')}</select></div></div>`;
 }
 function bvHealth() {
   const H = S.bv.health; if (!H) return '<div class="empty">Loading…</div>';
@@ -1644,7 +1674,7 @@ function viewToday() {
   const card = (id, h, sub, body, cls = '') => `<div class="card ${cls}" id="bv-${id}"><h3>${h}</h3>${sub ? `<div class="sub">${sub}</div>` : ''}${body}</div>`;
   const sec = {
     status: `<div class="card bvstatus nofold" id="bv-status"><h3>Field status</h3><div class="bvst"><div><div class="m" style="color:inherit;opacity:.8">${f.phase === 'before' ? 'Starts in' : f.phase === 'during' ? 'Field work' : 'Field work closed'}</div><div class="bvbig">${f.phase === 'before' ? f.to_start + ' working day' + (f.to_start === 1 ? '' : 's') : f.phase === 'during' ? 'Day ' + f.day + ' of ' + f.total : esc(shortDate(f.end))}</div><div class="m" style="color:inherit;opacity:.8">${f.phase === 'during' ? f.left + ' working days left · closes ' + esc(shortDate(f.end)) : 'Closes ' + esc(shortDate(f.end))}</div></div><span class="pill ${st.k}">${st.k === 'good' ? '✓' : st.k === 'warn' ? '!' : '▲'} ${st.t}</span><div class="bvsent">${bvSentence(T, st)}</div></div></div>`,
-    ctl: `<div class="ctl2"><label>Desk <select id="bvDesk">${Object.entries(DESKS).map(([k, v]) => `<option value="${k}" ${desk === k ? 'selected' : ''}>${v}</option>`).join('')}</select></label><label>Period <span class="seg">${[['today', 'Today'], ['7d', '7 days'], ['field', 'To date'], ['custom', 'Dates']].map(([k, n]) => `<button aria-pressed="${S.bv.period === k}" data-act="bvF" data-k="period" data-v="${k}">${n}</button>`).join('')}</span></label>${S.bv.period === 'custom' ? `<label>From <input type="date" id="bvFrom" value="${esc(S.bv.from || '')}"></label><label>To <input type="date" id="bvTo" value="${esc(S.bv.to || '')}"></label>` : ''}<label>Region <select id="bvReg"><option value="all">All</option>${(S.cfg.regions || []).filter((r) => r !== 'DODOMA').map((r) => `<option value="${r}" ${S.bv.region === r ? 'selected' : ''}>${title(r)}</option>`).join('')}</select></label><label>Partner <select id="bvPar"><option value="all">All</option>${Object.keys(S.cfg.partners || {}).map((p2) => `<option ${S.bv.partner === p2 ? 'selected' : ''}>${p2}</option>`).join('')}</select></label><label>View <select id="bvView">${views.map((v, i) => `<option value="${i}">${esc(v.name)}</option>`).join('')}</select></label><button class="btn sm sec" data-act="bvSaveView">Save view</button></div>`,
+    ctl: `<div class="ctl2 ${S.bv.ctl ? 'open' : ''}"><button class="btn sm ctltog" data-act="bvCtl" aria-expanded="${Boolean(S.bv.ctl)}">${S.bv.ctl ? 'Hide filters ▴' : 'Filters ▾'} <span class="m">${DESKS[desk]} · ${esc({ today: 'Today', '7d': '7 days', field: 'To date', custom: 'Dates' }[S.bv.period])}${S.bv.region !== 'all' ? ' · ' + esc(title(S.bv.region)) : ''}${S.bv.partner !== 'all' ? ' · ' + esc(S.bv.partner) : ''}</span></button><div class="ctlbody"><label>Desk <select id="bvDesk">${Object.entries(DESKS).map(([k, v]) => `<option value="${k}" ${desk === k ? 'selected' : ''}>${v}</option>`).join('')}</select></label><label>Period <span class="seg">${[['today', 'Today'], ['7d', '7 days'], ['field', 'To date'], ['custom', 'Dates']].map(([k, n]) => `<button aria-pressed="${S.bv.period === k}" data-act="bvF" data-k="period" data-v="${k}">${n}</button>`).join('')}</span></label>${S.bv.period === 'custom' ? `<label>From <input type="date" id="bvFrom" value="${esc(S.bv.from || '')}"></label><label>To <input type="date" id="bvTo" value="${esc(S.bv.to || '')}"></label>` : ''}<label>Region <select id="bvReg"><option value="all">All</option>${(S.cfg.regions || []).filter((r) => r !== 'DODOMA').map((r) => `<option value="${r}" ${S.bv.region === r ? 'selected' : ''}>${title(r)}</option>`).join('')}</select></label><label>Partner <select id="bvPar"><option value="all">All</option>${Object.keys(S.cfg.partners || {}).map((p2) => `<option ${S.bv.partner === p2 ? 'selected' : ''}>${p2}</option>`).join('')}</select></label><label>View <select id="bvView">${views.map((v, i) => `<option value="${i}">${esc(v.name)}</option>`).join('')}</select></label><button class="btn sm sec" data-act="bvSaveView">Save view</button></div></div>`,
     head: (lite) => card('head', 'Headline numbers', '', bvKpis(T), lite),
     needs: (lite) => card('needs', 'Needs you now', 'Ranked by urgency.', bvNeeds(), lite),
     time: (lite) => card('time', 'Where we are heading', 'Tested against plan, the finish range (from the plan first), and the milestones.', bvTimeline(T), lite),
@@ -1655,11 +1685,12 @@ function viewToday() {
     update: (lite) => card('update', 'Management update', 'Written from the numbers; you edit it, nothing is sent without you.', bvUpdateCard(), lite),
     ops: (lite) => card('ops', 'Operations: procurement, contracting and more', 'Tracked by the management desk.', bvOps(), lite),
     links: (lite) => card('links', 'Reports and analytics', '', `<div class="acts">${[['Reports', 'reports'], ['Compare', 'compare'], ['Data explorer', 'explore'], ['Usage', 'usage'], ['Narratives', 'narr']].map(([n, t2]) => `<button class="btn sm sec" data-act="bvGo" data-tab="${t2}">${n}</button>`).join('')}</div>`, lite),
+    talk: (lite) => card('talk', 'Team messages', '', bvTalk(), lite),
     health: (lite) => card('health', 'System health', 'Data sync and KoBo quota.', bvHealth(), lite),
   };
   const ORDER = {
-    coordination: [['needs'], ['head'], ['reg'], ['clean'], ['warn'], ['time'], ['targets', 1], ['update', 1], ['ops', 1]],
-    management: [['needs'], ['head'], ['ops'], ['targets'], ['clean'], ['reg', 1], ['warn', 1], ['time', 1], ['update']],
+    coordination: [['needs'], ['talk'], ['head'], ['reg'], ['clean'], ['warn'], ['time'], ['targets', 1], ['update', 1], ['ops', 1]],
+    management: [['needs'], ['talk'], ['head'], ['ops'], ['targets'], ['clean'], ['reg', 1], ['warn', 1], ['time', 1], ['update']],
     leadership: [['head'], ['time'], ['reg'], ['targets'], ['links'], ['update'], ['needs', 1], ['clean', 1], ['warn', 1], ['ops', 1]],
     systems: [['health'], ['needs'], ['head'], ['time'], ['reg'], ['clean'], ['warn'], ['targets'], ['update'], ['ops', 1]],
   }[desk];
@@ -1669,15 +1700,19 @@ function viewToday() {
 }
 async function loadUpdate() { S.bv.updBusy = true; const aud = S.bv.aud; try { S.bv.upd = await api('/api/bridge/update?audience=' + encodeURIComponent(S.bv.aud)); } catch (e) { S.bv.upd = { text: e.message }; } S.bv.updBusy = false; if (aud !== S.bv.aud) return; if (S.tab === 'today') { const t = document.getElementById('bvText'); if (t && document.activeElement !== t) t.value = S.bv.upd.text || ''; } }
 async function bvSaveOps(items) { try { const r = await api('/api/bridge/ops', { method: 'POST', body: { items } }); S.bv.ops = r.items; } catch (e) { alert(e.message); } render(); }
-function bvAction(a, t) {
+function bvAction(a, t, e) {
   if (a === 'bvK') { S.bv.open = S.bv.open === t.dataset.k ? null : t.dataset.k; render(); }
   else if (a === 'bvF') { S.bv[t.dataset.k] = t.dataset.v; render(); }
   else if (a === 'bvSort') { const k = t.dataset.k; S.bv.sort = S.bv.sort[0] === k ? [k, -S.bv.sort[1]] : [k, ['region', 'partner'].includes(k) ? 1 : -1]; render(); }
   else if (a === 'bvRow') { S.bv.row = S.bv.row === t.dataset.r ? null : t.dataset.r; render(); }
+  else if (a === 'bvTRow') { if (e && e.target && e.target.closest && e.target.closest('select')) return; S.bv.trow = S.bv.trow === t.dataset.id ? null : t.dataset.id; render(); }
+  else if (a === 'bvCtl') { S.bv.ctl = !S.bv.ctl; render(); }
+  else if (a === 'bvOpRow') { S.bv.opOpen = S.bv.opOpen === t.dataset.id ? null : t.dataset.id; render(); }
   else if (a === 'bvOpAdd') { const t2 = ($('#opT').value || '').trim(); if (!t2) return; const items = [...S.bv.ops, { title: t2, owner: $('#opO').value, due: $('#opD').value, status: 'not started' }]; bvSaveOps(items); }
   else if (a === 'bvOpDel') { bvSaveOps(S.bv.ops.filter((x) => x.id !== t.dataset.id)); }
   else if (a === 'bvCmd') { const b = $('#gsr'); if (b) b.hidden = true; t.dataset.f = ''; bvAction('bvGo', t); }
-  else if (a === 'bvGo') { const tab = t.dataset.tab; if (t.dataset.flt === 'mine') { S.qf = { q: '', type: '', sev: '', region: '', st: 'mine' }; } else if (t.dataset.flt === 'overdue') { S.qf = { q: '', type: '', sev: '', region: '', st: 'open' }; } else if (t.dataset.f) { S.qf = { q: '', type: t.dataset.f, sev: '', region: '', st: 'open' }; } else if (t.dataset.region && tab === 'allq') { S.qf = { q: '', type: '', sev: '', region: t.dataset.region, st: 'open' }; } if (t.dataset.region && tab === 'plan') S.planRegion = t.dataset.region; selectTab(tab); }
+  else if (a === 'goBack') { const b = S.backTo; S.backTo = null; selectTab(b); }
+  else if (a === 'bvGo') { const tab = t.dataset.tab; if (t.dataset.flt === 'mine') { S.qf = { q: '', type: '', sev: '', region: '', st: 'mine' }; } else if (t.dataset.flt === 'overdue') { S.qf = { q: '', type: '', sev: '', region: '', st: 'open' }; } else if (t.dataset.f) { S.qf = { q: '', type: t.dataset.f, sev: '', region: '', st: 'open' }; } else if (t.dataset.region && tab === 'allq') { S.qf = { q: '', type: '', sev: '', region: t.dataset.region, st: 'open' }; } if (t.dataset.region && tab === 'plan') S.planRegion = t.dataset.region; selectTab(tab, S.tab); }
   else if (a === 'bvSaveView') { const name = prompt('Name this view'); if (!name) return; const v = bvViews().filter((x) => x.name !== name); v.push({ name: name.slice(0, 30), f: { region: S.bv.region, partner: S.bv.partner, period: S.bv.period } }); store.set('kf_bviews', JSON.stringify(v)); render(); }
   else if (a === 'bvCopy') { const el = document.getElementById('bvText'); const m = document.getElementById('bvMsg'); (navigator.clipboard ? navigator.clipboard.writeText(el.value) : Promise.reject()).then(() => { if (m) m.textContent = 'Copied.'; }).catch(() => { el.select(); if (m) m.textContent = 'Press Ctrl+C to copy.'; }); }
   else if (a === 'bvDownload') { const el = document.getElementById('bvText'); const a2 = document.createElement('a'); a2.href = URL.createObjectURL(new Blob([el.value], { type: 'text/plain' })); a2.download = `update-${(S.ov.today || '')}.txt`; a2.click(); }
@@ -2421,22 +2456,26 @@ async function toggleAlerts() {
 const isRealHQ = () => (S.real || S.who)?.role === 'hq';
 function viewAsControl() {
   if (!isRealHQ() || !S.staffList.length) return '';
+  const canHq = (S.real || S.who)?.desk === 'systems' && ((S.real || S.who).level || 'admin') === 'admin';
+  if (canHq && !S.hqTeam) { S.hqTeam = []; api('/api/admin/hq-users', { noView: true }).then((r) => { S.hqTeam = (r.users || []).filter((u) => u.active); render(); }).catch(() => {}); }
+  const hqOpts = canHq && S.hqTeam && S.hqTeam.length ? `<optgroup label="HQ team (by desk)">${S.hqTeam.map((u) => `<option value="hq:${esc(u.id)}" ${S.viewAs === 'hq:' + u.id ? 'selected' : ''}>${esc(u.name)} · ${esc(DESKS[u.desk] || u.desk)} · ${esc(u.level)}</option>`).join('')}</optgroup>` : '';
   const groups = [['rc', 'Regional coordinators'], ['arc', 'Assistant coordinators'], ['volunteer', 'Test admins (volunteers)']];
   const opts = groups.map(([r, l]) => `<optgroup label="${l}">${S.staffList.filter((s) => s.role === r).map((s) => `<option value="${s.id}" ${String(S.viewAs) === String(s.id) ? 'selected' : ''}>${esc(title(s.region))} · ${esc(s.name)}</option>`).join('')}</optgroup>`).join('');
-  return `<select id="viewAsSel" class="vsel" aria-label="View as"><option value="">View as: HQ (me)</option><option value="public" ${S.viewAs === 'public' ? 'selected' : ''}>View as: Public visitor</option>${['board', 'collaborator', 'funder', 'government', 'partner'].map((g) => `<option value="guest:${g}" ${S.viewAs === 'guest:' + g ? 'selected' : ''}>View as: Guest (${g})</option>`).join('')}${opts}</select>`;
+  return `<select id="viewAsSel" class="vsel" aria-label="View as"><option value="">View as: HQ (me)</option><option value="public" ${S.viewAs === 'public' ? 'selected' : ''}>View as: Public visitor</option>${['board', 'collaborator', 'funder', 'government', 'partner'].map((g) => `<option value="guest:${g}" ${S.viewAs === 'guest:' + g ? 'selected' : ''}>View as: Guest (${g})</option>`).join('')}${hqOpts}${opts}</select>`;
 }
 async function setViewAs(val) {
   if (!val) { S.viewAs = null; if (S.real) S.who = S.real; S.real = null; }
   else {
     if (!S.real) S.real = S.who;
     if (val === 'public') { S.viewAs = 'public'; S.who = null; }
+    else if (/^hq:/.test(val)) { const u = (S.hqTeam || []).find((x) => 'hq:' + x.id === val); if (!u) return; S.viewAs = val; S.who = { role: 'hq', level: u.level, name: u.name, desk: u.desk, review_level: u.review_level || 0, hq_id: u.id, id: 'hq:' + u.id, region: null, viewAs: true }; }
     else if (/^guest:/.test(val)) { S.viewAs = val; S.who = { role: 'guest', name: 'Preview: ' + val.slice(6), profile: val.slice(6), org: '', can_download: false, logo: '', viewAs: true }; }
     else { const p = S.staffList.find((s) => String(s.id) === val); if (!p) return; S.viewAs = val; S.who = { role: p.role, name: p.name, region: p.region, position: p.position, id: p.id, viewAs: true }; }
   }
   S.ov = null; S.pub = null; S.cmp = null; S.pred = null; S.brief = null; S.plan = null; S.allSchools = null; S.workCache = {}; S.tbl = {}; S.qf = null; S.tch = null; S.linked = null; S.exTab = 'assess'; S.exErr = null; S.tab = null; S.cur = null; closeDetail(); S.stale = null;
   await go();
 }
-const previewBanner = () => (S.viewAs ? `<div class="banner preview"><b>Preview.</b> You are looking at the app as ${S.viewAs === 'public' ? 'a public visitor' : esc(S.who.name) + ' (' + esc(S.who.position || S.who.role) + ', ' + esc(title(S.who.region)) + ')'}. Nothing you do here changes anything. <button class="btn sm sec" data-act="exitPreview">Back to HQ</button></div>` : '');
+const previewBanner = () => (S.viewAs ? `<div class="banner preview"><b>Preview.</b> You are looking at the app as ${S.viewAs === 'public' ? 'a public visitor' : /^hq:/.test(S.viewAs) ? esc(S.who.name) + ' (HQ, ' + esc(DESKS[S.who.desk] || '') + ' desk, ' + esc(S.who.level) + ')' : esc(S.who.name) + ' (' + esc(S.who.position || S.who.role) + ', ' + esc(title(S.who.region)) + ')'}. Nothing you do here changes anything. <button class="btn sm sec" data-act="exitPreview">Back to HQ</button></div>` : '');
 
 function loginScreen(msg) {
   $('#nav').innerHTML = ''; $('#who').innerHTML = '';
@@ -2513,7 +2552,8 @@ async function go() {
   try { await loadData(); S.stale = null; render(); ensureSchools(); if (S.tab === 'explore' && ['teach', 'school', 'linked'].includes(S.exTab)) loadExplore(S.exTab); if (S.tab === 'phones' && !S.ph) loadPhones().then(render); if (S.tab === 'practice' && !S.pr) loadPractice().then(render); if (S.tab === 'reports' && !S.rep) openReports(); loadNews().then(() => { if (S.tab === 'news') openNews().then(render); }); if (location.hash.includes(':')) { try { openDetail(decodeURIComponent(location.hash.slice(1))); } catch {} } } catch (e) { if (e.status === 401 && S.code) { S.code = null; S.who = null; store.set('kf_code', null); loginScreen('Your code was not recognized. Try again.'); } else $('#app').innerHTML = `<div class="banner bad">${esc(e.message)}</div>`; }
 }
 
-async function selectTab(k) {
+async function selectTab(k, from) {
+  S.backTo = from && from !== k ? from : null;
   if (k === 'pilot') { S.tab = k; render(); await loadPilot(); return; }
   S.tab = k; S.selVisit = null; if (S.tab === 'messages') { render(); await loadMsgs(); } if (S.tab === 'clean') { render(); await loadClean(); } if (S.tab === 'payments') { await loadPayments();  return; } if (S.tab === 'plan') { await loadPlan(); } if (S.tab === 'phones') { S.ph = null; render(); await loadPhones(); } if (S.tab === 'practice') { S.pr = null; render(); await loadPractice(); } if (S.tab === 'news') { await openNews(); } if (S.tab === 'reports') { render(); await openReports(); } if (S.tab === 'narr') { render(); await loadNarr(); } if (S.tab === 'today') { S.bv.upd = null; render(); await loadBridge(false); } if (S.tab === 'ask' || S.tab === 'questions') { render(); await loadAsk(); } if (S.tab === 'usage') { render(); await loadUsage(); } if (S.tab === 'admin') await loadAdmin(); render();
 }
@@ -2554,7 +2594,7 @@ document.addEventListener('click', async (e) => {
   const th = e.target.closest('[data-ts]');
   if (th) { const [id, k] = th.dataset.ts.split(':'); const T = S.tbl[id]; if (T.sort === k) T.dir = -T.dir; else { T.sort = k; T.dir = 1; } tblSave(id); render(); return; }
   const t = e.target.closest('[data-tab],[data-act]'); if (!t) return;
-  if (t.dataset.tab) { await selectTab(t.dataset.tab); return; }
+  if (t.dataset.tab) { await selectTab(t.dataset.tab, t.closest('#nav,#nav2,#bbar,#msheet,#side') ? null : S.tab); return; }
   const a = t.dataset.act;
   try {
     if (a === 'login') { const c = $('#code').value.trim().toUpperCase(); if (!c) return; S.code = c; try { const r = await api('/api/login'); S.who = r.who; store.set('kf_code', c); S.tab = null; await go(); } catch { S.code = null; loginScreen('That code was not recognized.'); } }
@@ -2616,7 +2656,7 @@ document.addEventListener('click', async (e) => {
     else if (a === 'askAct') { const tx = (document.getElementById('aq-' + t.dataset.id) || {}).value || ''; try { await api('/api/ask', { method: 'POST', body: { action: t.dataset.op, id: t.dataset.id, text: tx } }); } catch (e) { alert(e.message); } await loadAsk(); }
     else if (a === 'qaF') { S.qaF = t.dataset.v; render(); }
     else if (a === 'docGet') { try { const res = await fetch('/api/docs/file?id=' + encodeURIComponent(t.dataset.id), { headers: { 'x-access-code': S.code } }); if (!res.ok) throw new Error('Could not download'); const blob = await res.blob(); const d = (S.docs || []).find((x) => x.id === t.dataset.id) || {}; const a2 = document.createElement('a'); a2.href = URL.createObjectURL(blob); a2.download = d.filename || 'document.docx'; a2.click(); } catch (e) { alert(e.message); } }
-    else if (/^bv[A-Z]/.test(a)) bvAction(a, t);
+    else if (/^(bv[A-Z]|goBack$)/.test(a)) bvAction(a, t, e);
     else if (a === 'usFilter') { S.usF = t.dataset.v; render(); }
     else if (a === 'lyMove') { const E = S.lyEdit[t.dataset.r]; const o = E.order; const i = o.indexOf(t.dataset.k); const j = i + Number(t.dataset.d); if (i >= 0 && j >= 0 && j < o.length) { [o[i], o[j]] = [o[j], o[i]]; } render(); }
     else if (a === 'lySave' || a === 'lyReset') { const r = t.dataset.r; const E = S.lyEdit[r]; try { await api('/api/layouts', { method: 'POST', noView: true, body: a === 'lyReset' ? { role: r, reset: true } : { role: r, tabs: { hidden: E.hidden, order: E.order } } }); delete S.lyEdit[r]; await loadLayout(); toast('Saved'); } catch (e) { alert(e.message); } }
@@ -2723,6 +2763,7 @@ async function downloadFile(path, name) {
 }
 document.addEventListener('change', async (e) => {
   if (e.target.id === 'bvFrom' || e.target.id === 'bvTo') { S.bv[e.target.id === 'bvFrom' ? 'from' : 'to'] = e.target.value; render(); return; }
+  if (e.target.id === 'tkReg' || e.target.id === 'tkPer') { const v = e.target.value; e.target.value = ''; if (v) openDetail((e.target.id === 'tkReg' ? 'region:' : 'person:') + v); return; }
   if (e.target.id === 'bvDesk') { try { store.set('kf_desk', e.target.value); } catch { /* ignore */ } S.bv.health = null; render(); return; }
   if (e.target.dataset && e.target.dataset.opst) { bvSaveOps(S.bv.ops.map((x) => (x.id === e.target.dataset.opst ? { ...x, status: e.target.value } : x))); return; }
   if (e.target.id === 'bvReg') { S.bv.region = e.target.value; S.bv.partner = 'all'; S.bv.row = null; render(); return; }
@@ -2784,7 +2825,7 @@ document.addEventListener('keydown', (e) => {
   try { S.cfg = await api('/api/config'); applyBrand(); } catch { $('#app').innerHTML = '<div class="banner bad">Cannot reach the server.</div>'; return; }
   { const m = /[#&?]code=([A-Za-z0-9]{6,8})/.exec(location.hash + location.search); if (m) { store.set('kf_code', m[1].toUpperCase()); try { history.replaceState(null, '', location.pathname); } catch {} } }
   const saved = store.get('kf_code');
-  if (saved) { S.code = saved; try { S.who = (await api('/api/login')).who; } catch { S.code = null; S.who = null; store.set('kf_code', null); } }
+  if (saved) { S.code = saved; try { S.who = (await api('/api/login')).who; } catch (e) { S.who = null; if (e && (e.status === 401 || e.status === 403)) { S.code = null; store.set('kf_code', null); } else { $('#app').innerHTML = '<div class="banner bad">Cannot reach the server right now. Your code is kept. <button class="btn sm" onclick="location.reload()">Try again</button></div>'; return; } } }
   if (!S.who) { loginScreen(); return; }
   const asHash = /^#as=(\w+)(?:\/(\w+))?$/.exec(location.hash);
   if (asHash && S.who.role === 'hq') { S.tab = 'hq'; await go(); history.replaceState(null, '', location.pathname); await setViewAs(asHash[1]); if (asHash[2]) { S.tab = asHash[2]; if (S.tab === 'plan') await loadPlan(); render(); } return; }

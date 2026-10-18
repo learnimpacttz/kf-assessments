@@ -54,6 +54,8 @@ export async function identify(request, env) {
     // HQ can preview the app as any person (training and support). The preview is read-only: see index.js.
     const as = /^staff:(\d+)$/.exec(request.headers.get('x-view-as') || '');
     if (as) { const s = STAFF.find((x) => x.id === Number(as[1])); if (s) return { role: s.role, name: s.name, region: s.region, id: s.id, position: s.position, viewAs: true }; }
+    const hv = /^hq:(\w+)$/.exec(request.headers.get('x-view-as') || '');
+    if (hv && hqWho.desk === 'systems' && (hqWho.level || 'admin') === 'admin') { const u = (await loadHq(env)).users.find((x) => x.id === hv[1] && x.active !== false); if (u) return { role: 'hq', level: u.level, name: u.name, region: null, id: 'hq:' + u.id, hq_id: u.id, review_level: u.level === 'viewer' ? 0 : (u.review_level || 0), desk: deskOf(u), viewAs: true }; }
     const ga = /^guest:(\w+)$/.exec(request.headers.get('x-view-as') || ''); if (ga && PROFILES[ga[1]]) return { role: 'guest', name: 'Preview: ' + PROFILES[ga[1]], org: '', profile: ga[1], id: 'g:preview', level: 'viewer', can_download: false, logo: '', viewAs: true, region: null };
     return hqWho;
   }
