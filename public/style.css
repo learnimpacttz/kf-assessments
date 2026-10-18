@@ -426,3 +426,9 @@ tr.bvx td{background:var(--surface2)}
  table.stack td:first-child{font-weight:700;text-align:left;border-bottom:1px solid var(--line);padding-bottom:4px;margin-bottom:2px}table.stack td:first-child::before{display:none}
  table.stack td[data-l=""]::before{display:none}
 }
+
+/* Usage Explorer */
+.heat{display:flex;flex-direction:column;gap:2px}.heat .hr{display:grid;grid-template-columns:34px repeat(18,1fr);gap:2px;align-items:center}.heat .hr span,.heat .hr b{font-size:10px;color:var(--ink2);font-weight:600}.heat .hr i{display:block;height:16px;border-radius:3px}
+.linkish{all:unset;cursor:pointer;color:var(--ink);text-decoration:underline dotted;text-underline-offset:3px}.linkish:focus-visible{outline:2px solid var(--teal)}.f3{grid-template-columns:120px 1fr 44px}
+.uxmsg{border:1px dashed var(--line);border-radius:10px;padding:8px 10px;margin:0 0 10px;display:flex;flex-direction:column;gap:6px}.uxmsg.on{border-style:solid;border-color:var(--teal);background:var(--surface2)}.uxmsg .acts{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+div.kpi.bvk{cursor:default}

@@ -5,7 +5,7 @@ import { STAFF, REGIONS, eatToday, staffForKoboName } from './config.js';
 import { loadHq, readActivity } from './hq.js';
 import { loadQueries } from './queries.js';
 
-const USERS = 'v2:usage:users', DAILY = 'v2:usage:daily', SUBS = 'v2:push:subs';
+const USERS = 'v2:usage:users', DAILY = 'v2:usage:daily', SUBS = 'v2:push:subs'; const EVK = (d) => 'v2:usage:ev:' + d; const EV_DAYS = 90;
 const keyOf = (w) => String(w.id ?? w.hq_id ?? w.name);
 const eatHour = (iso) => new Date(Date.parse(iso) + 3 * 3600e3).getUTCHours();
 const TABS_OK = /^[a-z]{2,14}$/;
@@ -26,6 +26,11 @@ export async function recordUsage(env, who, ev) {
   d.users[k] = 1; if (ev.open) d.sessions += 1; if (tab !== 'api') { d.views += 1; d.tabs[tab] = (d.tabs[tab] || 0) + 1; d.hours[h] += 1; d.dev[dev] += 1; }
   const keys = Object.keys(dly).sort(); while (keys.length > 70) delete dly[keys.shift()];
   await kv(env).put(DAILY, dly);
+  // the explorer's detail: per day, per person, per page and hour (kept 90 days)
+  const evd = (await kv(env).get(EVK(day))) || {}; const e = (evd[k] ||= { t: {}, h: new Array(24).fill(0), ms: 0, s: 0, d: { m: 0, d: 0, x: 0 } });
+  if (ev.open) e.s += 1; if (tab !== 'api') { e.t[tab] = (e.t[tab] || 0) + 1; e.h[h] += 1; e.ms += ms; e.d[dev] += 1; }
+  await kv(env).put(EVK(day), evd);
+  const old = new Date(Date.parse(day + 'T00:00:00Z') - (EV_DAYS + 1) * 864e5).toISOString().slice(0, 10); try { await kv(env).del(EVK(old)); } catch { /* nothing to remove */ }
   return { ok: true };
 }
 const lastApi = {};
@@ -89,4 +94,52 @@ export async function usageReport(env, who) {
   const slow = field.filter((r) => r.seen && r.ago !== null && r.ago >= 3 && r.active7 >= 1); if (slow.length) insights.push(`${slow.length} people used the app earlier this week but not in the last 3 days. Check whether they are still in the field.`);
   const trackedDays = Object.values(dly).filter((x) => !x.fromActions).length; if (trackedDays < 3) insights.splice(0, insights.length, `Page views are counted from ${liveFirst}. Before that, activity comes from what people saved in the system (plans, replies, reviews, changes, alerts), starting ${SINCE}. Patterns and the "never opened" list become reliable after a few days of use. Phone alerts are already known: ${field.filter((r) => r.alerts).length} of ${field.length} field staff have them on.`);
   return { as_of: new Date().toISOString(), live_since: liveFirst, actions_since: SINCE, today, kpis: { people: field.length, active_today: activeToday.length, active_7d: active7.length, never: never, alerts_on: field.filter((r) => r.alerts).length, hq_active_7d: rows.filter((r) => r.role === 'hq' && r.ago !== null && r.ago <= 6).length, hq_total: rows.filter((r) => r.role === 'hq').length }, days, hours, hours_actions: hoursAct, tabs: Object.entries(tabs).sort((a, b) => b[1] - a[1]), device: dev, by_region: byRegion, rows: rows.sort((a, b) => (b.ago === null ? -1 : 0) - (a.ago === null ? -1 : 0) || (a.ago ?? 999) - (b.ago ?? 999)), insights };
+}
+
+
+// ---------- Usage Explorer: filterable detail (HQ only) ----------
+import { PARTNERS } from './config.js';
+const PART_OF = Object.fromEntries(Object.entries(PARTNERS).flatMap(([p, rs]) => rs.map((r) => [r, p])));
+const addDay = (d, n) => new Date(Date.parse(d + 'T00:00:00Z') + n * 864e5).toISOString().slice(0, 10);
+const dayList = (a, b) => { const out = []; for (let d = a; d <= b && out.length < 120; d = addDay(d, 1)) out.push(d); return out; };
+export async function usageExplore(env, who, q) {
+  if (who.role !== 'hq') return { error: 'HQ only', status: 403 };
+  const today = eatToday(); const ok = (d) => /^\d{4}-\d\d-\d\d$/.test(d || '');
+  let to = ok(q.to) ? q.to : today; if (to > today) to = today; let from = ok(q.from) ? q.from : addDay(to, -13); if (from > to) from = to;
+  if (dayList(from, to).length >= 90) from = addDay(to, -89);
+  const span = dayList(from, to).length; const pTo = addDay(from, -1), pFrom = addDay(pTo, -(span - 1));
+  const users = (await kv(env).get(USERS)) || {}; const subs = (await kv(env).get(SUBS)) || {}; const hq = (await loadHq(env)).users.filter((u) => u.active !== false);
+  const alerts = new Set(Object.values(subs).map((x) => String(x.who?.id)));
+  const people = [...STAFF.filter((s) => s.active).map((s) => ({ key: String(s.id), name: s.name, role: s.role, position: s.position, region: s.region })), ...hq.map((u) => ({ key: 'hq:' + u.id, name: u.name, role: 'hq', position: 'HQ', region: '' }))];
+  const known = new Set(people.map((p) => p.key)); for (const [k, u] of Object.entries(users)) if (!known.has(k)) people.push({ key: k, name: u.n, role: u.role, position: /claude|assistant/i.test(u.n) ? 'AI assistant' : u.role, region: u.region || '' });
+  const nm = String(q.q || '').toLowerCase();
+  const roster = people.filter((p) => p.position !== 'AI assistant' && (!q.role || p.role === q.role) && (!q.region || p.region === q.region) && (!q.partner || PART_OF[p.region] === q.partner) && (!nm || p.name.toLowerCase().includes(nm)));
+  const keys = new Set(roster.map((p) => p.key)); const tabF = /^[a-z]{2,14}$/.test(q.tab || '') ? q.tab : ''; const devF = ['m', 'd', 'x'].includes(q.dev) ? q.dev : '';
+  const load = async (a, b) => { const days = dayList(a, b); const recs = await Promise.all(days.map((d) => kv(env).get(EVK(d)).catch(() => null))); return days.map((d, i) => ({ date: d, rec: recs[i] })); };
+  const agg = (loaded) => {
+    const per = {}, days = [], heat = Array.from({ length: 7 }, () => new Array(24).fill(0)), tabs = {};
+    for (const { date, rec } of loaded) {
+      const dow = (new Date(date + 'T00:00:00Z').getUTCDay() + 6) % 7; const day = { date, views: 0, users: 0, sessions: 0, minutes: 0, approx: false }; const seen = new Set();
+      if (rec) { for (const [k, e] of Object.entries(rec)) { if (!keys.has(k)) continue; const v = tabF ? (e.t[tabF] || 0) : Object.values(e.t).reduce((a2, b2) => a2 + b2, 0); const dv = devF ? (e.d[devF] || 0) : 1; if (!v || !dv) continue; const share = devF ? dv / Math.max(1, e.d.m + e.d.d + e.d.x) : 1; const vv = Math.round(v * share);
+          const p = (per[k] ||= { views: 0, days: new Set(), sessions: 0, ms: 0, tabs: {}, dev: { m: 0, d: 0, x: 0 }, last: null }); p.views += vv; p.days.add(date); p.sessions += e.s || 0; p.ms += e.ms || 0; p.last = date; for (const [t, n] of Object.entries(e.t)) { p.tabs[t] = (p.tabs[t] || 0) + n; if (!tabF || t === tabF) { const r = (tabs[t] ||= { views: 0, users: new Set(), byRole: {} }); r.views += n; r.users.add(k); const role = roster.find((x) => x.key === k)?.role || '?'; r.byRole[role] = (r.byRole[role] || 0) + n; } } p.dev.m += e.d.m; p.dev.d += e.d.d; p.dev.x += e.d.x;
+          e.h.forEach((n, i) => { heat[dow][i] += tabF ? 0 : n; }); day.views += vv; day.sessions += e.s || 0; day.minutes += Math.round((e.ms || 0) / 60000); seen.add(k); } }
+      else if (!tabF && !devF) { for (const [k, u] of Object.entries(users)) { if (!keys.has(k) || !u.days || !u.days[date]) continue; const p = (per[k] ||= { views: 0, days: new Set(), sessions: 0, ms: 0, tabs: {}, dev: { m: 0, d: 0, x: 0 }, last: null }); p.views += u.days[date]; p.days.add(date); p.last = date; day.views += u.days[date]; seen.add(k); day.approx = true; } }
+      day.users = seen.size; days.push(day);
+    }
+    return { per, days, heat, tabs };
+  };
+  const curL = await load(from, to); const cur = agg(curL); const prev = agg(await load(pFrom, pTo)); const detailSince = (curL.find((x) => x.rec) || {}).date || null;
+  const sum = (a) => { const v = Object.values(a.per); return { views: v.reduce((x, p) => x + p.views, 0), people: v.length, sessions: v.reduce((x, p) => x + p.sessions, 0), minutes: Math.round(v.reduce((x, p) => x + p.ms, 0) / 60000), mobile: (() => { const m = v.reduce((x, p) => x + p.dev.m, 0), d = v.reduce((x, p) => x + p.dev.d, 0); return m + d ? Math.round((100 * m) / (m + d)) : null; })() }; };
+  const rows = roster.map((p) => { const c = cur.per[p.key], pv = prev.per[p.key], u = users[p.key]; const top = c ? Object.entries(c.tabs).sort((a, b) => b[1] - a[1])[0] : null; const views = c ? c.views : 0, pviews = pv ? pv.views : 0;
+    const ever = Boolean(u && (u.views || u.sessions || Object.keys(u.days || {}).length)); const lastIso = u?.last ? new Date(Date.parse(u.last) + 3 * 3600e3).toISOString().slice(0, 10) : null; const ago = lastIso ? Math.round((Date.parse(today + 'T00:00:00Z') - Date.parse(lastIso + 'T00:00:00Z')) / 864e5) : null;
+    const status = !ever ? 'never' : !views ? 'quiet' : pviews && views > pviews * 1.25 ? 'rising' : pviews && views < pviews * 0.75 ? 'falling' : 'steady';
+    return { key: p.key, name: p.name, role: p.role, position: p.position, region: p.region, partner: PART_OF[p.region] || '', views, prev_views: pviews, days: c ? c.days.size : 0, sessions: c ? c.sessions : 0, minutes: c ? Math.round(c.ms / 60000) : 0, top_tab: top ? top[0] : null, mobile: c && c.dev.m + c.dev.d ? Math.round((100 * c.dev.m) / (c.dev.m + c.dev.d)) : null, last: lastIso, ago, alerts: alerts.has(p.key), status, messageable: /^\d+$/.test(p.key) };
+  });
+  const f = rows.filter((r) => r.role !== 'hq');
+  const funnel = [['On the roster', f.length], ['Opened it ever', f.filter((r) => r.status !== 'never').length], ['Opened in this period', f.filter((r) => r.views > 0).length], ['On 3 or more days', f.filter((r) => r.days >= 3).length], ['Phone alerts on', f.filter((r) => r.alerts).length]];
+  const group = (fn) => { const g = {}; for (const r of f) { const k = fn(r) || '–'; const x = (g[k] ||= { name: k, people: 0, active: 0, views: 0 }); x.people++; if (r.views) x.active++; x.views += r.views; } return Object.values(g).sort((a, b) => b.views - a.views); };
+  const first = Object.keys((await kv(env).get('v2:usage:daily')) || {}).sort()[0] || today;
+  return { range: { from, to, prev_from: pFrom, prev_to: pTo, days: span }, live_since: first, detail_since: detailSince, filters_applied: { tab: tabF, dev: devF },
+    totals: sum(cur), prev_totals: sum(prev), days: cur.days, prev_days: prev.days.map((d) => ({ date: d.date, views: d.views, users: d.users })), heat: cur.heat,
+    tabs: Object.entries(cur.tabs).map(([t, v]) => ({ tab: t, views: v.views, users: v.users.size, byRole: v.byRole })).sort((a, b) => b.views - a.views), people: rows.sort((a, b) => b.views - a.views), funnel, by_region: group((r) => r.region), by_partner: group((r) => r.partner), by_role: group((r) => r.role) };
 }

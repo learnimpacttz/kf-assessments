@@ -21,7 +21,7 @@ import { sendDm, dmInbox, dmAck, dmSent, askCreate, askList, askAct, askCounts, 
 import { layoutsFor, saveLayout } from './layouts.js';
 const GUEST_REPORTS = ['region_progress']; // aggregate only: no names, no school results
 import { listGuests, guestAction, touchGuest } from './guests.js';
-import { recordUsage, recordApi, usageReport } from './usage.js';
+import { recordUsage, recordApi, usageReport, usageExplore } from './usage.js';
 import { assignFlags } from './assign.js';
 import { isBlocked, recordFail } from './ratelimit.js';
 import { listNarr, getNarr, saveNarr, compiledHtml } from './narratives.js';
@@ -386,6 +386,7 @@ export default {
         return err('Not found', 404);
       }
       if (path === '/api/usage' && method === 'POST') { const b = await request.json().catch(() => ({})); await recordUsage(env, who, b); return json({ ok: true }); }
+      if (path === '/api/usage/explore') { const r = await usageExplore(env, who, Object.fromEntries(url.searchParams)); return r.error ? err(r.error, r.status || 403) : json(r); }
       if (path === '/api/usage/report') { const r = await usageReport(env, who); return r.error ? err(r.error, r.status || 403) : json(r); }
       if (path === '/api/push/subscribe' && method === 'POST') {
         const b = await request.json();
