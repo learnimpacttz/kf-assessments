@@ -1,9 +1,8 @@
-// Forecast beyond a simple run-rate. For every region it simulates the remaining field days
-// 1,500 times, drawing how many schools get finished each day from a mix of
-//   (a) the region's own recent days (once there are at least 3), and
-//   (b) last round's daily pattern for the same region (rain, travel and weekend gaps included),
-// capped at the 2 to 3 schools a day the protocol allows (5 in Dodoma).
-// It reports the chance of finishing by the close date and a likely finish range.
+// Forecast beyond a simple run-rate. THIS YEAR'S PLAN comes first: for every region with a locked plan it simulates the
+// remaining field days 1,500 times, starting from the planned visits per day and carrying forward whatever slipped.
+// How reliably the region keeps its plan is learned from this year's own visits (a prior of 90% that fades as evidence comes in).
+// Last round's history is only a fallback for a region with no locked plan (and for schools missing from the plan).
+// Capped at the 2 to 3 schools a day the protocol allows (5 in Dodoma). It reports the chance of finishing by the close date and a likely finish range.
 import { kv } from './store.js';
 import { REGIONS, FIELD_START, FIELD_END, PILOT_DAY, CURRENT_YEAR, isWorkingDay, addDays, MAX_SCHOOLS_PER_DAY, DODOMA_MAX_SCHOOLS_PER_DAY } from './config.js';
 import { getPlan } from './plan.js';
@@ -45,6 +44,22 @@ export async function baseline(env) {
   return out;
 }
 
+// Plan-led simulation: each day the planned visits (plus any backlog) are attempted up to the daily cap; each attempt succeeds with probability rel.
+function simulatePlan(rand, sched, backlog0, days, cap, rel) {
+  const finishes = [];
+  for (let n = 0; n < SIMS; n++) {
+    let backlog = backlog0, fin = null, left = backlog0 + sched.total;
+    for (const d of days) {
+      backlog += sched.byDate[d] || 0;
+      let tries = Math.min(cap, backlog), ok = 0;
+      for (let k = 0; k < tries; k++) if (rand() < rel) ok++;
+      backlog -= ok; left -= ok;
+      if (left <= 0) { fin = d; break; }
+    }
+    finishes.push(fin);
+  }
+  return finishes;
+}
 function simulateRegion(rand, remaining, days, pool, cap) {
   const finishes = [];
   for (let n = 0; n < SIMS; n++) {
@@ -69,6 +84,7 @@ export async function forecast(env, sum, today) {
   const left = workingDays(first, FIELD_END);
   const regions = {};
   const sims = {};
+  const plans = {}; await Promise.all(REGIONS.map(async (r) => { try { plans[r] = await getPlan(env, r); } catch { plans[r] = null; } }));
   for (const r of REGIONS) {
     const R = sum?.regions?.[r]; if (!R) continue;
     const remaining = Math.max(0, R.total - R.done);
@@ -85,14 +101,30 @@ export async function forecast(env, sum, today) {
       continue;
     }
     const rand = rng(hash(`${r}|${today}|${R.done}`));
-    const fin = remaining === 0 ? new Array(SIMS).fill(today) : simulateRegion(rand, remaining, window, pool, cap);
+    // this year's plan: planned visits of schools not yet done
+    const P = plans[r]; let planInfo = null;
+    if (P && P.status === 'locked' && Array.isArray(P.visits) && P.visits.length) {
+      const byDate = {}; let total = 0, backlog0 = 0, due = 0, hit = 0, planEnd = null, planned = new Set();
+      for (const v of P.visits) {
+        const sc = sum.schools[v.school]; if (!sc) continue; planned.add(v.school);
+        if (v.date < today) { due++; if (sc.done) hit++; }
+        if (sc.done) continue;
+        if (v.date >= first) { byDate[v.date] = (byDate[v.date] || 0) + 1; total++; if (!planEnd || v.date > planEnd) planEnd = v.date; } else backlog0++;
+      }
+      const unplanned = Math.max(0, remaining - backlog0 - total - 0); // not-done schools the plan does not list
+      backlog0 += unplanned;
+      const rel = Math.min(1, Math.max(0.3, (hit + 0.9 * 5) / (due + 5)));
+      planInfo = { byDate, total, backlog0, rel, planEnd };
+    }
+    const fin = remaining === 0 ? new Array(SIMS).fill(today) : planInfo ? simulatePlan(rand, planInfo, planInfo.backlog0, window, cap, planInfo.rel) : simulateRegion(rand, remaining, window, pool, cap);
     sims[r] = fin;
     const onTime = fin.filter((d) => d && d <= FIELD_END).length / SIMS;
     const p50 = quantile(fin, 0.5), p10 = quantile(fin, 0.1), p90 = quantile(fin, 0.9);
     const needed = left.length ? remaining / left.length : remaining;
     regions[r] = {
       remaining, days_left: left.length, needed_per_day: Math.round(needed * 10) / 10, recent_pace: recent.length ? Math.round((recent.reduce((a, b) => a + b, 0) / recent.length) * 10) / 10 : null,
-      basis: recent.length >= 3 ? 'recent days and last round' : base.year ? `last round (${base.year})` : 'default pattern',
+      basis: planInfo ? `this year's plan (keeps ${Math.round(planInfo.rel * 100)}% of planned visits)` : recent.length >= 3 ? 'recent days and last round' : base.year ? `last round (${base.year}), no locked plan yet` : 'default pattern',
+      plan_finish: planInfo ? planInfo.planEnd : null, plan_reliability: planInfo ? Math.round(planInfo.rel * 100) : null,
       p_on_time: Math.round(onTime * 100), earliest: p10, likely: p50, latest: p90,
       level: remaining === 0 ? 'good' : onTime >= 0.85 ? 'good' : onTime >= 0.5 ? 'warn' : 'bad',
     };
@@ -103,7 +135,7 @@ export async function forecast(env, sum, today) {
   const natOn = nat.filter((d) => d && d <= FIELD_END).length / SIMS;
   return {
     today, close: FIELD_END, baseline_year: base.year, pre_field: today < FIELD_START, regions,
-    national: { p_on_time: Math.round(natOn * 100), earliest: quantile(nat, 0.1), likely: quantile(nat, 0.5), latest: quantile(nat, 0.9), level: natOn >= 0.85 ? 'good' : natOn >= 0.5 ? 'warn' : 'bad' },
+    national: { plan_finish: Object.values(regions).reduce((m, x) => (x.plan_finish && x.plan_finish > m ? x.plan_finish : m), '') || null, p_on_time: Math.round(natOn * 100), earliest: quantile(nat, 0.1), likely: quantile(nat, 0.5), latest: quantile(nat, 0.9), level: natOn >= 0.85 ? 'good' : natOn >= 0.5 ? 'warn' : 'bad' },
   };
 }
 
