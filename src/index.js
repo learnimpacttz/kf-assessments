@@ -304,6 +304,10 @@ export default {
           if (path === '/api/bridge/snapshots') return json({ items: await listSnapshots(env) });
           if (path === '/api/bridge/snapshot' && method === 'POST') { if ((who.level || 'admin') === 'viewer') return err('Not allowed', 403); const b = await request.json().catch(() => ({})); return json(await saveSnapshot(env, who, b)); }
           if (path === '/api/bridge/milestones' && method === 'GET') return json({ milestones: await getMilestones(env), settings: (await kv(env).get('v2:bridge:settings')) || { ed_email: true } });
+          if (path === '/api/bridge/ops') {
+            if (method === 'GET') return json({ items: (await kv(env).get('v2:bridge:ops')) || [] });
+            if (method === 'POST') { if ((who.level || 'admin') === 'viewer') return err('Not allowed', 403); const b = await request.json().catch(() => ({})); const clean = (Array.isArray(b.items) ? b.items : []).slice(0, 40).map((x, i) => ({ id: String(x.id || 'o' + Date.now() + i).replace(/[^a-z0-9_]/gi, '').slice(0, 24), title: String(x.title || '').trim().slice(0, 100), owner: String(x.owner || '').trim().slice(0, 50), due: /^\d{4}-\d\d-\d\d$/.test(x.due || '') ? x.due : '', status: ['not started', 'in progress', 'blocked', 'done'].includes(x.status) ? x.status : 'not started', note: String(x.note || '').trim().slice(0, 200) })).filter((x) => x.title); await kv(env).put('v2:bridge:ops', clean); return json({ ok: true, items: clean }); }
+          }
           if (path === '/api/bridge/milestones' && method === 'POST') { const b = await request.json().catch(() => ({})); if (b.ed_email !== undefined) { if ((who.level || 'admin') !== 'admin') return err('Only an HQ Admin', 403); await kv(env).put('v2:bridge:settings', { ed_email: Boolean(b.ed_email) }); } if (b.milestones) { const r = await saveMilestones(env, who, b.milestones); if (r.error) return err(r.error, r.status || 422); } BR.clear(); return json({ ok: true }); }
         } catch (e) { return err(String(e.message || e), 500); }
         return err('Not found', 404);

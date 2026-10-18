@@ -376,3 +376,25 @@ body.guestview{padding-bottom:36px}
 .f2{display:grid;grid-template-columns:130px 1fr 40px;gap:8px;align-items:center;margin:5px 0;font-size:13px}.f2 b{text-align:right}
 tr.bvx td{background:var(--surface2)}
 @media(max-width:560px){.f2{grid-template-columns:100px 1fr 34px}}
+
+.bvst{display:flex;gap:14px;flex-wrap:wrap;align-items:center}.bvsent{flex:1 1 300px;min-width:0}
+.opadd{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}.opadd input{flex:1 1 140px;min-width:0;border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:8px;padding:6px 8px;min-height:34px}
+/* Bridge on a phone: denser, more above the fold */
+@media(max-width:640px){
+ #app .pagehead{margin:4px 0 6px}#app .pagehead h2{font-size:20px}#app .pagehead p{display:none}
+ #bv-status{padding:10px 12px;margin-bottom:8px}#bv-status h3{display:none}.bvbig{font-size:20px}.bvst{gap:8px}.bvsent{flex-basis:100%;font-size:13px;line-height:1.4}
+ .ctl2{gap:6px;padding:6px 8px;margin:8px 0}.ctl2 label{font-size:11.5px;gap:4px}.ctl2 select{padding:2px 4px;min-height:28px;max-width:120px}.ctl2 .seg button{padding:3px 7px}
+ #bv-head .grid.kpis{grid-template-columns:repeat(2,1fr);gap:6px}.bvk{padding:8px 10px}.bvk .v{font-size:20px}.bvk .l{font-size:10.5px}.bvk .t{font-size:11px;line-height:1.3}
+ #app>.card .sub,#app>details.colcard .sub{display:none}
+ #app>.card,#app>details.colcard{padding:10px 12px;margin-bottom:8px}#app>.card>h3,#app>details.colcard>summary{font-size:14.5px;margin-bottom:6px}
+ .flag{padding:6px 0;gap:8px}.flag .btn{padding:4px 8px}
+ .tbl table.dt th,.tbl table.dt td{padding:5px 6px;font-size:12px}
+ #bv-reg table.dt th:nth-child(2),#bv-reg table.dt td:nth-child(2),#bv-reg table.dt th:nth-child(4),#bv-reg table.dt td:nth-child(4),#bv-reg table.dt th:nth-child(8),#bv-reg table.dt td:nth-child(8),#bv-reg table.dt th:nth-child(9),#bv-reg table.dt td:nth-child(9){display:none}
+ .f2{margin:3px 0}.bvpanel{padding:8px 10px}
+ #bv-time svg{max-height:230px}
+}
+@media(max-width:640px){
+ #app .jump{display:flex;flex-wrap:nowrap;overflow-x:auto;gap:6px;margin:4px 0 6px;padding-bottom:2px;-webkit-overflow-scrolling:touch}#app .jump button{flex:0 0 auto;padding:3px 9px;font-size:12px;white-space:nowrap}
+ .ctl2{flex-wrap:nowrap;overflow-x:auto}.ctl2>*{flex:0 0 auto}.ctl2 select{max-width:104px}
+}
+@media(max-width:640px){#bv-targets .tbl:first-of-type th:nth-child(n+6),#bv-targets .tbl:first-of-type td:nth-child(n+6){display:none}#bv-targets .tbl+.tbl th:nth-child(5),#bv-targets .tbl+.tbl td:nth-child(5){display:none}}

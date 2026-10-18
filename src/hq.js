@@ -8,11 +8,15 @@ import { hmacHex, toCode } from './auth.js';
 import { TARGETS } from './own.js';
 
 export const LEVELS = { admin: 'Admin', editor: 'Editor', viewer: 'Viewer' };
+// A desk is how someone looks at the whole system (their Bridge and menu order). It never grants or removes access.
+export const DESKS = { coordination: 'Coordination', management: 'Management', leadership: 'Leadership', systems: 'Systems' };
+const SEED_DESK = { h1: 'management', h2: 'coordination', h3: 'systems' };
+export const deskOf = (u) => (u && DESKS[u.desk] ? u.desk : u && SEED_DESK[u.id] ? SEED_DESK[u.id] : !u || u.level === 'admin' ? 'systems' : u.level === 'viewer' ? 'leadership' : 'coordination');
 const HQKEY = 'v2:hq', SETKEY = 'v2:settings', ACTKEY = 'v2:activity';
 const SEED = [
-  { id: 'h1', name: 'Chogohe Edwin Mundo', email: 'cmundo@learnimpact.or.tz', level: 'admin', review_level: 3 },
-  { id: 'h2', name: 'Joram Joas', email: 'jjoas@learnimpact.or.tz', level: 'admin', review_level: 2 },
-  { id: 'h3', name: 'Michael Kamukulu', email: 'mkamukulu@learnimpact.org', level: 'admin', review_level: 3 },
+  { id: 'h1', name: 'Chogohe Edwin Mundo', email: 'cmundo@learnimpact.or.tz', level: 'admin', review_level: 3, desk: 'management' },
+  { id: 'h2', name: 'Joram Joas', email: 'jjoas@learnimpact.or.tz', level: 'admin', review_level: 2, desk: 'coordination' },
+  { id: 'h3', name: 'Michael Kamukulu', email: 'mkamukulu@learnimpact.org', level: 'admin', review_level: 3, desk: 'systems' },
 ];
 
 let hqCache = null, hqAt = 0;
@@ -37,7 +41,7 @@ export async function hqByCode(env, code) {
 }
 export async function hqList(env) {
   const d = await loadHq(env, true);
-  return { shared_enabled: d.shared_enabled !== false, users: await Promise.all(d.users.map(async (u) => ({ id: u.id, name: u.name, email: u.email || '', level: u.level, review_level: u.review_level || 0, active: u.active !== false, code: u.active === false ? null : await codeFor(env, u) }))) };
+  return { shared_enabled: d.shared_enabled !== false, users: await Promise.all(d.users.map(async (u) => ({ id: u.id, name: u.name, email: u.email || '', level: u.level, review_level: u.review_level || 0, desk: deskOf(u), active: u.active !== false, code: u.active === false ? null : await codeFor(env, u) }))) };
 }
 const activeAdmins = (d) => d.users.filter((u) => u.active !== false && u.level === 'admin').length;
 export async function hqChange(env, who, b) {
@@ -47,12 +51,13 @@ export async function hqChange(env, who, b) {
     const name = String(b.name || '').trim().slice(0, 80); if (!name) return { error: 'Write the name' };
     if (!LEVELS[b.level]) return { error: 'Choose a level' };
     const n = Math.max(0, ...d.users.map((u) => Number(String(u.id).slice(1)) || 0)) + 1;
-    d.users.push({ id: 'h' + n, name, email: String(b.email || '').trim().toLowerCase().slice(0, 120), level: b.level, rot: 0, active: true, created_at: new Date().toISOString() });
+    d.users.push({ id: 'h' + n, name, email: String(b.email || '').trim().toLowerCase().slice(0, 120), level: b.level, desk: DESKS[b.desk] ? b.desk : undefined, rot: 0, active: true, created_at: new Date().toISOString() });
   } else if (b.action === 'update') {
     const u = d.users.find((x) => x.id === b.id); if (!u) return { error: 'Not found', status: 404 };
     if (b.name != null) u.name = String(b.name).trim().slice(0, 80) || u.name;
     if (b.email != null) u.email = String(b.email).trim().toLowerCase().slice(0, 120);
     if (b.level != null) { if (!LEVELS[b.level]) return { error: 'Choose a level' }; u.level = b.level; }
+    if (b.desk != null) { if (!DESKS[b.desk]) return { error: 'Choose a desk' }; u.desk = b.desk; }
     if (b.active != null) u.active = Boolean(b.active);
     if (b.review_level != null) { const rl = Number(b.review_level); if (![0, 2, 3].includes(rl)) return { error: 'Choose a review role' }; u.review_level = rl; }
     if (u.level === 'viewer') u.review_level = 0; // a Viewer cannot approve anything
