@@ -398,3 +398,4 @@ tr.bvx td{background:var(--surface2)}
  .ctl2{flex-wrap:nowrap;overflow-x:auto}.ctl2>*{flex:0 0 auto}.ctl2 select{max-width:104px}
 }
 @media(max-width:640px){#bv-targets .tbl:first-of-type th:nth-child(n+6),#bv-targets .tbl:first-of-type td:nth-child(n+6){display:none}#bv-targets .tbl+.tbl th:nth-child(5),#bv-targets .tbl+.tbl td:nth-child(5){display:none}}
+@media(max-width:640px){#bv-reg table.dt th:nth-child(5),#bv-reg table.dt td:nth-child(5){display:none}}
