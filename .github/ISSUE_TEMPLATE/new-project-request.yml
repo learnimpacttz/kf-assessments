@@ -1,0 +1,40 @@
+name: New project or repository request
+description: Ask for a new project, repository, Cloudflare project or data collection project. Nothing is created until the approver says yes.
+title: "New project: "
+labels: ["new-project", "needs-approval"]
+body:
+  - type: textarea
+    id: purpose
+    attributes:
+      label: Purpose and who it is for
+    validations: { required: true }
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Is this office work or personal work?
+      options: ["Office (LearnImpact) work", "Personal work (this form is not for personal projects: use your own accounts)"]
+    validations: { required: true }
+  - type: input
+    id: owner
+    attributes:
+      label: Owner and a second person who can run it
+    validations: { required: true }
+  - type: textarea
+    id: data
+    attributes:
+      label: Data it will hold or read (and how it is protected)
+    validations: { required: true }
+  - type: textarea
+    id: accounts
+    attributes:
+      label: Accounts, keys and services needed, and the cost
+    validations: { required: true }
+  - type: input
+    id: end
+    attributes:
+      label: Expected end date or review date
+  - type: textarea
+    id: plan
+    attributes:
+      label: Plan and design (a short outline)
+    validations: { required: true }

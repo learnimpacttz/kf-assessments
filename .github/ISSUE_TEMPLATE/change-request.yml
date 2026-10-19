@@ -1,0 +1,36 @@
+name: Change request (an existing system)
+description: Ask for a change. Plan first, design next, build only after approval.
+title: "Change: "
+labels: ["change-request", "needs-plan"]
+body:
+  - type: textarea
+    id: why
+    attributes:
+      label: What is wrong or wanted, and who asked
+    validations: { required: true }
+  - type: dropdown
+    id: risk
+    attributes:
+      label: Risk level
+      options: ["Low (wording, colors, small fix)", "Medium (new feature or changed behavior)", "High (access, review chain, deleting or correcting data, payments, backups, alerts, deployment)"]
+    validations: { required: true }
+  - type: textarea
+    id: plan
+    attributes:
+      label: Plan
+      description: What will change, which pages and files, who is affected, what could go wrong.
+    validations: { required: true }
+  - type: textarea
+    id: design
+    attributes:
+      label: Design (Medium and High)
+      description: How it will work, a sketch or screenshot if it changes a screen, and how it will be tested.
+  - type: textarea
+    id: rollback
+    attributes:
+      label: How to go back
+    validations: { required: true }
+  - type: textarea
+    id: docs
+    attributes:
+      label: Documents to update

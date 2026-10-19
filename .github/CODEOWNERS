@@ -1,0 +1,26 @@
+# Whoever is listed here must approve any change to these files before it can be merged
+# (once "Require review from Code Owners" is switched on in the branch rules).
+# The team @learnimpacttz/approvers does not exist yet: create it in the GitHub organization (People, Teams), put the approver(s) in it, then this file takes effect.
+
+# Access, sign-in, review chain, deletion and correction of data, payments, backups, forecast and alerts
+/src/auth.js                @learnimpacttz/approvers
+/src/hq.js                  @learnimpacttz/approvers
+/src/guests.js              @learnimpacttz/approvers
+/src/queries.js             @learnimpacttz/approvers
+/src/deletions.js           @learnimpacttz/approvers
+/src/edits.js               @learnimpacttz/approvers
+/src/corrections.js         @learnimpacttz/approvers
+/src/payments.js            @learnimpacttz/approvers
+/src/paymentdata.js         @learnimpacttz/approvers
+/src/backup.js              @learnimpacttz/approvers
+/src/push.js                @learnimpacttz/approvers
+/src/digest.js              @learnimpacttz/approvers
+/src/index.js               @learnimpacttz/approvers
+
+# How the system is deployed and what the tools may do
+/wrangler.toml              @learnimpacttz/approvers
+/package.json               @learnimpacttz/approvers
+/package-lock.json          @learnimpacttz/approvers
+/.github/                   @learnimpacttz/approvers
+/.claude/                   @learnimpacttz/approvers
+/CLAUDE.md                  @learnimpacttz/approvers
