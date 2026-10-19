@@ -110,3 +110,12 @@ export async function saveSnapshot(env, who, { audience, text, numbers, draft })
   const list = (await kv(env).get(SNAPS)) || []; list.unshift({ id: Math.random().toString(36).slice(2, 9), at: new Date().toISOString(), by: who ? who.name : 'system', audience: audience || 'ed', text: String(text || '').slice(0, 6000), numbers: numbers || {}, draft: Boolean(draft) }); await kv(env).put(SNAPS, list.slice(0, 60)); return { ok: true };
 }
 export async function listSnapshots(env) { return ((await kv(env).get(SNAPS)) || []).slice(0, 20); }
+
+// Reminder for one HQ person: pending reviews, requests and field questions only, with the place that opens the work.
+export function reminderFor(needs, queries) {
+  const pend = (needs || []).filter((n) => n.act && ['allq', 'clean', 'questions'].includes(n.act.tab) && /review|waits|wait|request|question|reply/i.test(n.title));
+  if (!pend.length) return null;
+  const first = pend[0]; const old = queries && queries.oldest >= 3;
+  const hash = first.act.tab + (first.act.filter ? '.' + first.act.filter : '');
+  return { title: pend.length > 1 ? `${pend.length} things are waiting for you` : first.title, body: pend.slice(0, 3).map((n) => n.title).join(' · ') + (old ? ' · the oldest has waited 3 or more days' : ''), url: '/#go=' + hash, count: pend.length, tab: first.act.tab };
+}

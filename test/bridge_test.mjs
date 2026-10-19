@@ -30,4 +30,12 @@ ok('only an HQ Admin can change milestones', (await saveMilestones(env, { role: 
 const u = await buildUpdate(env, 'ed', br, sum); ok('the ED update has status, data, targets, risks and asks', /STATUS/.test(u.text) && /DATA/.test(u.text) && /TARGETS AND DATES/.test(u.text) && /RISKS/.test(u.text) && /DECISIONS AND ASKS/.test(u.text));
 const uf = await buildUpdate(env, 'funder', br, sum); ok('the funder update is aggregate only: no risks, no queue details, no names', !/RISKS/.test(uf.text) && !/waiting for a reply/.test(uf.text) && !/P One|P Two/.test(uf.text) && /BY REGION/.test(uf.text));
 ok('before field work the status says when it starts', fieldInfo('2026-10-17').phase === 'before' && fieldInfo('2026-10-17').to_start === 1);
+import { reminderFor } from '../src/bridge.js';
+{
+  const r = reminderFor([{ sev: 'bad', title: '3 queries wait for your review', act: { tab: 'allq', filter: 'mine' } }, { sev: 'warn', title: '1 question from the field', act: { tab: 'questions' } }, { sev: 'warn', title: 'Late notices', act: { tab: 'regions' } }], { oldest: 4 });
+  ok('reminder counts only pending work', r && r.count === 2 && /2 things/.test(r.title), r && r.title);
+  ok('reminder links straight to the work', r.url === '/#go=allq.mine', r.url);
+  ok('reminder mentions 3+ days', /3 or more days/.test(r.body));
+  ok('no reminder without pending work', reminderFor([{ title: 'Late notices', act: { tab: 'regions' } }], { oldest: 0 }) === null);
+}
 done();

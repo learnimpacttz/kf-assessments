@@ -21,6 +21,7 @@ import { sendDm, dmInbox, dmAck, dmSent, askCreate, askList, askAct, askCounts, 
 import { layoutsFor, saveLayout } from './layouts.js';
 const GUEST_REPORTS = ['region_progress']; // aggregate only: no names, no school results
 import { listGuests, guestAction, touchGuest } from './guests.js';
+import { reminderFor } from './bridge.js';
 import { recordUsage, recordApi, usageReport, usageExplore } from './usage.js';
 import { assignFlags } from './assign.js';
 import { isBlocked, recordFail } from './ratelimit.js';
@@ -132,17 +133,52 @@ async function notifyQuery(env, n) {
 
 // ---- the HQ Bridge ----
 const BR = new Map();
-async function bridgeFor(env, who, force = false) {
-  const key = String(who.id) + ':' + (who.review_level || 0); const hit = BR.get(key); if (!force && hit && Date.now() - hit.t < 30000) return hit.v;
-  const { sum } = await loadSummary(env, CURRENT_YEAR); if (!sum) return null; const today = eatToday();
-  let quota = null; try { const st = await storageView(env); const ser = ((sum.national && sum.national.series) || []).filter((x) => x[0] >= FIELD_START).slice(-5); const per = ser.length >= 3 ? Math.round((ser.reduce((a, x) => a + x[1], 0) / ser.length) * 1.1) : 0; /* real field days only: the pilot day is one big spike */ if (st && st.submissions_limit != null) { quota = { used: st.submissions_period, limit: st.submissions_limit, per_day: per, runs_out: null }; if (per > 0) { let left = Math.max(0, st.submissions_limit - st.submissions_period), d = today; while (left > 0 && d < '2027-03-01') { d = addDays(d, 1); if (isWorkingDay(d)) left -= per; } if (left <= 0) quota.runs_out = d; } } } catch { /* the Bridge works without it */ }
-  let pred = null; try { pred = { ...(await forecast(env, sum, today)), at_risk: await atRiskSchools(env, sum, today, null) }; } catch { /* optional */ }
-  const v = { br: await computeBridge(env, who, { sum, queries: await loadQueries(env), today, quota, pred }), sum }; BR.set(key, { t: Date.now(), v }); return v;
+const BRK = (who) => `${who.review_level || 0}:${/mundo/i.test(who.name || '') ? 1 : 0}`; // the Bridge differs only by review level
+const whoFromKey = (k) => ({ role: 'hq', level: 'admin', review_level: Number(k.split(':')[0]), name: k.endsWith(':1') ? 'Mundo' : 'HQ', id: 'cache' });
+// KoBo quota: an outside call that takes over a second, so it is refreshed in the background and read from a saved copy
+async function quotaCompute(env, sum, today) {
+  try { const st = await storageView(env); const ser = ((sum.national && sum.national.series) || []).filter((x) => x[0] >= FIELD_START).slice(-5); const per = ser.length >= 3 ? Math.round((ser.reduce((a, x) => a + x[1], 0) / ser.length) * 1.1) : 0; /* real field days only: the pilot day is one big spike */ if (st && st.submissions_limit != null) { const quota = { used: st.submissions_period, limit: st.submissions_limit, per_day: per, runs_out: null }; if (per > 0) { let left = Math.max(0, st.submissions_limit - st.submissions_period), d = today; while (left > 0 && d < '2027-03-01') { d = addDays(d, 1); if (isWorkingDay(d)) left -= per; } if (left <= 0) quota.runs_out = d; } return quota; } } catch { /* the Bridge works without it */ }
+  return null;
 }
+async function quotaSaved(env, sum, today, ctx) {
+  const c = await kv(env).get('v2:bridge:quota'); const age = c ? Date.now() - c.t : Infinity;
+  if (c && age < 600e3) return c.q;
+  const fresh = async () => { const q = await quotaCompute(env, sum, today); await kv(env).put('v2:bridge:quota', { t: Date.now(), q }); return q; };
+  if (c && ctx && ctx.waitUntil) { ctx.waitUntil(fresh().catch(() => {})); return c.q; } // stale but usable: refresh behind the scenes
+  return fresh();
+}
+async function bridgeShared(env, ctx) {
+  const { sum } = await loadSummary(env, CURRENT_YEAR); if (!sum) return null; const today = eatToday();
+  const [quota, pred, queries] = await Promise.all([quotaSaved(env, sum, today, ctx), forecast(env, sum, today).then(async (f) => ({ ...f, at_risk: await atRiskSchools(env, sum, today, null) })).catch(() => null), loadQueries(env)]);
+  return { sum, today, quota, pred, queries };
+}
+async function bridgeFor(env, who, force = false, ctx = null) {
+  const key = BRK(who); const hit = BR.get(key); if (!force && hit && Date.now() - hit.t < 30000) return { br: hit.br };
+  if (!force) { // saved copy: fresh for 45 s, usable for 15 min while it is renewed behind the scenes
+    const c = await kv(env).get('v2:bridge:cache:' + key);
+    if (c && c.br) { const age = Date.now() - c.t; if (age < 45e3) { BR.set(key, { t: c.t, br: c.br }); return { br: c.br }; } if (age < 900e3 && ctx && ctx.waitUntil) { ctx.waitUntil(refreshBridgeKey(env, key, ctx).catch(() => {})); BR.set(key, { t: Date.now() - 20e3, br: c.br }); return { br: c.br }; } }
+  }
+  const sh = await bridgeShared(env, ctx); if (!sh) return null;
+  const br = await computeBridge(env, who, sh); await kv(env).put('v2:bridge:cache:' + key, { t: Date.now(), br }).catch(() => {}); BR.set(key, { t: Date.now(), br }); return { br };
+}
+async function refreshBridgeKey(env, key, ctx) { const sh = await bridgeShared(env, ctx); if (!sh) return; const br = await computeBridge(env, whoFromKey(key), sh); await kv(env).put('v2:bridge:cache:' + key, { t: Date.now(), br }); BR.set(key, { t: Date.now(), br }); }
+async function refreshBridgeAll(env, ctx) { const sh = await bridgeShared(env, ctx); if (!sh) return; for (const key of ['0:0', '2:0', '3:0', '3:1']) { const br = await computeBridge(env, whoFromKey(key), sh); await kv(env).put('v2:bridge:cache:' + key, { t: Date.now(), br }); BR.set(key, { t: Date.now(), br }); } }
+const bustBridge = async (env) => { BR.clear(); for (const k of ['0:0', '2:0', '3:0', '3:1']) await kv(env).delete('v2:bridge:cache:' + k).catch(() => {}); };
+// Reminders for HQ people who have pending work (reviews first): twice a day, each opening the work itself
+async function hqReminders(env, ctx, slot) {
+  const day = eatToday(); const ran = (await kv(env).get('v2:bridge:ran')) || {}; if (ran['rem_' + slot] === day) return null; ran['rem_' + slot] = day; await kv(env).put('v2:bridge:ran', ran);
+  const sh = await bridgeShared(env, ctx); if (!sh) return null; const out = [];
+  for (const u of (await loadHq(env)).users.filter((x) => x.active !== false && x.level !== 'viewer')) {
+    const who = { role: 'hq', level: u.level, review_level: u.review_level || 0, name: u.name, id: 'hq:' + u.id }; const br = await computeBridge(env, who, sh); const r = reminderFor(br.needs, br.queries); if (!r) continue;
+    const res = await pushTo(env, (w) => w && w.role === 'hq' && String(w.id) === 'hq:' + u.id, { title: r.title, body: r.body.slice(0, 160), url: r.url }).catch(() => ({ sent: 0 })); out.push({ who: u.name, count: r.count, sent: res.sent || 0 });
+  }
+  return out;
+}
+const sumNow = async (env) => (await loadSummary(env, CURRENT_YEAR)).sum;
 async function mondayDraft(env) {
   const day = eatToday(); const ran = (await kv(env).get('v2:bridge:ran')) || {}; if (ran.monday === day) return null; ran.monday = day; await kv(env).put('v2:bridge:ran', ran);
-  const sys = { role: 'hq', level: 'admin', review_level: 3, name: 'Command Center', id: 'system' }; const v = await bridgeFor(env, sys, true); if (!v) return null;
-  const u = await buildUpdate(env, 'ed', v.br, v.sum.national ? v.sum : v.sum); await saveSnapshot(env, sys, { audience: 'ed', text: u.text, numbers: u.numbers, draft: true });
+  const sys = { role: 'hq', level: 'admin', review_level: 3, name: 'Command Center', id: 'system' }; const v = await bridgeFor(env, sys, true); if (!v) return null; const sumM = await sumNow(env);
+  const u = await buildUpdate(env, 'ed', v.br, sumM); await saveSnapshot(env, sys, { audience: 'ed', text: u.text, numbers: u.numbers, draft: true });
   const bs = (await kv(env).get('v2:bridge:settings')) || { ed_email: true }; const hq = (await loadHq(env)).users.find((x) => x.id === 'h3'); let emailed = false;
   if (bs.ed_email !== false && hq && hq.email && env.EMAIL_ENABLED === 'true') { await sendMail(env, hq.email, { subject: `Your Monday update draft · ${day}`, html: `<pre style="font:14px/1.5 system-ui,sans-serif;white-space:pre-wrap">${u.text.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]))}</pre><p>Edit and save it in the Command Center: Bridge, Management update.</p>`, text: u.text + '\n\nEdit and save it in the Command Center: Bridge, Management update.' }).catch(() => {}); emailed = true; }
   return { drafted: true, emailed };
@@ -299,16 +335,16 @@ export default {
       if (path.startsWith('/api/bridge')) {
         if (who.role !== 'hq') return err('HQ only', 403);
         try {
-          if (path === '/api/bridge') { const v = await bridgeFor(env, who, url.searchParams.get('fresh') === '1'); return v ? json(v.br) : json({ status: 'waiting' }); }
-          if (path === '/api/bridge/update') { const v = await bridgeFor(env, who); if (!v) return err('No data yet', 404); const aud = url.searchParams.get('audience') || 'ed'; const u = await buildUpdate(env, aud, v.br, v.sum); return json({ audience: aud, audiences: AUDIENCES, ...u }); }
+          if (path === '/api/bridge') { const v = await bridgeFor(env, who, url.searchParams.get('fresh') === '1', ctx); return v ? json(v.br) : json({ status: 'waiting' }); }
+          if (path === '/api/bridge/update') { const v = await bridgeFor(env, who, false, ctx); if (!v) return err('No data yet', 404); const aud = url.searchParams.get('audience') || 'ed'; const u = await buildUpdate(env, aud, v.br, await sumNow(env)); return json({ audience: aud, audiences: AUDIENCES, ...u }); }
           if (path === '/api/bridge/snapshots') return json({ items: await listSnapshots(env) });
           if (path === '/api/bridge/snapshot' && method === 'POST') { if ((who.level || 'admin') === 'viewer') return err('Not allowed', 403); const b = await request.json().catch(() => ({})); return json(await saveSnapshot(env, who, b)); }
           if (path === '/api/bridge/milestones' && method === 'GET') return json({ milestones: await getMilestones(env), settings: (await kv(env).get('v2:bridge:settings')) || { ed_email: true } });
           if (path === '/api/bridge/ops') {
             if (method === 'GET') return json({ items: (await kv(env).get('v2:bridge:ops')) || [] });
-            if (method === 'POST') { if ((who.level || 'admin') === 'viewer') return err('Not allowed', 403); const b = await request.json().catch(() => ({})); const clean = (Array.isArray(b.items) ? b.items : []).slice(0, 40).map((x, i) => ({ id: String(x.id || 'o' + Date.now() + i).replace(/[^a-z0-9_]/gi, '').slice(0, 24), title: String(x.title || '').trim().slice(0, 100), owner: String(x.owner || '').trim().slice(0, 50), due: /^\d{4}-\d\d-\d\d$/.test(x.due || '') ? x.due : '', status: ['not started', 'in progress', 'blocked', 'done'].includes(x.status) ? x.status : 'not started', note: String(x.note || '').trim().slice(0, 200) })).filter((x) => x.title); await kv(env).put('v2:bridge:ops', clean); return json({ ok: true, items: clean }); }
+            if (method === 'POST') { if ((who.level || 'admin') === 'viewer') return err('Not allowed', 403); const b = await request.json().catch(() => ({})); const clean = (Array.isArray(b.items) ? b.items : []).slice(0, 40).map((x, i) => ({ id: String(x.id || 'o' + Date.now() + i).replace(/[^a-z0-9_]/gi, '').slice(0, 24), title: String(x.title || '').trim().slice(0, 100), owner: String(x.owner || '').trim().slice(0, 50), due: /^\d{4}-\d\d-\d\d$/.test(x.due || '') ? x.due : '', status: ['not started', 'in progress', 'blocked', 'done'].includes(x.status) ? x.status : 'not started', note: String(x.note || '').trim().slice(0, 200) })).filter((x) => x.title); await kv(env).put('v2:bridge:ops', clean); await bustBridge(env); return json({ ok: true, items: clean }); }
           }
-          if (path === '/api/bridge/milestones' && method === 'POST') { const b = await request.json().catch(() => ({})); if (b.ed_email !== undefined) { if ((who.level || 'admin') !== 'admin') return err('Only an HQ Admin', 403); await kv(env).put('v2:bridge:settings', { ed_email: Boolean(b.ed_email) }); } if (b.milestones) { const r = await saveMilestones(env, who, b.milestones); if (r.error) return err(r.error, r.status || 422); } BR.clear(); return json({ ok: true }); }
+          if (path === '/api/bridge/milestones' && method === 'POST') { const b = await request.json().catch(() => ({})); if (b.ed_email !== undefined) { if ((who.level || 'admin') !== 'admin') return err('Only an HQ Admin', 403); await kv(env).put('v2:bridge:settings', { ed_email: Boolean(b.ed_email) }); } if (b.milestones) { const r = await saveMilestones(env, who, b.milestones); if (r.error) return err(r.error, r.status || 422); } await bustBridge(env); return json({ ok: true }); }
         } catch (e) { return err(String(e.message || e), 500); }
         return err('Not found', 404);
       }
@@ -418,7 +454,7 @@ export default {
         const region = who.role === 'hq' ? (url.searchParams.get('region') || null) : who.region;
         const { sum } = await loadSummary(env, null);
         const brief = await buildBrief(env, sum, eatToday(), region);
-        const ai = who.role === 'volunteer' ? null : await aiBrief(env, brief, region || 'national').catch(() => null);
+        const ai = who.role === 'volunteer' ? null : await aiBrief(env, brief, region || 'national', ctx).catch(() => null);
         return json({ ...brief, ai, ai_enabled: Boolean(env.ANTHROPIC_API_KEY) });
       }
 
@@ -991,6 +1027,8 @@ export default {
         const ranKey = alertSlot + ':' + hhmm;
         if (last[ranKey] !== day) { last[ranKey] = day; await kv(env).put('v2:push:ran', last); const sum = await kv(env).get('v2:sum:' + CURRENT_YEAR); console.log('alerts ' + JSON.stringify(await runAlerts(env, alertSlot, sum)).slice(0, 400)); }
       }
+      try { if (hhmm === '05:30' || hhmm === '12:00') { const rr = await hqReminders(env, ctx, hhmm.replace(':', '')); if (rr && rr.length) console.log('hq reminders ' + JSON.stringify(rr)); } } catch (e) { console.error('hq reminders failed: ' + (e && e.message)); }
+      try { if (hourNow >= 2 && hourNow <= 17 && new Date().getUTCMinutes() % 2 === 0) await refreshBridgeAll(env, ctx); } catch (e) { console.error('bridge refresh failed: ' + (e && e.message)); }
       try { const cs = await syncCalendar(env); if (cs) console.log('calendar ' + JSON.stringify(cs).slice(0, 400)); } catch (e) { console.error('calendar sync failed: ' + (e && e.message)); }
       try { const fj = await maybeRunFormJob(env); if (fj) console.log('formjob ' + JSON.stringify(fj).slice(0, 600)); } catch (e) { console.error('form job failed: ' + (e && e.message)); }
       try { const nw = await runDueNews(env); if (nw.length) console.log('news ' + JSON.stringify(nw)); if (new Date().getUTCMinutes() % 15 === 0) { const ms = await checkMilestones(env); if (ms && ms.length) console.log('milestones ' + JSON.stringify(ms)); } } catch (e) { console.error('news failed: ' + (e && e.message)); }

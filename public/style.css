@@ -432,3 +432,20 @@ tr.bvx td{background:var(--surface2)}
 .linkish{all:unset;cursor:pointer;color:var(--ink);text-decoration:underline dotted;text-underline-offset:3px}.linkish:focus-visible{outline:2px solid var(--teal)}.f3{grid-template-columns:120px 1fr 44px}
 .uxmsg{border:1px dashed var(--line);border-radius:10px;padding:8px 10px;margin:0 0 10px;display:flex;flex-direction:column;gap:6px}.uxmsg.on{border-style:solid;border-color:var(--teal);background:var(--surface2)}.uxmsg .acts{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 div.kpi.bvk{cursor:default}
+
+.chain{display:flex;flex-wrap:wrap;align-items:stretch;gap:4px;margin-top:8px}.chain em{align-self:center;color:var(--ink3);font-style:normal}
+.stp{all:unset;box-sizing:border-box;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:2px;padding:6px 8px;border:1px solid var(--line);border-radius:10px;background:var(--surface);min-width:72px;text-align:center;font-size:11.5px;line-height:1.2}.stp b{font-size:18px}.stp .sd{width:100%;height:4px;border-radius:2px}.stp.me{border-color:var(--brand);box-shadow:0 0 0 2px color-mix(in srgb,var(--brand) 25%,transparent)}.stp:focus-visible{outline:2px solid var(--teal)}
+@media(max-width:640px){.stp{min-width:0;flex:1 1 0;padding:5px 3px;font-size:10.5px}.stp b{font-size:16px}.chain em{display:none}}
+.banner.rem{background:color-mix(in srgb,var(--warn) 18%,var(--surface));border-color:var(--warn)}.banner.rem .acts{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}.banner.rem .xbtn{width:26px;height:26px;font-size:16px}
+/* top bar: logo and name stay at the left edge, everything else sits at the right edge, on every page and screen width */
+header.top .in{max-width:none;margin:0}
+header.top{padding-inline:14px}
+.top .who:empty{display:none}
+@media(min-width:721px){header.top{padding-inline:20px}}
+
+/* long ids, URLs and error text must wrap inside their box and never widen the page */
+#app p,#app .m,#app .sub,#app .banner,#app li,#app .opn,#app .flag span,#app summary,#app h3,#app h4{overflow-wrap:anywhere;word-break:break-word;min-width:0}
+#app .card,#app details.colcard{min-width:0;max-width:100%}
+#app pre,#app code{white-space:pre-wrap;overflow-wrap:anywhere;max-width:100%}
+@media(min-width:641px){.ctl2{display:block}.ctl2 .ctltog{display:none}.ctl2 .ctlbody{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center}}
+@media(max-width:640px){#app .btn.sm,#app .btn.ghost{min-height:34px}#app .pill{min-height:22px}}

@@ -82,28 +82,27 @@ export async function buildBrief(env, sum, today, region = null) {
   return { today, tomorrow, items: out, tomorrow_schools: tomorrowMap };
 }
 
-export async function aiBrief(env, brief, scope) {
+export async function aiBrief(env, brief, scope, ctx) {
   if (!env.ANTHROPIC_API_KEY) return null;
-  const cacheKey = `v2:aibrief:${scope}:${brief.today}:${brief.items.map((i) => i.text).join('|').length}`;
-  const cached = await kv(env).get(cacheKey);
-  if (cached) return cached;
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: { 'x-api-key': env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-    body: JSON.stringify({
-      model: 'claude-sonnet-5-5', max_tokens: 900,
-      system: 'You write the morning briefing for the KiuFunza 4 endline field team in Tanzania. Use ONLY the facts given. Be specific, calm and practical. Output JSON only: {"en":["..."],"sw":["..."]} with 3 to 5 short bullets each. Kiswahili must be natural and simple, matching the English meaning.',
-      messages: [{ role: 'user', content: JSON.stringify({ scope, today: brief.today, facts: brief.items, tomorrow_schools: brief.tomorrow_schools }) }],
-    }),
-  });
-  if (!res.ok) return null;
-  const data = await res.json();
-  const txt = (data.content || []).map((c) => c.text || '').join('');
-  try {
-    const parsed = JSON.parse(txt.slice(txt.indexOf('{'), txt.lastIndexOf('}') + 1));
-    await kv(env).put(cacheKey, parsed);
-    return parsed;
-  } catch {
-    return null;
-  }
+  const latestKey = `v2:aibrief:latest:${scope}`; const sig = brief.today + '|' + brief.items.map((i) => i.text).join('|').length;
+  const last = await kv(env).get(latestKey);
+  if (last && last.sig === sig) return last.v; // same facts as before
+  const fresh = async () => {
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'x-api-key': env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
+      body: JSON.stringify({
+        model: 'claude-sonnet-5-5', max_tokens: 900,
+        system: 'You write the morning briefing for the KiuFunza 4 endline field team in Tanzania. Use ONLY the facts given. Be specific, calm and practical. Output JSON only: {"en":["..."],"sw":["..."]} with 3 to 5 short bullets each. Kiswahili must be natural and simple, matching the English meaning.',
+        messages: [{ role: 'user', content: JSON.stringify({ scope, today: brief.today, facts: brief.items, tomorrow_schools: brief.tomorrow_schools }) }],
+      }),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const txt = (data.content || []).map((c) => c.text || '').join('');
+    try { const parsed = JSON.parse(txt.slice(txt.indexOf('{'), txt.lastIndexOf('}') + 1)); await kv(env).put(latestKey, { sig, v: parsed, t: Date.now(), today: brief.today }); return parsed; } catch { return null; }
+  };
+  // Never make a person wait for the writing: a saved version from earlier today is shown at once while a new one is written behind the scenes (at most every 15 minutes).
+  if (last && last.today === brief.today) { if (Date.now() - last.t > 900e3 && ctx && ctx.waitUntil) ctx.waitUntil(fresh().catch(() => {})); return last.v; }
+  return fresh();
 }

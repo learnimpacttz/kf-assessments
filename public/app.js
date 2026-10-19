@@ -542,14 +542,14 @@ function autoCards(a) {
     const l = c.last;
     out += `<div class="card" style="margin-top:14px"><h3>Calendar file on the phones (automatic)</h3><div class="sub">When on, the file <b>ref_calendar.csv</b> in the Students and Sampling KoBo projects is replaced about 5 minutes after a plan is submitted or changed. It only uploads once every region has submitted its plan. When it uploads, the calendar check switches on for every school in the file, so switch it on only when you are ready. Nothing is deleted from KoBo except the old calendar file.</div>
     <p style="margin:8px 0">${c.enabled ? '<span class="pill good">ON</span>' : '<span class="pill mute">OFF</span>'} Plans submitted: <b>${c.current.regions_submitted} of ${c.current.regions_total}</b> · schools in the file: <b>${c.current.rows}</b> · version <b>${esc(c.current.version)}</b> ${c.pending ? '<span class="pill warn">changes not yet on phones</span>' : '<span class="pill good">up to date</span>'}</p>
-    <p class="m">${l ? (l.skipped ? 'Last check: ' + esc(l.skipped) : 'Last upload ' + eatTime(l.at) + ' · ' + esc(l.version) + ' · ' + l.rows + ' schools · ' + (l.ok ? 'ok' : '<b>FAILED</b>: ' + esc(JSON.stringify(l.results)))) : 'No upload yet.'}</p>
+    <p class="m">${l ? (l.skipped ? 'Last check: ' + esc(l.skipped) : 'Last upload ' + eatTime(l.at) + ' · ' + esc(l.version) + ' · ' + l.rows + ' schools · ' + (l.ok ? 'ok' : '<b>FAILED</b>: ' + esc(JSON.stringify(l.results).slice(0, 300)))) : 'No upload yet.'}</p>
     <p style="margin-top:8px">${c.enabled ? '<button class="btn sm ghost" data-act="calsyncOff">Switch off</button>' : '<button class="btn sm" data-act="calsyncOn">Switch on</button>'} <button class="btn sm ghost" data-act="calsyncRun">Upload now</button></p>${S.calSyncMsg ? `<p class="m">${esc(S.calSyncMsg)}</p>` : ''}</div>`;
   }
   if (f) {
     const r = f.result;
     out += `<div class="card" style="margin-top:14px"><h3>Scheduled replacement of the Sampling form</h3><div class="sub">On ${eatTime(f.run_after)} (EAT) the Sampling project in KoBo is replaced with the standard (non-pilot) form, in the same project. It first checks the live form is the pilot form with no draft, imports, checks the name, question count, calendar check, media files and that the number of submissions is unchanged, and only then deploys. If any check fails, nothing is deployed and HQ gets an email. Submissions are never touched.</div>
     <p style="margin:8px 0">${f.done === 'done' ? '<span class="pill good">done</span>' : f.done === 'failed' ? '<span class="pill bad">stopped, nothing deployed</span>' : f.done === 'expired' ? '<span class="pill mute">expired</span>' : f.armed ? '<span class="pill warn">scheduled</span>' : '<span class="pill mute">canceled</span>'}</p>
-    ${r ? `<p class="m">${eatTime(r.at)} · ${r.ok ? 'replaced: ' + r.rows + ' rows, ' + r.submissions + ' submissions kept. Previous version (for rollback): <b>' + esc(r.previous_version) + '</b>' : '<b>' + esc(r.why) + '</b>'}</p>` : ''}
+    ${r ? `<p class="m">${eatTime(r.at)} · ${r.ok ? 'replaced: ' + r.rows + ' rows, ' + r.submissions + ' submissions kept. Previous version (for rollback): <b>' + esc(r.previous_version) + '</b>' : '<b>' + esc(String(r.why || '').slice(0, 400)) + '</b>'}</p>` : ''}
     <p style="margin-top:8px">${f.armed && !f.done ? '<button class="btn sm ghost" data-act="formJobCancel">Cancel the schedule</button>' : !f.done || f.done === 'failed' || f.done === 'expired' ? '<button class="btn sm" data-act="formJobArm">Schedule it</button>' : ''} ${f.done !== 'done' ? '<button class="btn sm ghost" data-act="formJobRun">Run now</button>' : ''}</p>${S.formJobMsg ? `<p class="m">${esc(S.formJobMsg)}</p>` : ''}</div>`;
   }
   return out;
@@ -1471,6 +1471,14 @@ function renderSide(tabs, badge) {
   const DG = DO ? DESK_GROUPS.slice().sort((x, y) => (DO.indexOf(x[0]) < 0 ? 99 : DO.indexOf(x[0])) - (DO.indexOf(y[0]) < 0 ? 99 : DO.indexOf(y[0]))) : DESK_GROUPS;
   side.innerHTML = DG.map(([g, ks]) => { const items = ks.filter((k) => ok.has(k)); return items.length ? `<div class="sg"><h4>${esc(g)}</h4>${items.map((k) => `<button data-tab="${k}" class="${k === S.tab ? 'on' : ''}">${esc(lab[k] || k)}${badge(k)}</button>`).join('')}</div>` : ''; }).join('');
 }
+// Pending work for an HQ person, on every page: reviews first, each button opens the work itself
+function remBanner() {
+  if (!S.who || S.who.role !== 'hq' || S.viewAs || S.tab === 'today' || !S.br || (S.who.level || 'admin') === 'viewer') return '';
+  let until = 0; try { until = Number(store.get('kf_rem_until') || 0); } catch { /* ignore */ } if (Date.now() < until) return '';
+  const pend = (S.br.needs || []).filter((n) => n.act && ['allq', 'clean', 'questions'].includes(n.act.tab) && /review|waits|wait|request|question|reply/i.test(n.title)); if (!pend.length) return '';
+  const old = S.br.queries && S.br.queries.oldest >= 3;
+  return `<div class="banner rem"><button class="xbtn" data-act="remSnooze" aria-label="Remind me again in an hour" title="Remind me again in an hour">×</button><b>${pend.length === 1 ? 'Something is waiting for you' : pend.length + ' things are waiting for you'}${old ? ' (the oldest for 3 or more days)' : ''}.</b><div class="acts">${pend.slice(0, 3).map((n) => `<button class="btn sm" data-act="bvGo" data-tab="${esc(n.act.tab)}" ${n.act.filter ? `data-flt="${esc(n.act.filter)}"` : ''}>${esc(n.title.length > 46 ? n.title.slice(0, 45) + '…' : n.title)} ›</button>`).join('')}</div></div>`;
+}
 function backBar() {
   if (!S.backTo || S.backTo === S.tab) return '';
   const nm = (TABS[roleKey()].find((t) => t[0] === S.backTo) || [])[1]; if (!nm) return '';
@@ -1504,7 +1512,7 @@ function render() {
   const un = S.tab !== 'news' && S.who && !S.viewAs ? unreadNews()[0] : null;
   const langBanner = S.who && S.who.role === 'volunteer' && S.tab === 'day' && !S.viewAs && LANG() === 'en' && !store.get('kf_lang_seen') ? '<div class="banner" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span style="flex:1;min-width:180px"><b>Kiswahili?</b> Unaweza kutumia programu hii kwa Kiswahili. · You can use this app in Swahili.</span><button class="btn sm" data-act="langSw">Tumia Kiswahili</button><button class="btn sm ghost" data-act="langKeep">English</button></div>' : '';
   const newsBanner = un ? `<div class="banner" style="background:var(--surface2)"><b>News:</b> ${esc(un.title)} <a href="#news" data-tab="news"><b>Read</b></a></div>` : '';
-  $('#app').innerHTML = previewBanner() + langBanner + dmBanner() + planBanner + (S.tab === 'pilot' ? '' : pilotBanner()) + newsBanner + backBar() + VIEWS[S.tab]();
+  $('#app').innerHTML = previewBanner() + langBanner + dmBanner() + planBanner + (S.tab === 'pilot' ? '' : pilotBanner()) + newsBanner + remBanner() + backBar() + VIEWS[S.tab]();
   $('#gswrap').hidden = !S.who;
   applyLayout();
   collapseIntros();
@@ -1517,15 +1525,15 @@ function render() {
 // ---------- Today (HQ start page) ----------
 // ---------- The HQ Bridge (the HQ landing page) ----------
 S.bv ||= { region: 'all', partner: 'all', period: 'field', open: null, sort: ['pctT', -1], row: null, aud: 'ed', upd: null, views: null };
-async function loadBridge(fresh) { try { S.br = await api('/api/bridge' + (fresh ? '?fresh=1' : '')); S.brErr = null; } catch (e) { S.brErr = e.message; } if (S.tab === 'today') render(); }
+async function loadBridge(fresh) { if (S.brBusy) return S.brBusy; S.brBusy = (async () => { try { S.br = await api('/api/bridge' + (fresh ? '?fresh=1' : '')); S.brErr = null; } catch (e) { S.brErr = e.message; } S.brBusy = null; if (S.tab === 'today') render(); })(); return S.brBusy; }
 function bvViews() { try { return JSON.parse(store.get('kf_bviews') || 'null') || [{ name: 'Everything', f: { region: 'all', partner: 'all', period: 'field' } }]; } catch { return [{ name: 'Everything', f: { region: 'all', partner: 'all', period: 'field' } }]; } }
 const dl = (iso) => dayName(iso);
 function bvRegs() {
   const o = S.ov; const pr = (S.pred && S.pred.regions) || {}; const cl = (S.br && S.br.clean.by_region) || {};
   return (o.regions || []).filter((r) => r.region !== 'DODOMA' && (S.bv.region === 'all' || r.region === S.bv.region) && (S.bv.partner === 'all' || partnerOf(r.region) === S.bv.partner)).map((r) => {
-    const f = S.br.field; const planned = f.phase === 'during' ? (r.target * f.day) / f.total : 0; const ser = (r.series || []).filter((x) => x[0] >= f.start); const last7 = ser.slice(-7).map((x) => x[1]);
+    const f = S.br.field; const planned = f.phase === 'during' ? (r.target * Math.max(0, f.day - 1)) / f.total : 0; /* only days already finished count against the plan */ const ser = (r.series || []).filter((x) => x[0] >= f.start); const last7 = ser.slice(-7).map((x) => x[1]);
     const c = cl[r.region] || { records: 0, not_clean: 0, open: 0, overdue: 0, late_notices: 0 };
-    return { ...r, planned, pctT: r.target ? Math.round((100 * r.tested) / r.target) : 0, planPct: f.phase === 'during' ? Math.round((100 * f.day) / f.total) : 0, last7, p: pr[r.region] ? pr[r.region].p_on_time : null, likely: pr[r.region] ? pr[r.region].likely : null, needs: pr[r.region] ? pr[r.region].needed_per_day : null, cleanPct: c.records ? Math.round(1000 * (1 - c.not_clean / c.records)) / 10 : null, openQ: c.open, overdue: c.overdue, late: c.late_notices, partner: partnerOf(r.region) };
+    return { ...r, planned, pctT: r.target ? Math.round((100 * r.tested) / r.target) : 0, planPct: f.phase === 'during' ? Math.round((100 * Math.max(0, f.day - 1)) / f.total) : 0, last7, p: pr[r.region] ? pr[r.region].p_on_time : null, likely: pr[r.region] ? pr[r.region].likely : null, needs: pr[r.region] ? pr[r.region].needed_per_day : null, cleanPct: c.records ? Math.round(1000 * (1 - c.not_clean / c.records)) / 10 : null, openQ: c.open, overdue: c.overdue, late: c.late_notices, partner: partnerOf(r.region) };
   });
 }
 function bvTotals() {
@@ -1547,6 +1555,7 @@ function bvSentence(T, st) {
   const f = S.br.field, c = S.br.clean, pr = S.pred || {}, nat = pr.national; const pct0 = T.target ? Math.round((100 * T.tested) / T.target) : 0;
   if (f.phase === 'before') return `<b>Field work starts ${esc(dl(f.start))}</b> (${f.to_start} working day${f.to_start === 1 ? '' : 's'}). The pilot day is done: ${fmt(T.tested)} of ${fmt(T.target)} pupils tested so far. ${bvProj() ? `Following this year's plan, the last school finishes around <b>${esc(dl(bvProj().likely))}</b>.` : 'No finish projection until a region has a locked plan or three field days of data.'}`;
   const behind = T.regs.filter((r) => r.p != null && r.p < 50).map((r) => title(r.region)); const gap = Math.round(T.tested - T.planned);
+  if (f.phase === 'during' && f.day <= 1) return `<b>Day 1 is under way.</b> ${fmt(T.tested)} of ${fmt(T.target)} pupils tested so far (the pilot day included). The pace is judged from the end of day 1.${bvProj() ? ` Following this year's plan, the last school finishes around <b>${esc(dl(bvProj().likely))}</b>.` : ''}`;
   if (f.phase === 'during') return `<b>${fmt(T.tested)} of ${fmt(T.target)} pupils tested (${pct0}%)</b>, ${gap >= 0 ? fmt(gap) + ' ahead of plan' : fmt(-gap) + ' behind plan'}. ${bvProj() ? `Following the plan and how well it is being kept, the last school finishes around <b>${esc(dl(nat.likely))}</b> (range ${esc(shortDate(nat.earliest))} to ${esc(shortDate(nat.latest))}). ` : ''}${behind.length ? behind.length + ' region' + (behind.length > 1 ? 's are' : ' is') + ' unlikely to finish on time: ' + behind.join(', ') + '. ' : ''}Data is <b>${c.rate}%</b> clean (target 95%).`;
   return `<b>Field work has closed.</b> ${fmt(T.tested)} of ${fmt(T.target)} pupils tested. Data is ${c.rate}% clean with ${S.br.queries.open} checks still open.`;
 }
@@ -1561,7 +1570,7 @@ function bvKpis(T) {
   const per = S.bv.period === 'today' ? `+${fmt(T.today)} today` : S.bv.period === '7d' ? `+${fmt(T.last7)} in 7 days` : S.bv.period === 'custom' ? `+${fmt(rng)} ${esc(shortDate(S.bv.from || S.ov.today))} to ${esc(shortDate(S.bv.to || S.ov.today))}` : `plan ${T.target ? Math.round((100 * T.planned) / T.target) : 0}%`;
   const cards = [
     ['tested', 'Pupils tested', `${fmt(T.tested)}<small> / ${fmt(T.target)}</small>`, `${T.target ? Math.round((100 * T.tested) / T.target) : 0}% · ${per}`, bvBar(T.tested, T.planned, T.target), tst],
-    ['schools', 'Schools complete', `${T.done}<small> / ${T.schools}</small>`, `${T.schools ? Math.round((100 * T.done) / T.schools) : 0}% of schools`, bvBar(T.done, f.phase === 'during' ? (T.schools * f.day) / f.total : 0, T.schools), ['good', 'by plan']],
+    ['schools', 'Schools complete', `${T.done}<small> / ${T.schools}</small>`, `${T.schools ? Math.round((100 * T.done) / T.schools) : 0}% of schools`, bvBar(T.done, f.phase === 'during' ? (T.schools * Math.max(0, f.day - 1)) / f.total : 0, T.schools), ['good', 'by plan']],
     ['clean', 'Data clean rate', `${c.rate}<small>%</small>`, `target 95% · ${c.not_clean} records not clean`, bvBar(c.rate, 95, 100), c.rate >= 95 ? ['good', 'on target'] : c.rate >= 85 ? ['warn', 'below target'] : ['bad', 'low']],
     ['queries', 'Checks open', `${q.open}<small> open</small>`, `${q.waiting} waiting · ${q.team + q.hq1 + q.final} in review · oldest ${q.oldest} d`, '', q.overdue ? ['bad', q.overdue + ' overdue'] : q.open > 20 ? ['warn', 'backlog'] : ['good', 'in hand']],
     ['send', 'Sent the same day', samePct == null ? '–' : `${samePct}<small>%</small>`, `target 95%${visitPct != null ? ' · visits on the planned day ' + visitPct + '%' : ''}`, samePct == null ? '' : bvBar(samePct, 95, 100), samePct == null ? ['good', 'no data yet'] : samePct >= 95 ? ['good', 'on target'] : samePct >= 80 ? ['warn', 'below target'] : ['bad', 'low']],
@@ -1658,6 +1667,16 @@ function bvTalk() {
   const regs = (S.cfg.regions || []).filter((r) => r !== 'DODOMA');
   return `<div class="talk"><div class="acts"><button class="btn sm ${q ? '' : 'sec'}" data-act="bvGo" data-tab="questions">Questions${q ? ' (' + q + ' waiting)' : ''}</button><button class="btn sm sec" data-act="bvGo" data-tab="messages">Direct messages</button><button class="btn sm sec" data-act="bvGo" data-tab="news">News</button></div><div class="opform"><select id="tkReg" aria-label="Message a regional team"><option value="">Message a regional team…</option>${regs.map((r) => `<option value="${r}">${title(r)} team</option>`).join('')}</select><select id="tkPer" aria-label="Message a coordinator"><option value="">Message a coordinator…</option>${rcs.map((x) => `<option value="${esc(x.name)}">${esc(x.name)} · ${esc((x.position || x.role).toString().slice(0, 4))} ${esc(title(x.region))}</option>`).join('')}</select></div></div>`;
 }
+function bvBall() {
+  const q = S.br.queries, lvl = (S.who && S.who.review_level) || 0, mundo = /mundo/i.test((S.who && S.who.name) || '');
+  const mineStage = lvl >= 3 ? 'final' : lvl >= 2 && !mundo ? 'hq1' : null; const nApproved = q.funnel ? q.funnel.approved : 0;
+  const steps = [['waiting', 'Person replies', q.waiting, 'var(--warn)'], ['team', 'Team review', q.team, 'var(--teal)'], ['hq1', 'First HQ review', q.hq1, '#7E8CD0'], ['final', 'Final approval', q.final, 'var(--brand)'], ['done', 'Approved', nApproved, 'var(--good)']];
+  const tot = steps.reduce((a, x) => a + x[2], 0) || 1; const mine = mineStage ? q[mineStage] : 0;
+  const bar = `<div class="stk">${steps.map((x) => `<i style="width:${(100 * x[2]) / tot}%;background:${x[3]}" title="${esc(x[1])}: ${x[2]}"></i>`).join('')}</div>`;
+  const chain = `<div class="chain">${steps.map((x, i) => `<button class="stp ${x[0] === mineStage ? 'me' : ''}" data-act="bvGo" data-tab="allq" ${x[0] === mineStage ? 'data-flt="mine"' : ''} aria-label="${esc(x[1])}: ${x[2]}"><span class="sd" style="background:${x[3]}"></span><b class="num">${x[2]}</b><span>${esc(x[1])}${x[0] === mineStage ? ' · you' : ''}</span></button>${i < steps.length - 1 ? '<em aria-hidden="true">›</em>' : ''}`).join('')}</div>`;
+  const line = mine ? `<b>${mine} ${mine === 1 ? 'query is' : 'queries are'} waiting for you.</b> ` : q.open ? `${q.open} open. ` : 'No open queries. ';
+  return `${line}${q.overdue ? `<span class="pill bad">▲ ${q.overdue} with no reply after 2 working days</span> ` : ''}<span class="m">${q.median_first_reply != null ? 'First reply takes about ' + q.median_first_reply + (q.median_first_reply === 1 ? ' day' : ' days') + '. ' : ''}${q.oldest ? 'Oldest open: ' + q.oldest + ' d.' : ''}</span>${bar}${chain}${mine ? `<div class="acts"><button class="btn sm" data-act="bvGo" data-tab="allq" data-flt="mine">Open my reviews (${mine})</button></div>` : ''}`;
+}
 function bvHealth() {
   const H = S.bv.health; if (!H) return '<div class="empty">Loading…</div>';
   const now = Date.now(); const q = S.br.warnings.find((w) => w.title === 'KoBo submissions');
@@ -1669,7 +1688,7 @@ function viewToday() {
   if (S.brErr) return `<div class="banner bad">${esc(S.brErr)} <button class="btn sm sec" data-act="bvReloadAll">Try again</button></div>`; if (!S.br || S.br.status === 'waiting') { if (!S.br) loadBridge(); return `<div class="pagehead"><div><h2>Bridge</h2><p>Loading…</p></div></div><div class="empty">Loading…</div>`; }
   if (!S.bv.snaps) { S.bv.snaps = []; api('/api/bridge/snapshots').then((r) => { S.bv.snaps = r.items; }).catch(() => {}); } if (!S.bv.upd || (!S.bv.upd.text && !S.bv.updBusy)) { S.bv.upd = { text: '' }; loadUpdate(); }
   const desk = deskNow(); if (!S.bv.ops) { S.bv.ops = []; api('/api/bridge/ops').then((r) => { S.bv.ops = r.items; if (S.tab === 'today') render(); }).catch(() => {}); }
-  if (desk === 'systems' && !S.bv.health) { S.bv.health = null; api('/api/admin/status').then((r) => { S.bv.health = r; if (S.tab === 'today') render(); }).catch(() => { S.bv.health = { sync: {} }; }); }
+  if (desk === 'systems' && !S.bv.health && !S.bv.healthBusy) { S.bv.healthBusy = true; api('/api/admin/status').then((r) => { S.bv.health = r; }).catch(() => { S.bv.health = { sync: {} }; }).then(() => { S.bv.healthBusy = false; if (S.tab === 'today') render(); }); }
   const T = bvTotals(), st = bvStatus(T), f = S.br.field; const views = bvViews();
   const card = (id, h, sub, body, cls = '') => `<div class="card ${cls}" id="bv-${id}"><h3>${h}</h3>${sub ? `<div class="sub">${sub}</div>` : ''}${body}</div>`;
   const sec = {
@@ -1685,16 +1704,17 @@ function viewToday() {
     update: (lite) => card('update', 'Management update', 'Written from the numbers; you edit it, nothing is sent without you.', bvUpdateCard(), lite),
     ops: (lite) => card('ops', 'Operations: procurement, contracting and more', 'Tracked by the management desk.', bvOps(), lite),
     links: (lite) => card('links', 'Reports and analytics', '', `<div class="acts">${[['Reports', 'reports'], ['Compare', 'compare'], ['Data explorer', 'explore'], ['Usage', 'usage'], ['Narratives', 'narr']].map(([n, t2]) => `<button class="btn sm sec" data-act="bvGo" data-tab="${t2}">${n}</button>`).join('')}</div>`, lite),
+    ball: (lite) => card('ball', 'Where the queries are', '', bvBall(), lite),
     talk: (lite) => card('talk', 'Team messages', '', bvTalk(), lite),
     health: (lite) => card('health', 'System health', 'Data sync and KoBo quota.', bvHealth(), lite),
   };
   const ORDER = {
-    coordination: [['needs'], ['talk'], ['head'], ['reg'], ['clean'], ['warn'], ['time'], ['targets', 1], ['update', 1], ['ops', 1]],
-    management: [['needs'], ['talk'], ['head'], ['ops'], ['targets'], ['clean'], ['reg', 1], ['warn', 1], ['time', 1], ['update']],
-    leadership: [['head'], ['time'], ['reg'], ['targets'], ['links'], ['update'], ['needs', 1], ['clean', 1], ['warn', 1], ['ops', 1]],
-    systems: [['health'], ['needs'], ['head'], ['time'], ['reg'], ['clean'], ['warn'], ['targets'], ['update'], ['ops', 1]],
+    coordination: [['ball'], ['needs'], ['talk'], ['head'], ['reg'], ['clean'], ['warn'], ['time'], ['targets', 1], ['update', 1], ['ops', 1]],
+    management: [['ball'], ['needs'], ['talk'], ['head'], ['ops'], ['targets'], ['clean'], ['reg', 1], ['warn', 1], ['time', 1], ['update']],
+    leadership: [['head'], ['ball', 1], ['time'], ['reg'], ['targets'], ['links'], ['update'], ['needs', 1], ['clean', 1], ['warn', 1], ['ops', 1]],
+    systems: [['health'], ['needs'], ['ball'], ['head'], ['time'], ['reg'], ['clean'], ['warn'], ['targets'], ['update'], ['ops', 1]],
   }[desk];
-  const pairClean = desk === 'coordination' || desk === 'systems';
+  if (((S.who && S.who.review_level) || 0) >= 2 && desk !== 'leadership') { const bi = ORDER.findIndex((x) => x[0] === 'ball'); if (bi > 0) ORDER.unshift(ORDER.splice(bi, 1)[0]); } // people in the review chain see it first
   const body = ORDER.map(([k, lite]) => sec[k](lite ? 'lite' : '')).join('');
   return `${dataBanner()}<div class="pagehead"><div><h2>Bridge</h2><p>${esc(dayName(S.ov.today))} · ${DESKS[desk]} desk · practice schools are never counted</p></div></div>${sec.status}${sec.ctl}${body}`;
 }
@@ -1711,6 +1731,7 @@ function bvAction(a, t, e) {
   else if (a === 'bvOpAdd') { const t2 = ($('#opT').value || '').trim(); if (!t2) return; const items = [...S.bv.ops, { title: t2, owner: $('#opO').value, due: $('#opD').value, status: 'not started' }]; bvSaveOps(items); }
   else if (a === 'bvOpDel') { bvSaveOps(S.bv.ops.filter((x) => x.id !== t.dataset.id)); }
   else if (a === 'bvCmd') { const b = $('#gsr'); if (b) b.hidden = true; t.dataset.f = ''; bvAction('bvGo', t); }
+  else if (a === 'remSnooze') { try { store.set('kf_rem_until', String(Date.now() + 3600e3)); } catch { /* ignore */ } toast('Reminder paused for an hour'); render(); }
   else if (a === 'goBack') { const b = S.backTo; S.backTo = null; selectTab(b); }
   else if (a === 'bvGo') { const tab = t.dataset.tab; if (t.dataset.flt === 'mine') { S.qf = { q: '', type: '', sev: '', region: '', st: 'mine' }; } else if (t.dataset.flt === 'overdue') { S.qf = { q: '', type: '', sev: '', region: '', st: 'open' }; } else if (t.dataset.f) { S.qf = { q: '', type: t.dataset.f, sev: '', region: '', st: 'open' }; } else if (t.dataset.region && tab === 'allq') { S.qf = { q: '', type: '', sev: '', region: t.dataset.region, st: 'open' }; } if (t.dataset.region && tab === 'plan') S.planRegion = t.dataset.region; selectTab(tab, S.tab); }
   else if (a === 'bvSaveView') { const name = prompt('Name this view'); if (!name) return; const v = bvViews().filter((x) => x.name !== name); v.push({ name: name.slice(0, 30), f: { region: S.bv.region, partner: S.bv.partner, period: S.bv.period } }); store.set('kf_bviews', JSON.stringify(v)); render(); }
@@ -2568,13 +2589,15 @@ async function loadData() {
   const vol = S.who.role === 'volunteer';
   if (!vol) api('/api/assign-info').then((r) => { S.info = r.items || []; }).catch(() => { S.info = S.info || []; }); // for information: helpers, grade differences
   // everything the first screen needs is fetched at the same time, not one after another
-  const [ov, cmp, pred, brief] = await Promise.all([
+  const late = (p2, set) => p2.then((r) => { set(r); if (S.tab && ['hq', 'region', 'regions', 'today', 'compare'].includes(S.tab)) render(); }).catch(() => {});
+  const gen = S.gen = (S.gen || 0) + 1; // a later load (another year, a preview) makes these results stale
+  const [ov, cmp] = await Promise.all([
     api('/api/overview' + q),
     api('/api/compare' + q).catch(() => null),
-    vol ? null : api('/api/predict').catch(() => null),
-    vol ? null : api('/api/brief').catch(() => null),
   ]);
-  S.ov = ov; S.pub = ov; S.cmp = cmp; S.pred = pred; S.brief = brief;
+  if (!vol) { late(api('/api/predict'), (r) => { if (gen === S.gen) S.pred = r; }); late(api('/api/brief'), (r) => { if (gen === S.gen) S.brief = r; }); }
+  if (S.who.role === 'hq' && !S.viewAs) loadBridge(false);
+  S.ov = ov; S.pub = ov; S.cmp = cmp;
   if (ov.staff) S.staffList = ov.staff;
   if (S.tab === 'plan' || vol) await loadPlan();
   if (S.tab === 'admin') await loadAdmin();
@@ -2734,7 +2757,7 @@ document.addEventListener('click', async (e) => {
     else if (a === 'askAct') { const tx = (document.getElementById('aq-' + t.dataset.id) || {}).value || ''; try { await api('/api/ask', { method: 'POST', body: { action: t.dataset.op, id: t.dataset.id, text: tx } }); } catch (e) { alert(e.message); } await loadAsk(); }
     else if (a === 'qaF') { S.qaF = t.dataset.v; render(); }
     else if (a === 'docGet') { try { const res = await fetch('/api/docs/file?id=' + encodeURIComponent(t.dataset.id), { headers: { 'x-access-code': S.code } }); if (!res.ok) throw new Error('Could not download'); const blob = await res.blob(); const d = (S.docs || []).find((x) => x.id === t.dataset.id) || {}; const a2 = document.createElement('a'); a2.href = URL.createObjectURL(blob); a2.download = d.filename || 'document.docx'; a2.click(); } catch (e) { alert(e.message); } }
-    else if (/^(bv[A-Z]|goBack$)/.test(a)) bvAction(a, t, e);
+    else if (/^(bv[A-Z]|goBack$|remSnooze$)/.test(a)) bvAction(a, t, e);
     else if (a === 'usMode') { S.usMode = t.dataset.k; render(); }
     else if (/^ux[A-Z]/.test(a)) uxAction(a, t);
     else if (a === 'usFilter') { S.usF = t.dataset.v; render(); }
@@ -2845,7 +2868,7 @@ document.addEventListener('change', async (e) => {
   if (S.tab === 'usage' && S.usMode === 'explorer' && uxChange(e)) return;
   if (e.target.id === 'bvFrom' || e.target.id === 'bvTo') { S.bv[e.target.id === 'bvFrom' ? 'from' : 'to'] = e.target.value; render(); return; }
   if (e.target.id === 'tkReg' || e.target.id === 'tkPer') { const v = e.target.value; e.target.value = ''; if (v) openDetail((e.target.id === 'tkReg' ? 'region:' : 'person:') + v); return; }
-  if (e.target.id === 'bvDesk') { try { store.set('kf_desk', e.target.value); } catch { /* ignore */ } S.bv.health = null; render(); return; }
+  if (e.target.id === 'bvDesk') { try { store.set('kf_desk', e.target.value); } catch { /* ignore */ } render(); return; }
   if (e.target.dataset && e.target.dataset.opst) { bvSaveOps(S.bv.ops.map((x) => (x.id === e.target.dataset.opst ? { ...x, status: e.target.value } : x))); return; }
   if (e.target.id === 'bvReg') { S.bv.region = e.target.value; S.bv.partner = 'all'; S.bv.row = null; render(); return; }
   if (e.target.id === 'bvPar') { S.bv.partner = e.target.value; S.bv.region = 'all'; S.bv.row = null; render(); return; }
@@ -2911,7 +2934,10 @@ document.addEventListener('keydown', (e) => {
   const asHash = /^#as=(\w+)(?:\/(\w+))?$/.exec(location.hash);
   if (asHash && S.who.role === 'hq') { S.tab = 'hq'; await go(); history.replaceState(null, '', location.pathname); await setViewAs(asHash[1]); if (asHash[2]) { S.tab = asHash[2]; if (S.tab === 'plan') await loadPlan(); render(); } return; }
   await go();
+  { const m = /^#(?:go=)?([a-z]{2,14})(?:\.(\w+))?$/.exec(location.hash); if (m && TABS[roleKey()] && TABS[roleKey()].some((t) => t[0] === m[1])) { if (m[2] === 'mine' || m[2] === 'overdue') S.qf = { q: '', type: '', sev: '', region: '', st: m[2] === 'mine' ? 'mine' : 'open' }; try { history.replaceState(null, '', location.pathname); } catch { /* ignore */ } await selectTab(m[1]); } }
 })();
+
+setInterval(() => { if (S.who && S.who.role === 'hq' && !S.viewAs && !document.hidden) loadBridge(false); }, 300e3);
 
 // ---------- connection dot (green online, red offline) ----------
 (() => {
