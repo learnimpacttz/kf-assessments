@@ -140,7 +140,7 @@ function fixLinks(f) {
   return out.length ? `<div class="fixrow" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px"><span class="m" style="align-self:center">Fix it:</span>${out.join('')}</div>` : '';
 }
 const PILOT_IDS = new Set(['PS0302005', 'PS0302057', 'PS0302041', 'PS0302023', 'PS0302089']);
-function flagList(all, { limit = 8, names = true, closed = false } = {}) {
+function flagList(all, { limit = 8, names = true, closed = false, more = false } = {}) {
   const flags = closed ? all.slice() : all.filter(isOpen);
   if (!flags.length) return '<div class="empty">No open flags. Nothing needs a call right now.</div>';
   const canResolve = S.who && S.who.role !== 'volunteer';
@@ -149,7 +149,7 @@ function flagList(all, { limit = 8, names = true, closed = false } = {}) {
     const box = qActions(f);
     return `<div class="flag ${isOpen(f) ? 'openq' : 'doneq'}"><i class="st ${f.sev}"></i><div style="min-width:0;flex:1"><b>${lk('school', f.school, f.school_name || f.school)} · ${esc(FLAG_LABEL[f.type] || f.type)}${isOpen(f) && f.qk ? (() => { const ab = qAbility(f); return ab.review ? ' <span class="pill good">I review</span>' : ab.respond ? ' <span class="pill warn">I respond</span>' : ''; })() : ''}</b><span>${esc(f.region ? title(f.region) + ' · ' : '')}${esc(f.lga ? title(f.lga) + ' · ' : '')}${f.grade ? 'Grade ' + f.grade + ' · ' : ''}${esc(f.text)}${names && f.admin ? ' · ' + String(f.admin).split(' and ').map((n) => lk('person', n, n)).join(' and ') : ''}${f.date ? ' · ' + shortDate(f.date) : ''}</span>${f.hint ? `<span class="ft">${esc(f.hint)}</span>` : ''}${fixLinks(f)}${phoneHelp(f)}${thread}<details class="fd"><summary>Details to find the records</summary>${flagDetail(f)}</details>${f.qk ? chainHtml(f) : ''}${f.qk ? box : ''}${f.qk && S.who && S.who.role === 'hq' && !S.viewAs ? noteBtn('query:' + f.qk) : ''}</div></div>`;
   };
-  return flags.slice(0, limit).map(one).join('') + (flags.length > limit ? `<div class="note">+ ${flags.length - limit} more in the data explorer.</div>` : '');
+  return flags.slice(0, limit).map(one).join('') + (flags.length > limit ? (more ? `<div class="acts" style="margin-top:8px"><button class="btn sm" data-act="qMore">Show ${Math.min(20, flags.length - limit)} more (${flags.length - limit} left)</button></div>` : `<div class="note">+ ${flags.length - limit} more in the data explorer.</div>`) : '');
 }
 
 // A short prompt with a link to the queries page: what to answer, what to review, what is still moving
@@ -1020,12 +1020,12 @@ function viewAllQueries() {
   const list = all.filter((f) => (F.st === 'all' || (F.st === 'resolved' ? !isOpen(f) : F.st === 'mine' ? isOpen(f) && needsMe(f) : F.st === 'review' ? isOpen(f) && inReview(f) : isOpen(f))) && (!F.type || f.type === F.type) && (!F.sev || f.sev === F.sev) && (!F.region || f.region === F.region) && (!F.q || [f.school_name, f.school, f.admin, f.lga, f.ward, f.text].join(' ').toLowerCase().includes(F.q.toLowerCase())));
   const types = [...new Set(all.map((f) => f.type))];
   const sel = (key, label, opts) => `<select data-qf="${key}" aria-label="${label}"><option value="">${label}: all</option>${opts.map(([v, t]) => `<option value="${esc(v)}" ${F[key] === v ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select>`;
-  return `${dataBanner()}${infoBlock()}<div class="pagehead"><div><h2>Queries</h2><p>Automatic checks on submitted tests. Open a query for the exact region, school, pupils and times so the person involved can find the records.</p></div></div><div class="card"><div class="toolbar"><input data-qf="q" type="search" placeholder="Search school, person, LGA" value="${esc(F.q)}">${sel('type', 'Check', types.map((t) => [t, FLAG_LABEL[t] || t]))}${sel('sev', 'Severity', [['bad', 'Serious'], ['warn', 'Review']])}${hq ? sel('region', 'Region', S.cfg.regions.map((r) => [r, title(r)])) : ''}<select data-qf="st"><option value="open" ${F.st === 'open' ? 'selected' : ''}>Open</option><option value="mine" ${F.st === 'mine' ? 'selected' : ''}>I review or respond</option><option value="review" ${F.st === 'review' ? 'selected' : ''}>In review</option><option value="resolved" ${F.st === 'resolved' ? 'selected' : ''}>Approved and closed</option><option value="all" ${F.st === 'all' ? 'selected' : ''}>All</option></select><span class="count">${list.length} shown</span></div>${flagListFull(list, 60)}</div>`;
+  return `${dataBanner()}${infoBlock()}<div class="pagehead"><div><h2>Queries</h2><p>Automatic checks on submitted tests. Open a query for the exact region, school, pupils and times so the person involved can find the records.</p></div></div><div class="card"><div class="toolbar"><input data-qf="q" type="search" placeholder="Search school, person, LGA" value="${esc(F.q)}">${sel('type', 'Check', types.map((t) => [t, FLAG_LABEL[t] || t]))}${sel('sev', 'Severity', [['bad', 'Serious'], ['warn', 'Review']])}${hq ? sel('region', 'Region', S.cfg.regions.map((r) => [r, title(r)])) : ''}<select data-qf="st"><option value="open" ${F.st === 'open' ? 'selected' : ''}>Open</option><option value="mine" ${F.st === 'mine' ? 'selected' : ''}>I review or respond</option><option value="review" ${F.st === 'review' ? 'selected' : ''}>In review</option><option value="resolved" ${F.st === 'resolved' ? 'selected' : ''}>Approved and closed</option><option value="all" ${F.st === 'all' ? 'selected' : ''}>All</option></select><span class="count">${list.length} shown</span></div>${flagListFull(list, (window.innerWidth <= 640 ? 12 : 60) + (S.qMore || 0))}</div>`;
 }
 function flagListFull(list, limit) {
   const open = list.filter(() => true);
   if (!open.length) return '<div class="empty">No queries match.</div>';
-  return flagList(open.map((f) => ({ ...f, q: f.q && f.q.status === 'resolved' ? { ...f.q, status: 'open' } : f.q })), { limit });
+  return flagList(open.map((f) => ({ ...f, q: f.q && f.q.status === 'resolved' ? { ...f.q, status: 'open' } : f.q })), { limit, more: true });
 }
 
 // ---------- Phones: what each phone did during the day ----------
@@ -1343,13 +1343,13 @@ function stackTables() {
   });
 }
 function enhanceCollapsible() {
-  if (S.tab !== 'admin' && S.tab !== 'practice' && !(S.tab === 'today' && S.who && S.who.role === 'hq')) return;
+  if (S.tab !== 'admin' && S.tab !== 'practice' && !(S.tab === 'today' && S.who && S.who.role === 'hq') && !(window.innerWidth <= 640 && ['hq', 'usage', 'compare', 'people', 'regions', 'explore', 'reports'].includes(S.tab))) return;
   let first = true;
   document.querySelectorAll('#app .card').forEach((card) => {
     const h = card.querySelector(':scope > h3'); if (!h || card.closest('details') || card.classList.contains('nofold')) return;
     const key = 'kf_col:' + h.textContent.trim(); const saved = store.get(key);
-    const d = document.createElement('details'); d.className = card.className + ' colcard'; d.style.cssText = card.style.cssText;
-    d.open = saved ? saved === 'o' : (S.tab === 'admin' || S.tab === 'practice') ? first : !card.classList.contains('lite'); first = false;
+    const d = document.createElement('details'); d.className = card.className + ' colcard'; d.style.cssText = card.style.cssText; if (card.id) d.id = card.id;
+    d.open = saved ? saved === 'o' : (S.tab === 'admin' || S.tab === 'practice' || S.tab !== 'today') ? first : !card.classList.contains('lite'); first = false;
     const sum = document.createElement('summary'); sum.className = 'colsum'; sum.innerHTML = h.innerHTML; h.remove(); d.appendChild(sum);
     while (card.firstChild) d.appendChild(card.firstChild);
     d.addEventListener('toggle', () => store.set(key, d.open ? 'o' : 'c'));
@@ -1673,7 +1673,7 @@ function bvBall() {
   const steps = [['waiting', 'Person replies', q.waiting, 'var(--warn)'], ['team', 'Team review', q.team, 'var(--teal)'], ['hq1', 'First HQ review', q.hq1, '#7E8CD0'], ['final', 'Final approval', q.final, 'var(--brand)'], ['done', 'Approved', nApproved, 'var(--good)']];
   const tot = steps.reduce((a, x) => a + x[2], 0) || 1; const mine = mineStage ? q[mineStage] : 0;
   const bar = `<div class="stk">${steps.map((x) => `<i style="width:${(100 * x[2]) / tot}%;background:${x[3]}" title="${esc(x[1])}: ${x[2]}"></i>`).join('')}</div>`;
-  const chain = `<div class="chain">${steps.map((x, i) => `<button class="stp ${x[0] === mineStage ? 'me' : ''}" data-act="bvGo" data-tab="allq" ${x[0] === mineStage ? 'data-flt="mine"' : ''} aria-label="${esc(x[1])}: ${x[2]}"><span class="sd" style="background:${x[3]}"></span><b class="num">${x[2]}</b><span>${esc(x[1])}${x[0] === mineStage ? ' · you' : ''}</span></button>${i < steps.length - 1 ? '<em aria-hidden="true">›</em>' : ''}`).join('')}</div>`;
+  const chain = `<div class="chain" role="list">${steps.map((x, i) => `<button role="listitem" class="stp ${x[0] === mineStage ? 'me' : ''} ${x[2] ? '' : 'zero'}" data-act="bvGo" data-tab="allq" ${x[0] === mineStage ? 'data-flt="mine"' : ''} aria-label="${esc(x[1])}: ${x[2]}${x[0] === mineStage ? ', your step' : ''}"><span class="sd" style="background:${x[3]}"></span><span class="sn">${i + 1}</span><b class="num">${x[2]}</b><span class="sl">${esc(x[1])}</span>${x[0] === mineStage ? '<span class="sy">you</span>' : ''}</button>`).join('')}</div>`;
   const line = mine ? `<b>${mine} ${mine === 1 ? 'query is' : 'queries are'} waiting for you.</b> ` : q.open ? `${q.open} open. ` : 'No open queries. ';
   return `${line}${q.overdue ? `<span class="pill bad">▲ ${q.overdue} with no reply after 2 working days</span> ` : ''}<span class="m">${q.median_first_reply != null ? 'First reply takes about ' + q.median_first_reply + (q.median_first_reply === 1 ? ' day' : ' days') + '. ' : ''}${q.oldest ? 'Oldest open: ' + q.oldest + ' d.' : ''}</span>${bar}${chain}${mine ? `<div class="acts"><button class="btn sm" data-act="bvGo" data-tab="allq" data-flt="mine">Open my reviews (${mine})</button></div>` : ''}`;
 }
@@ -1732,6 +1732,7 @@ function bvAction(a, t, e) {
   else if (a === 'bvOpDel') { bvSaveOps(S.bv.ops.filter((x) => x.id !== t.dataset.id)); }
   else if (a === 'bvCmd') { const b = $('#gsr'); if (b) b.hidden = true; t.dataset.f = ''; bvAction('bvGo', t); }
   else if (a === 'remSnooze') { try { store.set('kf_rem_until', String(Date.now() + 3600e3)); } catch { /* ignore */ } toast('Reminder paused for an hour'); render(); }
+  else if (a === 'qMore') { S.qMore = (S.qMore || 0) + 20; render(); }
   else if (a === 'goBack') { const b = S.backTo; S.backTo = null; selectTab(b); }
   else if (a === 'bvGo') { const tab = t.dataset.tab; if (t.dataset.flt === 'mine') { S.qf = { q: '', type: '', sev: '', region: '', st: 'mine' }; } else if (t.dataset.flt === 'overdue') { S.qf = { q: '', type: '', sev: '', region: '', st: 'open' }; } else if (t.dataset.f) { S.qf = { q: '', type: t.dataset.f, sev: '', region: '', st: 'open' }; } else if (t.dataset.region && tab === 'allq') { S.qf = { q: '', type: '', sev: '', region: t.dataset.region, st: 'open' }; } if (t.dataset.region && tab === 'plan') S.planRegion = t.dataset.region; selectTab(tab, S.tab); }
   else if (a === 'bvSaveView') { const name = prompt('Name this view'); if (!name) return; const v = bvViews().filter((x) => x.name !== name); v.push({ name: name.slice(0, 30), f: { region: S.bv.region, partner: S.bv.partner, period: S.bv.period } }); store.set('kf_bviews', JSON.stringify(v)); render(); }
@@ -2654,7 +2655,7 @@ async function go() {
 }
 
 async function selectTab(k, from) {
-  S.backTo = from && from !== k ? from : null;
+  S.backTo = from && from !== k ? from : null; S.qMore = 0;
   if (k === 'pilot') { S.tab = k; render(); await loadPilot(); return; }
   S.tab = k; S.selVisit = null; if (S.tab === 'messages') { render(); await loadMsgs(); } if (S.tab === 'clean') { render(); await loadClean(); } if (S.tab === 'payments') { await loadPayments();  return; } if (S.tab === 'plan') { await loadPlan(); } if (S.tab === 'phones') { S.ph = null; render(); await loadPhones(); } if (S.tab === 'practice') { S.pr = null; render(); await loadPractice(); } if (S.tab === 'news') { await openNews(); } if (S.tab === 'reports') { render(); await openReports(); } if (S.tab === 'narr') { render(); await loadNarr(); } if (S.tab === 'today') { S.bv.upd = null; render(); await loadBridge(false); } if (S.tab === 'ask' || S.tab === 'questions') { render(); await loadAsk(); } if (S.tab === 'usage') { S.ux.key = ''; render(); await loadUsage(); } if (S.tab === 'admin') await loadAdmin(); render();
 }
@@ -2757,7 +2758,7 @@ document.addEventListener('click', async (e) => {
     else if (a === 'askAct') { const tx = (document.getElementById('aq-' + t.dataset.id) || {}).value || ''; try { await api('/api/ask', { method: 'POST', body: { action: t.dataset.op, id: t.dataset.id, text: tx } }); } catch (e) { alert(e.message); } await loadAsk(); }
     else if (a === 'qaF') { S.qaF = t.dataset.v; render(); }
     else if (a === 'docGet') { try { const res = await fetch('/api/docs/file?id=' + encodeURIComponent(t.dataset.id), { headers: { 'x-access-code': S.code } }); if (!res.ok) throw new Error('Could not download'); const blob = await res.blob(); const d = (S.docs || []).find((x) => x.id === t.dataset.id) || {}; const a2 = document.createElement('a'); a2.href = URL.createObjectURL(blob); a2.download = d.filename || 'document.docx'; a2.click(); } catch (e) { alert(e.message); } }
-    else if (/^(bv[A-Z]|goBack$|remSnooze$)/.test(a)) bvAction(a, t, e);
+    else if (/^(bv[A-Z]|goBack$|remSnooze$|qMore$)/.test(a)) bvAction(a, t, e);
     else if (a === 'usMode') { S.usMode = t.dataset.k; render(); }
     else if (/^ux[A-Z]/.test(a)) uxAction(a, t);
     else if (a === 'usFilter') { S.usF = t.dataset.v; render(); }

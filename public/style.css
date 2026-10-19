@@ -449,3 +449,18 @@ header.top{padding-inline:14px}
 #app pre,#app code{white-space:pre-wrap;overflow-wrap:anywhere;max-width:100%}
 @media(min-width:641px){.ctl2{display:block}.ctl2 .ctltog{display:none}.ctl2 .ctlbody{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center}}
 @media(max-width:640px){#app .btn.sm,#app .btn.ghost{min-height:34px}#app .pill{min-height:22px}}
+@media(max-width:640px){button.ib,.ib{min-width:30px;min-height:30px}}
+
+/* Where the queries are: five equal tiles, one per step, same on web and phone */
+.chain{display:grid!important;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;margin-top:12px;align-items:stretch}
+.chain em{display:none!important}
+.stp{position:relative;min-width:0!important;width:auto;flex:none!important;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;padding:14px 6px 10px!important;border:1px solid var(--line);border-radius:12px;background:var(--surface);text-align:center;min-height:92px}
+.stp .sd{position:absolute;left:0;right:0;top:0;height:5px;border-radius:12px 12px 0 0}
+.stp .sn{position:absolute;left:8px;top:11px;font:700 10px var(--f-body);color:var(--ink3)}
+.stp b{font-size:26px!important;line-height:1.1}
+.stp .sl{font-size:12px;line-height:1.25;color:var(--ink2);overflow-wrap:normal;word-break:normal;hyphens:auto}
+.stp .sy{position:absolute;right:6px;top:10px;font:700 9.5px var(--f-body);text-transform:uppercase;letter-spacing:.05em;color:#fff;background:var(--brand);border-radius:9px;padding:1px 6px}
+.stp.zero b{color:var(--ink3)}
+.stp:hover{border-color:var(--ink3)}
+@media(min-width:641px){.stp:not(:last-child)::after{content:'›';position:absolute;right:-9px;top:50%;transform:translateY(-50%);color:var(--ink3);font-size:18px;z-index:1}}
+@media(max-width:640px){.chain{gap:5px}.stp{min-height:84px;padding:12px 2px 8px!important;border-radius:10px}.stp .sd{height:4px}.stp b{font-size:20px!important}.stp .sl{font-size:10px;line-height:1.15}.stp .sn{display:none}.stp .sy{right:3px;top:8px;font-size:8px;padding:1px 4px}}
