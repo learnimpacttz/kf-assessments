@@ -59,22 +59,18 @@ export async function flagRecords(env, who, idsRaw) {
   if (!ids.length) return { records: [] };
   const asset = env.KOBO_ASSET_ID; if (!asset) return { error: 'The student form is not connected' };
   const srv = `https://${env.KOBO_SERVER || 'kf.kobotoolbox.org'}`;
-  const fields = [...FIELDS, 'distance', '_last_edited', '_validation_status'];
   const q = { _id: { $in: ids } };
-  let rows = [];
-  for (const useFields of [true, false]) {
-    const url = `${srv}/api/v2/assets/${asset}/data/?format=json&limit=100&query=${encodeURIComponent(JSON.stringify(q))}` + (useFields ? `&fields=${encodeURIComponent(JSON.stringify(fields))}` : '');
-    const r = await fetch(url, { headers: { Authorization: `Token ${env.KOBO_TOKEN}` } });
-    if (r.ok) { rows = (await r.json()).results || []; break; }
-    if (!useFields) return { error: 'KoBo could not be read just now. Try again in a minute.' };
-  }
+  // whole records (at most 40) so the test set, which sits under a different name per grade, can be found
+  const r0 = await fetch(`${srv}/api/v2/assets/${asset}/data/?format=json&limit=100&query=${encodeURIComponent(JSON.stringify(q))}`, { headers: { Authorization: `Token ${env.KOBO_TOKEN}` } });
+  if (!r0.ok) return { error: 'KoBo could not be read just now. Try again in a minute.' };
+  const rows = (await r0.json()).results || [];
   const me = String(who.name || '').toLowerCase();
   const hm = (iso) => (iso ? String(iso).slice(11, 16) : '');
   const out = rows.map((r) => {
     const school = sfx(r, 'school') || ''; const region = SCHOOL_BY_ID[school]?.region || ''; const tt = sfx(r, 'testtime_rounded'); const enumerator = sfx(r, 'enumerator') || '';
     const sub = r._submission_time || ''; const end = r.end || ''; const lagMs = sub && end ? Date.parse(sub + (/[zZ]|[+-]\d\d:?\d\d$/.test(sub) ? '' : 'Z')) - Date.parse(end) : null;
     const ed = r._last_edited && sub && Math.abs(Date.parse(r._last_edited) - Date.parse(sub + (/[zZ]|[+-]\d\d:?\d\d$/.test(sub) ? '' : 'Z'))) > 120e3 ? String(r._last_edited).slice(0, 16).replace('T', ' ') : '';
-    return { id: r._id, stuid: r.stuid || '', rand: r['stu_info/rand_nr'] ?? sfx(r, 'rand_nr') ?? '', enumerator, region, school, grade: String(sfx(r, 'grade') ?? ''), date: String(sfx(r, 'date') || r.today || '').slice(0, 10), start: hm(r.start), end: hm(end), mins: tt === undefined || tt === '' ? '' : Number(tt), sub: (() => { const t = sub ? Date.parse(sub + (/[zZ]|[+-]\d\d:?\d\d$/.test(sub) ? '' : 'Z')) : NaN; return Number.isFinite(t) ? new Date(t + 3 * 3600e3).toISOString().slice(0, 16).replace('T', ' ') : ''; })(), /* East Africa Time */ lag_h: lagMs != null && Number.isFinite(lagMs) ? Math.round((lagMs / 3600e3) * 10) / 10 : null, phone: r.deviceid ? devCode(r.deviceid) : '', present: String(r.stu_avail) === '2' ? 'absent' : 'present', distance: r.distance != null && r.distance !== '' ? Math.round(Number(r.distance)) : null, edited_at: ed, validation: (r._validation_status && r._validation_status.label) || '' };
+    return { id: r._id, stuid: r.stuid || '', rand: r['stu_info/rand_nr'] ?? sfx(r, 'rand_nr') ?? '', enumerator, region, school, grade: String(sfx(r, 'grade') ?? ''), date: String(sfx(r, 'date') || r.today || '').slice(0, 10), start: hm(r.start), end: hm(end), mins: tt === undefined || tt === '' ? '' : Number(tt), sub: (() => { const t = sub ? Date.parse(sub + (/[zZ]|[+-]\d\d:?\d\d$/.test(sub) ? '' : 'Z')) : NaN; return Number.isFinite(t) ? new Date(t + 3 * 3600e3).toISOString().slice(0, 16).replace('T', ' ') : ''; })(), /* East Africa Time */ lag_h: lagMs != null && Number.isFinite(lagMs) ? Math.round((lagMs / 3600e3) * 10) / 10 : null, phone: r.deviceid ? devCode(r.deviceid) : '', set: (() => { for (const k in r) if (/k[123]set$/.test(k) && r[k] !== '' && r[k] != null) return String(r[k]); return ''; })(), present: String(r.stu_avail) === '2' ? 'absent' : 'present', distance: r.distance != null && r.distance !== '' ? Math.round(Number(r.distance)) : null, edited_at: ed, validation: (r._validation_status && r._validation_status.label) || '' };
   }).filter((x) => who.role === 'hq' || (who.role === 'volunteer' ? x.enumerator.toLowerCase() === me : x.region === who.region));
   return { records: out };
 }
