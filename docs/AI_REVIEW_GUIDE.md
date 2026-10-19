@@ -30,7 +30,7 @@ Open Claude (the organization plan) or Claude Code in the repository and paste t
 5. Check the release timing: not between 07:00 and 17:00 East Africa Time during field work, unless it fixes a live problem.
 
 ## Step 3: decide and record
-Write one line on the pull request: **Approved**, **Approved with conditions (list them)**, or **Not approved (why)**. Medium and High changes also need the approver's name from the standard (currently the Senior Finance and Operations Officer for the plan and the Executive Director for the technical review of High changes).
+Write one line on the pull request: **Approved**, **Approved with conditions (list them)**, or **Not approved (why)**. Medium and High changes are reviewed and approved by the Executive Director (with this guide) until an independent reviewer is in place; the Deputy adds a field-impact check (timing, who must be told, guides updated).
 
 ## Claude Code shortcut
 In Claude Code, running `/code-review` on a branch reviews the current change. Use it as a second opinion, then follow Steps 2 and 3.
