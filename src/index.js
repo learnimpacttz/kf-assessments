@@ -335,7 +335,7 @@ export default {
       if (path.startsWith('/api/bridge')) {
         if (who.role !== 'hq') return err('HQ only', 403);
         try {
-          if (path === '/api/bridge') { const v = await bridgeFor(env, who, url.searchParams.get('fresh') === '1', ctx); return v ? json(v.br) : json({ status: 'waiting' }); }
+          if (path === '/api/bridge') { const v = await bridgeFor(env, who, url.searchParams.get('fresh') === '1', ctx); if (!v) return json({ status: 'waiting' }); const hid = Array.isArray(who.hide) ? who.hide : []; if (hid.length) { const br = { ...v.br, needs: (v.br.needs || []).filter((n) => !(hid.includes('ops') && /operations item/i.test(n.title)) && !(hid.includes('messages') && /question/i.test(n.title))) }; return json(br); } return json(v.br); }
           if (path === '/api/bridge/update') { const v = await bridgeFor(env, who, false, ctx); if (!v) return err('No data yet', 404); const aud = url.searchParams.get('audience') || 'ed'; const u = await buildUpdate(env, aud, v.br, await sumNow(env)); return json({ audience: aud, audiences: AUDIENCES, ...u }); }
           if (path === '/api/bridge/snapshots') return json({ items: await listSnapshots(env) });
           if (path === '/api/bridge/snapshot' && method === 'POST') { if ((who.level || 'admin') === 'viewer') return err('Not allowed', 403); const b = await request.json().catch(() => ({})); return json(await saveSnapshot(env, who, b)); }

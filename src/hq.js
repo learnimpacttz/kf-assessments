@@ -6,10 +6,15 @@
 import { kv } from './store.js';
 import { hmacHex, toCode } from './auth.js';
 import { TARGETS } from './own.js';
+import { eatToday } from './config.js';
 
 export const LEVELS = { admin: 'Admin', editor: 'Editor', viewer: 'Viewer' };
 // A desk is how someone looks at the whole system (their Bridge and menu order). It never grants or removes access.
 export const DESKS = { coordination: 'Coordination', management: 'Management', leadership: 'Leadership', systems: 'Systems' };
+// What an Advisor (a read-only consultant) does not see. Enforced in the app and, for the pages with their own data, on the server.
+export const HIDE_KEYS = ['messages', 'questions', 'notes', 'people', 'phones', 'usage', 'payments', 'clean', 'pilot', 'practice', 'ops'];
+export const ADVISOR_HIDE = [...HIDE_KEYS];
+const HIDE_PATHS = { messages: ['/api/dm', '/api/talk'], questions: ['/api/ask'], notes: ['/api/hqnotes'], usage: ['/api/usage/report', '/api/usage/explore'], payments: ['/api/payments'], phones: ['/api/phones'], clean: ['/api/corrections', '/api/deletions'], pilot: ['/api/pilot'], practice: ['/api/practice'] };
 const SEED_DESK = { h1: 'management', h2: 'coordination', h3: 'systems' };
 export const deskOf = (u) => (u && DESKS[u.desk] ? u.desk : u && SEED_DESK[u.id] ? SEED_DESK[u.id] : !u || u.level === 'admin' ? 'systems' : u.level === 'viewer' ? 'leadership' : 'coordination');
 const HQKEY = 'v2:hq', SETKEY = 'v2:settings', ACTKEY = 'v2:activity';
@@ -36,12 +41,12 @@ export async function codeFor(env, u) {
 export async function hqByCode(env, code) {
   if (!env.AUTH_SALT || !code) return null;
   const d = await loadHq(env); const c = String(code).toUpperCase();
-  for (const u of d.users) if (u.active !== false && (await codeFor(env, u)) === c) return u;
+  for (const u of d.users) if (u.active !== false && (await codeFor(env, u)) === c) { if (u.expires_at && eatToday() > u.expires_at) return null; return u; }
   return null;
 }
 export async function hqList(env) {
   const d = await loadHq(env, true);
-  return { shared_enabled: d.shared_enabled !== false, users: await Promise.all(d.users.map(async (u) => ({ id: u.id, name: u.name, email: u.email || '', level: u.level, review_level: u.review_level || 0, desk: deskOf(u), active: u.active !== false, code: u.active === false ? null : await codeFor(env, u) }))) };
+  return { shared_enabled: d.shared_enabled !== false, users: await Promise.all(d.users.map(async (u) => ({ id: u.id, name: u.name, email: u.email || '', level: u.level, review_level: u.review_level || 0, desk: deskOf(u), hide: Array.isArray(u.hide) ? u.hide : [], expires_at: u.expires_at || '', active: u.active !== false, code: u.active === false ? null : await codeFor(env, u) }))) };
 }
 const activeAdmins = (d) => d.users.filter((u) => u.active !== false && u.level === 'admin').length;
 export async function hqChange(env, who, b) {
@@ -51,13 +56,16 @@ export async function hqChange(env, who, b) {
     const name = String(b.name || '').trim().slice(0, 80); if (!name) return { error: 'Write the name' };
     if (!LEVELS[b.level]) return { error: 'Choose a level' };
     const n = Math.max(0, ...d.users.map((u) => Number(String(u.id).slice(1)) || 0)) + 1;
-    d.users.push({ id: 'h' + n, name, email: String(b.email || '').trim().toLowerCase().slice(0, 120), level: b.level, desk: DESKS[b.desk] ? b.desk : undefined, rot: 0, active: true, created_at: new Date().toISOString() });
+    d.users.push({ id: 'h' + n, name, email: String(b.email || '').trim().toLowerCase().slice(0, 120), level: b.level, desk: DESKS[b.desk] ? b.desk : undefined, hide: b.preset === 'advisor' ? ADVISOR_HIDE : [], expires_at: /^\d{4}-\d\d-\d\d$/.test(b.expires_at || '') ? b.expires_at : '', rot: 0, active: true, created_at: new Date().toISOString() });
   } else if (b.action === 'update') {
     const u = d.users.find((x) => x.id === b.id); if (!u) return { error: 'Not found', status: 404 };
     if (b.name != null) u.name = String(b.name).trim().slice(0, 80) || u.name;
     if (b.email != null) u.email = String(b.email).trim().toLowerCase().slice(0, 120);
     if (b.level != null) { if (!LEVELS[b.level]) return { error: 'Choose a level' }; u.level = b.level; }
     if (b.desk != null) { if (!DESKS[b.desk]) return { error: 'Choose a desk' }; u.desk = b.desk; }
+    if (b.preset === 'advisor') { u.level = 'viewer'; u.desk = 'leadership'; u.review_level = 0; u.hide = [...ADVISOR_HIDE]; }
+    else if (b.preset === 'full') u.hide = [];
+    if (b.expires_at != null) { const x = String(b.expires_at); if (x && !/^\d{4}-\d\d-\d\d$/.test(x)) return { error: 'Use a date' }; u.expires_at = x; }
     if (b.active != null) u.active = Boolean(b.active);
     if (b.review_level != null) { const rl = Number(b.review_level); if (![0, 2, 3].includes(rl)) return { error: 'Choose a review role' }; u.review_level = rl; }
     if (u.level === 'viewer') u.review_level = 0; // a Viewer cannot approve anything
@@ -78,6 +86,7 @@ export async function hqChange(env, who, b) {
 // ---- who may do what (the server decides; the screens only hide what you cannot use) ----
 export function levelGate(who, method, path) {
   if (!who || who.role !== 'hq' || who.viewAs) return null;
+  if (Array.isArray(who.hide) && who.hide.length) for (const k of who.hide) for (const pre of HIDE_PATHS[k] || []) if (path === pre || path.startsWith(pre + '/')) return 'This page is not part of your access.';
   const lv = who.level || 'admin'; if (lv === 'admin') return null;
   const read = method === 'GET' || method === 'HEAD';
   if (path.startsWith('/api/admin/')) {
