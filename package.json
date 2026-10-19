@@ -1,5 +1,18 @@
 {
   "dependencies": {
     "qrcode-generator": "^2.0.4"
+  },
+  "name": "kf-assessments",
+  "private": true,
+  "scripts": {
+    "test": "node test/run_all.mjs",
+    "check:live": "node test/live_access_check.mjs",
+    "deploy": "wrangler deploy",
+    "whoami": "wrangler whoami",
+    "logs": "wrangler tail"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2",
+    "wrangler": "^4.151.2"
   }
 }
