@@ -50,3 +50,31 @@ export async function workFiles(env, who, p) {
   const sampling = smp.filter(mine).map((r) => { let drawn = 0; for (let i = 1; i <= 40; i++) { const v = sfx(r, 'int' + i); if (v !== undefined && v !== null && v !== '') drawn++; } return { id: r._id, grade: String(sfx(r, 'grade_conf') ?? sfx(r, 'grade') ?? ''), register: sfx(r, 'att') === undefined ? null : Number(sfx(r, 'att')), drawn, at: (r.start || '').slice(11, 16), sub: (r._submission_time || '').slice(0, 16).replace('T', ' ') }; }).sort((a, b) => (a.grade + a.at).localeCompare(b.grade + b.at));
   return { name, school, date, pupils: pupils.slice(0, 600), pupils_total: pupils.length, present: pupils.filter((x) => x.present === 'present').length, absent: pupils.filter((x) => x.present === 'absent').length, sampling };
 }
+
+// The full detail of the records a query points at, read from KoBo by record number (numbers only, no names).
+// HQ sees any; an RC or ARC sees their region; a test admin sees their own.
+export async function flagRecords(env, who, idsRaw) {
+  if (!['hq', 'rc', 'arc', 'volunteer'].includes(who.role)) return { error: 'Not allowed', status: 403 };
+  const ids = [...new Set(String(idsRaw || '').split(',').map((x) => Number(x)).filter((x) => Number.isInteger(x) && x > 0))].slice(0, 40);
+  if (!ids.length) return { records: [] };
+  const asset = env.KOBO_ASSET_ID; if (!asset) return { error: 'The student form is not connected' };
+  const srv = `https://${env.KOBO_SERVER || 'kf.kobotoolbox.org'}`;
+  const fields = [...FIELDS, 'distance', '_last_edited', '_validation_status'];
+  const q = { _id: { $in: ids } };
+  let rows = [];
+  for (const useFields of [true, false]) {
+    const url = `${srv}/api/v2/assets/${asset}/data/?format=json&limit=100&query=${encodeURIComponent(JSON.stringify(q))}` + (useFields ? `&fields=${encodeURIComponent(JSON.stringify(fields))}` : '');
+    const r = await fetch(url, { headers: { Authorization: `Token ${env.KOBO_TOKEN}` } });
+    if (r.ok) { rows = (await r.json()).results || []; break; }
+    if (!useFields) return { error: 'KoBo could not be read just now. Try again in a minute.' };
+  }
+  const me = String(who.name || '').toLowerCase();
+  const hm = (iso) => (iso ? String(iso).slice(11, 16) : '');
+  const out = rows.map((r) => {
+    const school = sfx(r, 'school') || ''; const region = SCHOOL_BY_ID[school]?.region || ''; const tt = sfx(r, 'testtime_rounded'); const enumerator = sfx(r, 'enumerator') || '';
+    const sub = r._submission_time || ''; const end = r.end || ''; const lagMs = sub && end ? Date.parse(sub + (/[zZ]|[+-]\d\d:?\d\d$/.test(sub) ? '' : 'Z')) - Date.parse(end) : null;
+    const ed = r._last_edited && sub && Math.abs(Date.parse(r._last_edited) - Date.parse(sub + (/[zZ]|[+-]\d\d:?\d\d$/.test(sub) ? '' : 'Z'))) > 120e3 ? String(r._last_edited).slice(0, 16).replace('T', ' ') : '';
+    return { id: r._id, stuid: r.stuid || '', rand: r['stu_info/rand_nr'] ?? sfx(r, 'rand_nr') ?? '', enumerator, region, school, grade: String(sfx(r, 'grade') ?? ''), date: String(sfx(r, 'date') || r.today || '').slice(0, 10), start: hm(r.start), end: hm(end), mins: tt === undefined || tt === '' ? '' : Number(tt), sub: (() => { const t = sub ? Date.parse(sub + (/[zZ]|[+-]\d\d:?\d\d$/.test(sub) ? '' : 'Z')) : NaN; return Number.isFinite(t) ? new Date(t + 3 * 3600e3).toISOString().slice(0, 16).replace('T', ' ') : ''; })(), /* East Africa Time */ lag_h: lagMs != null && Number.isFinite(lagMs) ? Math.round((lagMs / 3600e3) * 10) / 10 : null, phone: r.deviceid ? devCode(r.deviceid) : '', present: String(r.stu_avail) === '2' ? 'absent' : 'present', distance: r.distance != null && r.distance !== '' ? Math.round(Number(r.distance)) : null, edited_at: ed, validation: (r._validation_status && r._validation_status.label) || '' };
+  }).filter((x) => who.role === 'hq' || (who.role === 'volunteer' ? x.enumerator.toLowerCase() === me : x.region === who.region));
+  return { records: out };
+}

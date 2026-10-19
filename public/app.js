@@ -716,6 +716,33 @@ function regionCard(r) {
   <h3 style="margin:16px 0 4px">Schools</h3><div class="tbl"><table><thead><tr><th>School</th><th>LGA</th><th>Status</th></tr></thead><tbody>${schools.map((s) => `<tr><td>${lk('school', s.id, s.name)}</td><td>${esc(title(s.lga))}</td><td>${statusPill(s)}</td></tr>`).join('') || '<tr><td colspan="3" class="empty">Open the Data explorer to load schools.</td></tr>'}</tbody></table></div>`;
 }
 
+// Records a query points at: the short list from the summary at once, then the full detail from KoBo when the box is opened
+const frIds = (f) => (f.recs || []).map((r) => r[5]).filter((x) => Number.isInteger(Number(x)) && Number(x) > 0).join(',');
+function frTable(f, baseRows) {
+  const ids = frIds(f); const D = S.fr && S.fr[ids];
+  const base = `<div class="tbl"><table class="dt"><thead><tr><th>Pupil ID</th><th class="r">Pupil no.</th><th class="r">Test min</th><th class="r">Started</th><th class="r">Test set</th><th class="r">KoBo ID</th></tr></thead><tbody>${baseRows}</tbody></table></div>`;
+  if (!D) return base + (ids ? '<div class="m">Loading the full detail from KoBo…</div>' : '');
+  if (D.err) return base + `<div class="m">${esc(D.err)}</div>`;
+  const by = new Map((D.records || []).map((r) => [String(r.id), r])); const rows = (f.recs || []).map((b) => { const r = by.get(String(b[5])); return { b, r }; });
+  if (!rows.some((x) => x.r)) return base + '<div class="m">The full detail was not found in KoBo for these records (they may be from the sampling form).</div>';
+  const lag = (h) => (h == null ? '–' : h < 1 ? Math.round(h * 60) + ' min' : h + ' h');
+  const fl = (f.type || '');
+  const line = ({ b, r }) => {
+    const mins = r && r.mins !== '' ? r.mins : b[2] === '' || b[2] == null ? '' : b[2];
+    const warnT = (fl === 'fast' && mins !== '' && Number(mins) < 3) || (fl === 'slow') ? ' class="r num hot"' : ' class="r num"';
+    return `<tr><td class="num">${esc(b[0] || (r && r.stuid) || '–')}</td><td class="r num">${esc(b[1] === '' ? (r && r.rand !== '' ? r.rand : '–') : b[1])}</td><td>${r && r.enumerator ? lk('person', r.enumerator, r.enumerator) : (f.admin ? lk('person', f.admin, f.admin) : '–')}</td><td class="num">${r && r.date ? esc(shortDate(r.date)) : '–'}</td><td class="num">${r && r.start ? esc(r.start) + (r.end ? '–' + esc(r.end) : '') : esc(b[3] || '–')}</td><td${warnT}>${mins === '' ? '–' : esc(mins)}</td><td class="num">${r && r.sub ? esc(r.sub.slice(5)) : '–'}${r && r.lag_h != null ? `<div class="m">${lag(r.lag_h)} after the test</div>` : ''}${r && r.edited_at ? `<div class="m"><span class="pill warn">changed ${esc(r.edited_at.slice(5))}</span></div>` : ''}</td><td class="num">${r && r.phone ? esc(r.phone) : '–'}</td><td class="num">${[b[4] !== '' && b[4] != null ? 'set ' + esc(b[4]) : '', r && r.distance != null && fl === 'gps' ? esc(r.distance) + ' m from school' : '', r && r.present === 'absent' ? 'absent' : ''].filter(Boolean).join(' · ') || '–'}</td><td class="r num">${esc(b[5] === '' ? '–' : b[5])}</td></tr>`;
+  };
+  return `<div class="tbl"><table class="dt"><thead><tr><th>Pupil ID</th><th class="r">Pupil no.</th><th>Test admin</th><th>Test date</th><th>Start–end</th><th class="r">Test min</th><th>Sent to KoBo</th><th>Phone</th><th>Notes</th><th class="r">KoBo ID</th></tr></thead><tbody>${rows.map(line).join('')}</tbody></table></div>`;
+}
+document.addEventListener('toggle', (e) => {
+  const d = e.target; if (!d || d.tagName !== 'DETAILS' || !d.open) return;
+  d.querySelectorAll('.frwrap[data-fr]:not([data-done])').forEach(async (w) => {
+    const ids = w.dataset.fr; w.dataset.done = '1'; if (!ids) return; S.fr ||= {};
+    if (!S.fr[ids]) { try { S.fr[ids] = await api('/api/flag-records?ids=' + encodeURIComponent(ids)); } catch (err) { S.fr[ids] = { err: err.message || 'Could not load the detail' }; } }
+    const f = (flagsAll() || []).find((x) => frIds(x) === ids); if (f) w.innerHTML = frTable(f, (f.recs || []).map((r) => `<tr><td class="num">${esc(r[0] || '–')}</td><td class="r num">${esc(r[1] === '' ? '–' : r[1])}</td><td class="r num">${r[2] === '' ? '–' : esc(r[2])}</td><td class="r num">${esc(r[3] || '–')}</td><td class="r num">${esc(r[4] === '' || r[4] == null ? '–' : r[4])}</td><td class="r num">${esc(r[5] === '' ? '–' : r[5])}</td></tr>`).join(''));
+    stackTables();
+  });
+}, true);
 function flagDetail(f) {
   const s = SCHOOL_INFO(f.school);
   const recs = (f.recs || []).map((r) => `<tr><td class="num">${esc(r[0] || '–')}</td><td class="r num">${esc(r[1] === '' ? '–' : r[1])}</td><td class="r num">${r[2] === '' ? '–' : esc(r[2])}</td><td class="r num">${esc(r[3] || '–')}</td><td class="r num">${esc(r[4] === '' || r[4] == null ? '–' : r[4])}</td><td class="r num">${esc(r[5] === '' ? '–' : r[5])}</td></tr>`).join('');
@@ -724,7 +751,7 @@ function flagDetail(f) {
   <tr><th>Ward</th><td>${esc(title(f.ward || s.ward || ''))}</td><th>School</th><td>${lk('school', f.school, f.school_name || s.name || f.school)} <span class="m">(${esc(f.school)})</span></td></tr>
   <tr><th>Grade</th><td>${f.grade ? 'Grade ' + f.grade : 'All grades'}</td><th>Test admin</th><td>${f.admin ? lk('person', f.admin, f.admin) : '–'}</td></tr>
   <tr><th>Test date</th><td>${f.date ? dayName(f.date) : '–'}</td><th>Normal</th><td>${esc(f.normal || '–')}</td></tr></tbody></table>
-  ${recs ? `<div class="tbl"><table class="dt"><thead><tr><th>Pupil ID</th><th class="r">Pupil no.</th><th class="r">Test min</th><th class="r">Started</th><th class="r">Test set</th><th class="r">KoBo ID</th></tr></thead><tbody>${recs}</tbody></table></div>` : '<div class="note">Pupil-level detail is shown for newly submitted data. Older records list only the school, grade, admin and date.</div>'}
+  ${recs ? `<div class="frwrap" data-fr="${esc(frIds(f))}">${frTable(f, recs)}</div>` : '<div class="note">Pupil-level detail is shown for newly submitted data. Older records list only the school, grade, admin and date.</div>'}
   ${f.evs ? `<div class="tbl"><table class="dt"><thead><tr><th>Start</th><th>End</th><th>Phone</th><th>Name</th><th>School</th><th class="r">Grade</th><th>Form</th></tr></thead><tbody>${f.evs.map((r) => `<tr><td class="num">${esc(r[0])}</td><td class="num">${esc(r[1])}</td><td class="num">${esc(r[2])}</td><td>${esc(r[3])}</td><td>${esc(r[4])}</td><td class="r">${esc(r[5])}</td><td>${r[6] === 's' ? 'Sampling' : 'Test'}</td></tr>`).join('')}</tbody></table></div>` : ''}
   ${koboButtons(f)}
   <div class="note" style="margin-top:8px">To find these in KoBo: open the student form's data table, filter on <b>school</b> ${esc(f.school)}, <b>grade</b> ${esc(f.grade || '')}, <b>date</b> ${esc(f.date || '')}, then look up the Pupil ID (stuid) or the KoBo ID (_id). Pupil names are never shown here.</div></div>`;
@@ -1673,7 +1700,7 @@ function bvBall() {
   const steps = [['waiting', 'Person replies', q.waiting, 'var(--warn)'], ['team', 'Team review', q.team, 'var(--teal)'], ['hq1', 'First HQ review', q.hq1, '#7E8CD0'], ['final', 'Final approval', q.final, 'var(--brand)'], ['done', 'Approved', nApproved, 'var(--good)']];
   const tot = steps.reduce((a, x) => a + x[2], 0) || 1; const mine = mineStage ? q[mineStage] : 0;
   const bar = `<div class="stk">${steps.map((x) => `<i style="width:${(100 * x[2]) / tot}%;background:${x[3]}" title="${esc(x[1])}: ${x[2]}"></i>`).join('')}</div>`;
-  const chain = `<div class="chain" role="list">${steps.map((x, i) => `<button role="listitem" class="stp ${x[0] === mineStage ? 'me' : ''} ${x[2] ? '' : 'zero'}" data-act="bvGo" data-tab="allq" ${x[0] === mineStage ? 'data-flt="mine"' : ''} aria-label="${esc(x[1])}: ${x[2]}${x[0] === mineStage ? ', your step' : ''}"><span class="sd" style="background:${x[3]}"></span><span class="sn">${i + 1}</span><b class="num">${x[2]}</b><span class="sl">${esc(x[1])}</span>${x[0] === mineStage ? '<span class="sy">you</span>' : ''}</button>`).join('')}</div>`;
+  const chain = `<div class="chain bvchain" role="list">${steps.map((x, i) => `<button role="listitem" class="stp ${x[0] === mineStage ? 'me' : ''} ${x[2] ? '' : 'zero'}" data-act="bvGo" data-tab="allq" ${x[0] === mineStage ? 'data-flt="mine"' : ''} aria-label="${esc(x[1])}: ${x[2]}${x[0] === mineStage ? ', your step' : ''}"><span class="sd" style="background:${x[3]}"></span><span class="sn">${i + 1}</span><b class="num">${x[2]}</b><span class="sl">${esc(x[1])}</span>${x[0] === mineStage ? '<span class="sy">you</span>' : ''}</button>`).join('')}</div>`;
   const line = mine ? `<b>${mine} ${mine === 1 ? 'query is' : 'queries are'} waiting for you.</b> ` : q.open ? `${q.open} open. ` : 'No open queries. ';
   return `${line}${q.overdue ? `<span class="pill bad">▲ ${q.overdue} with no reply after 2 working days</span> ` : ''}<span class="m">${q.median_first_reply != null ? 'First reply takes about ' + q.median_first_reply + (q.median_first_reply === 1 ? ' day' : ' days') + '. ' : ''}${q.oldest ? 'Oldest open: ' + q.oldest + ' d.' : ''}</span>${bar}${chain}${mine ? `<div class="acts"><button class="btn sm" data-act="bvGo" data-tab="allq" data-flt="mine">Open my reviews (${mine})</button></div>` : ''}`;
 }

@@ -2,7 +2,7 @@ import { koboForm } from './koboforms.js';
 import { listNews, manageNews, react as reactNews, markSeen, saveNews, deleteNews, pinNews, publish as publishNews, runDueNews, checkMilestones, polish as polishNews } from './news.js';
 import { ownWork, teamBlock, coordinatorOverview } from './own.js';
 import { buildCalendar, markCalendarDirty, syncCalendar, calendarStatus, setCalSync, loadCalSync } from './calendar.js';
-import { pupilRecords, workFiles } from './pupils.js';
+import { pupilRecords, workFiles, flagRecords } from './pupils.js';
 import { pilotView, pilotSet, PILOT_ALLOC } from './pilot.js';
 import { findRecords as findToMove, previewMove, applyMove, correctionsView, correctionCopy } from './corrections.js';
 import { qrPng } from './qr.js';
@@ -625,6 +625,7 @@ export default {
         } catch (e) { return err(String(e.message || e), 502); }
       }
       if (path === '/api/corrections/copy') { const c = await correctionCopy(env, who, url.searchParams.get('id') || ''); return c ? json(c) : err('Not found or not allowed', 404); }
+      if (path === '/api/flag-records') { try { const r = await flagRecords(env, who, url.searchParams.get('ids')); return r.error ? err(r.error, r.status || 422) : json(r); } catch (e) { return err('Could not read the records just now', 502); } }
       if (path === '/api/pupils') { try { const r = await pupilRecords(env, who, Object.fromEntries(url.searchParams)); return r.error ? err(r.error, r.status || 422) : json(r); } catch (e) { return err(String(e.message || e), 502); } }
       if (path.startsWith('/api/deletions')) {
         if (!(who.role === 'hq' || who.role === 'rc' || who.role === 'arc')) return err('Not allowed', 403);
