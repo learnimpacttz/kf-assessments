@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "ask": [
+      "Bash(npx wrangler deploy:*)",
+      "Bash(npm run deploy:*)",
+      "Bash(npx wrangler rollback:*)",
+      "Bash(git push:*)"
+    ],
+    "deny": [
+      "Bash(npx wrangler secret:*)",
+      "Bash(npx wrangler delete:*)",
+      "Bash(npx wrangler kv:*)",
+      "Bash(npx wrangler d1:*)",
+      "Bash(git push --force:*)",
+      "Bash(git push -f:*)",
+      "Bash(rm -rf:*)",
+      "Read(./.env)",
+      "Read(./.env.*)",
+      "Read(./**/*HQ_ACCESS_CODE*)",
+      "Read(./**/*BACKUP_PASSPHRASE*)"
+    ]
+  }
+}
