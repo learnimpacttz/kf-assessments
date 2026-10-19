@@ -95,8 +95,8 @@ export function levelGate(who, method, path) {
   }
   if (read) return null;
   if (/^\/api\/(news\/(react|seen)|usage|push\/|assistant|reports\/preview|login)/.test(path)) return null;
-  if (lv === 'editor' && /^\/api\/(reports\/(save|delete)|query|deletions|pilot)/.test(path)) return null;
-  return lv === 'editor' ? 'Editors can write messages and reports and reply to queries. Ask an Admin for anything else.' : 'Viewers can read and download only.';
+  if (lv === 'editor' && /^\/api\/(reports\/(save|delete)|query|deletions|pilot|dm|ask|hqnotes|narratives)/.test(path)) return null; // reviews, messages to teams, answers to field questions, HQ notes, narratives
+  return lv === 'editor' ? 'Editors can write messages and reports, reply to queries and field questions, and do reviews. Ask an Admin for anything else.' : 'Viewers can read and download only.';
 }
 
 // ---- settings: brand names and targets ----
