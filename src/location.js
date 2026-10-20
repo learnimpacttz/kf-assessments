@@ -13,24 +13,25 @@ const num = (v) => { if (v === null || v === undefined || v === '') return null;
 const sfx = (x, k) => { for (const key in x) if (key === k || key.endsWith('/' + k)) return x[key]; return undefined; };
 const okPoint = (p) => Array.isArray(p) && p.length === 2 && p.every((v) => typeof v === 'number' && Number.isFinite(v)) && !(p[0] === 0 && p[1] === 0) && Math.abs(p[0]) <= 90 && Math.abs(p[1]) <= 180;
 
-// the phone's point for one record, and which field it came from
+// the PHONE's point for one record, and which field it came from. The form's latitude and longitude fields are the school's own coordinates copied from the school list, so they are never used here.
+export const schoolPointOf = (r) => { const la = num(sfx(r, 'latitude')), lo = num(sfx(r, 'longitude')); return okPoint([la, lo]) ? [la, lo] : null; };
 export function pointOf(r) {
   const g = r._geolocation; if (okPoint(g)) return { p: g, src: '_geolocation' };
   for (const k of ['start-geopoint', 'gps', 'geopoint', 'location']) { const v = sfx(r, k); if (typeof v === 'string') { const t = v.trim().split(/\s+/).map(Number); if (okPoint(t.slice(0, 2))) return { p: t.slice(0, 2), src: k }; } }
-  const la = num(sfx(r, 'latitude')), lo = num(sfx(r, 'longitude')); if (okPoint([la, lo])) return { p: [la, lo], src: 'latitude/longitude' };
   return null;
 }
 const pct = (a, n) => (n ? Math.round((1000 * a) / n) / 10 : null);
 const q = (arr, f) => (arr.length ? Math.round(arr.slice().sort((x, y) => x - y)[Math.min(arr.length - 1, Math.floor(f * arr.length))]) : null);
 
 export function summarizeLocation(records) {
-  const out = { sampled: records.length, with_point: 0, sources: {}, with_form_distance: 0, school_has_coords: 0, measured: 0, within_500: 0, within_1000: 0, median_m: null, p90_m: null, by_region: {}, far_schools: [], key_names: [] };
+  const out = { sampled: records.length, with_point: 0, sources: {}, with_form_distance: 0, school_has_coords: 0, measured: 0, within_500: 0, within_1000: 0, median_m: null, p90_m: null, by_region: {}, far_schools: [], key_names: [], form_school_point: 0, form_agrees_500: 0, form_differs: [], missing_in_ours: {} };
   const names = new Set(), dists = [], bySchool = {};
   for (const r of records) {
     for (const k of Object.keys(r)) if (/geo|gps|lat|lon|dist|location/i.test(k)) names.add(k);
     const school = String(sfx(r, 'school') || ''); const reg = SCHOOL_BY_ID[school]?.region || 'OTHER';
     const b = (out.by_region[reg] ||= { sampled: 0, with_point: 0, within_500: 0 }); b.sampled++;
     if (num(sfx(r, 'distance')) !== null) out.with_form_distance++;
+    const sp = schoolPointOf(r); if (sp) { out.form_school_point++; const mine = SCHOOL_COORDS[school]; if (mine) { if (metres(sp, mine) <= 500) out.form_agrees_500++; else if (out.form_differs.length < 30 && !out.form_differs.some((x) => x.school === school)) out.form_differs.push({ school, name: SCHOOL_BY_ID[school]?.name || '', apart_m: Math.round(metres(sp, mine)) }); } else if (SCHOOL_BY_ID[school]) out.missing_in_ours[school] = sp; }
     const pt = pointOf(r); if (!pt) continue;
     out.with_point++; b.with_point++; out.sources[pt.src] = (out.sources[pt.src] || 0) + 1;
     const sc = SCHOOL_COORDS[school]; if (!sc) continue;
@@ -48,7 +49,7 @@ export async function locationCheck(env, who, p) {
   const y = /^20\d\d$/.test(p.year || '') ? p.year : '2025'; const asset = env.KOBO_ASSET_ID; if (!asset) return { error: 'The student project is not connected', status: 422 };
   const server = `https://${env.KOBO_SERVER || 'kf.kobotoolbox.org'}`;
   const query = { _submission_time: { $gte: `${y}-01-01`, $lt: `${Number(y) + 1}-01-01` } };
-  const url = `${server}/api/v2/assets/${asset}/data/?format=json&limit=1000&query=${encodeURIComponent(JSON.stringify(query))}`;
+  const url = `${server}/api/v2/assets/${asset}/data/?format=json&limit=1000&sort=${encodeURIComponent(JSON.stringify({ _submission_time: -1 }))}&query=${encodeURIComponent(JSON.stringify(query))}`;
   const r = await fetch(url, { headers: { Authorization: `Token ${env.KOBO_TOKEN}` } }); if (!r.ok) return { error: `KoBo ${r.status} reading records`, status: 502 };
   const d = await r.json(); return { year: y, total_in_year: d.count, ...summarizeLocation(d.results || []) };
 }

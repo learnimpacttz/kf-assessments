@@ -26,6 +26,7 @@ ok('editor can answer field questions', levelGate(ed, 'POST', '/api/ask') === nu
 ok('editor can write HQ notes', levelGate(ed, 'POST', '/api/hqnotes') === null);
 ok('editor cannot open Admin', levelGate(ed, 'GET', '/api/admin/hq-users') !== null);
 ok('editor can keep regional plans', levelGate(ed, 'POST', '/api/plan') === null);
+ok('Team patterns are hidden from Advisors', u.hide.includes('patterns') && levelGate(who, 'GET', '/api/patterns') !== null);
 ok('editor can update the Bridge operations list and milestones', levelGate(ed, 'POST', '/api/bridge/ops') === null && levelGate(ed, 'POST', '/api/bridge/milestones') === null);
 ok('editor still cannot change layouts, settings or people', levelGate(ed, 'POST', '/api/layouts') !== null && levelGate(ed, 'POST', '/api/admin/settings') !== null && levelGate(ed, 'POST', '/api/admin/hq-users') !== null);
 ok('editor cannot change corrections', levelGate(ed, 'POST', '/api/corrections') !== null);

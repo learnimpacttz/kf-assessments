@@ -1,5 +1,6 @@
 // The HQ Bridge: what HQ needs on one screen. Field progress against targets, what to act on, issues, data cleanliness from the first
 // submission to payment readiness, targets and milestones, early warnings, and the weekly update for the ED.
+import { computePatterns } from './patterns.js';
 import { kv } from './store.js';
 import { SCHOOL_BY_ID, REGIONS, STAFF, FIELD_START, FIELD_END, isWorkingDay, addDays, workingDaysBetween } from './config.js';
 import { decorate, overdueQueries } from './queries.js';
@@ -73,6 +74,7 @@ export async function computeBridge(env, who, { sum, queries, today, quota, pred
   const ops = ((await kv(env).get('v2:bridge:ops')) || []).filter((x) => x.status !== 'done' && x.due);
   const opsLate = ops.filter((x) => x.due < today), opsSoon = ops.filter((x) => x.due >= today && dayDiff(today, x.due) <= 7);
   if (opsLate.length) needs.push({ sev: 'bad', title: `${opsLate.length} operations item${opsLate.length === 1 ? ' is' : 's are'} past due`, text: opsLate.slice(0, 3).map((x) => x.title).join('; '), act: { tab: 'today', card: 'ops', label: 'Open the list' } });
+  { const pt = computePatterns(sum, today); const n = pt.counts.attention; if (n) needs.push({ sev: 'warn', title: `${n} test administrator${n === 1 ? '' : 's'} may need support`, text: pt.people.filter((p) => p.level === 'attention').slice(0, 3).map((p) => `${p.name}: ${p.signals.slice(0, 2).map((s) => s.label.toLowerCase()).join(', ')}`).join('; '), act: { tab: 'patterns', label: 'Open Team patterns' } }); }
   if (opsSoon.length) needs.push({ sev: 'warn', title: `${opsSoon.length} operations item${opsSoon.length === 1 ? '' : 's'} due within 7 days`, text: opsSoon.slice(0, 3).map((x) => `${x.title} (${x.due})`).join('; '), act: { tab: 'today', card: 'ops', label: 'Open the list' } });
   const msCl = ms.find((m) => m.id === 'cleaning'); if (msCl && cleanBy && cleanBy > msCl.date && F.phase !== 'before') needs.push({ sev: 'warn', title: 'Cleaning will finish after its deadline at the current pace', text: `Backlog ${backlog}, closing about ${Math.round(perDay)} a day: clear on ${cleanBy}, deadline ${msCl.date}.`, act: { tab: 'allq', label: 'Open queries' } });
   const warnings = [];

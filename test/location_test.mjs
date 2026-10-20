@@ -8,7 +8,7 @@ ok('same point is 0 m', metres([la, lo], [la, lo]) === 0);
 ok('a point 0.001 degrees away is about 111 m', Math.abs(metres([la, lo], [la + 0.001, lo]) - 111) < 2);
 ok('reads _geolocation', pointOf({ _geolocation: [la, lo] })?.src === '_geolocation');
 ok('reads a geopoint string with altitude and accuracy', pointOf({ 'id_data/start-geopoint': `${la} ${lo} 1200 5` })?.src === 'start-geopoint');
-ok('reads latitude and longitude fields', pointOf({ latitude: String(la), longitude: String(lo) })?.src === 'latitude/longitude');
+ok('the form latitude and longitude (the school point) are not the phone point', pointOf({ latitude: String(la), longitude: String(lo) }) === null);
 ok('ignores empty or zero points', pointOf({ _geolocation: [null, null] }) === null && pointOf({ _geolocation: [0, 0] }) === null && pointOf({}) === null);
 const recs = [
   { _geolocation: [la + 0.001, lo], 'id_data/school': id, distance: '110' },

@@ -12,9 +12,9 @@ export const LEVELS = { admin: 'Admin', editor: 'Editor', viewer: 'Viewer' };
 // A desk is how someone looks at the whole system (their Bridge and menu order). It never grants or removes access.
 export const DESKS = { coordination: 'Coordination', management: 'Management', leadership: 'Leadership', systems: 'Systems' };
 // What an Advisor (a read-only consultant) does not see. Enforced in the app and, for the pages with their own data, on the server.
-export const HIDE_KEYS = ['messages', 'questions', 'notes', 'people', 'phones', 'usage', 'payments', 'clean', 'pilot', 'practice', 'ops'];
+export const HIDE_KEYS = ['messages', 'questions', 'notes', 'people', 'phones', 'usage', 'payments', 'clean', 'pilot', 'practice', 'ops', 'patterns'];
 export const ADVISOR_HIDE = [...HIDE_KEYS];
-const HIDE_PATHS = { messages: ['/api/dm', '/api/talk'], questions: ['/api/ask'], notes: ['/api/hqnotes'], usage: ['/api/usage/report', '/api/usage/explore'], payments: ['/api/payments'], phones: ['/api/phones'], clean: ['/api/corrections', '/api/deletions'], pilot: ['/api/pilot'], practice: ['/api/practice'] };
+const HIDE_PATHS = { messages: ['/api/dm', '/api/talk'], questions: ['/api/ask'], notes: ['/api/hqnotes'], usage: ['/api/usage/report', '/api/usage/explore'], payments: ['/api/payments'], phones: ['/api/phones'], clean: ['/api/corrections', '/api/deletions'], pilot: ['/api/pilot'], practice: ['/api/practice'], patterns: ['/api/patterns'] };
 const SEED_DESK = { h1: 'management', h2: 'coordination', h3: 'systems' };
 export const deskOf = (u) => (u && DESKS[u.desk] ? u.desk : u && SEED_DESK[u.id] ? SEED_DESK[u.id] : !u || u.level === 'admin' ? 'systems' : u.level === 'viewer' ? 'leadership' : 'coordination');
 const HQKEY = 'v2:hq', SETKEY = 'v2:settings', ACTKEY = 'v2:activity';

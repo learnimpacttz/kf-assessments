@@ -5,6 +5,8 @@ import { buildCalendar, markCalendarDirty, syncCalendar, calendarStatus, setCalS
 import { pupilRecords, workFiles, flagRecords } from './pupils.js';
 import { pilotView, pilotSet, PILOT_ALLOC } from './pilot.js';
 import { locationCheck } from './location.js';
+import { computePatterns } from './patterns.js';
+import { SCHOOL_COORDS, COORD_SOURCE } from './data/school_coords.js';
 import { findRecords as findToMove, previewMove, applyMove, correctionsView, correctionCopy } from './corrections.js';
 import { qrPng } from './qr.js';
 import { codFromYear } from './paymentdata.js';
@@ -336,7 +338,7 @@ export default {
       if (path.startsWith('/api/bridge')) {
         if (who.role !== 'hq') return err('HQ only', 403);
         try {
-          if (path === '/api/bridge') { const v = await bridgeFor(env, who, url.searchParams.get('fresh') === '1', ctx); if (!v) return json({ status: 'waiting' }); const hid = Array.isArray(who.hide) ? who.hide : []; if (hid.length) { const br = { ...v.br, needs: (v.br.needs || []).filter((n) => !(hid.includes('ops') && /operations item/i.test(n.title)) && !(hid.includes('messages') && /question/i.test(n.title))) }; return json(br); } return json(v.br); }
+          if (path === '/api/bridge') { const v = await bridgeFor(env, who, url.searchParams.get('fresh') === '1', ctx); if (!v) return json({ status: 'waiting' }); const hid = Array.isArray(who.hide) ? who.hide : []; if (hid.length) { const br = { ...v.br, needs: (v.br.needs || []).filter((n) => !(hid.includes('ops') && /operations item/i.test(n.title)) && !(hid.includes('messages') && /question/i.test(n.title)) && !(n.act && n.act.tab === 'patterns')) }; return json(br); } return json(v.br); }
           if (path === '/api/bridge/update') { const v = await bridgeFor(env, who, false, ctx); if (!v) return err('No data yet', 404); const aud = url.searchParams.get('audience') || 'ed'; const u = await buildUpdate(env, aud, v.br, await sumNow(env)); return json({ audience: aud, audiences: AUDIENCES, ...u }); }
           if (path === '/api/bridge/snapshots') return json({ items: await listSnapshots(env) });
           if (path === '/api/bridge/snapshot' && method === 'POST') { if ((who.level || 'admin') === 'viewer') return err('Not allowed', 403); const b = await request.json().catch(() => ({})); return json(await saveSnapshot(env, who, b)); }
@@ -636,6 +638,28 @@ export default {
           if (method === 'POST') { const r = await actOnRequest(env, who, await request.json().catch(() => ({}))); return r.error ? err(r.error, r.status || 422) : json(r); }
           return json(await listRequests(env, who));
         } catch (e) { return err(String(e.message || e), 502); }
+      }
+      // ---------- visit map: school pins by status. Field teams see their own region; HQ sees every school and the location checks ----------
+      if (path === '/api/map') {
+        if (!(who.role === 'hq' || who.role === 'rc' || who.role === 'arc' || who.role === 'volunteer')) return err('Not allowed', 403);
+        const hqFull = who.role === 'hq' && !(Array.isArray(who.hide) && who.hide.length); const sum = await sumNow(env); if (!sum) return json({ status: 'waiting', schools: [] });
+        const today = eatToday(); const out = [];
+        for (const s of Object.values(sum.schools || {})) {
+          if (who.role !== 'hq' && s.region !== who.region) continue; const c = SCHOOL_COORDS[s.id]; if (!c) continue;
+          const tested = [1, 2, 3].reduce((a, g) => a + (s.g[g].av || 0), 0), target = [1, 2, 3].reduce((a, g) => a + (s.g[g].target || 0), 0);
+          const row = { id: s.id, name: s.name, region: s.region, lga: s.lga, lat: c[0], lon: c[1], status: s.done ? 'done' : s.started ? 'started' : 'waiting', tested, target, first: s.first || null, last: s.last || null, today: s.dates ? s.dates.includes(today) : false, approx: COORD_SOURCE[s.id] || null };
+          if (hqFull) { row.loc = { points: s.gp || 0, measured: s.gk || 0, at_school: s.gn || 0, far: s.gv || 0, records: s.rec || 0 }; row.check = (s.gk || 0) >= 5 && ((s.gn || 0) / s.gk < 0.5 || (s.gv || 0) >= 3); if (s.admins) row.people = s.admins.slice(0, 8); }
+          out.push(row);
+        }
+        const nocoords = Object.values(sum.schools || {}).filter((s) => !SCHOOL_COORDS[s.id] && (who.role === 'hq' || s.region === who.region)).length;
+        return json({ status: 'ok', as_of: sum.as_of, today, detail: hqFull, schools: out, without_coordinates: nocoords });
+      }
+      // ---------- team patterns (HQ, not Advisors): who may need support, from the aggregates already kept ----------
+      if (path === '/api/patterns') {
+        if (who.role !== 'hq' || (Array.isArray(who.hide) && who.hide.length)) return err('Team patterns are for the HQ team', 403);
+        const sum = await sumNow(env); if (!sum) return json({ status: 'waiting' });
+        await logActivity(env, who, 'Opened Team patterns', '');
+        return json({ status: 'ok', ...computePatterns(sum, eatToday()) });
       }
       // ---------- payments (HQ Admin only): the COD engine on the stored year; no names or bank details ----------
       if (path === '/api/payments') {

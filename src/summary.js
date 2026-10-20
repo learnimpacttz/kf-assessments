@@ -151,7 +151,7 @@ export function summarize(Y, { year, bands, today, owners = {}, practice = false
     const a = (admins[name] ||= {
       name, staff: staffForKoboName(name), n: 0, tn: 0, ts: 0, days: new Set(), schools: new Set(),
       fast: 0, slow: 0, late: 0, far: 0, notList: 0, dup: 0, zero: 0, byGrade: { 1: { tn: 0, ts: 0 }, 2: { tn: 0, ts: 0 }, 3: { tn: 0, ts: 0 } },
-      samp: 0, tf: 0, inBand: 0, listChecked: 0, sb: [0, 0, 0, 0, 0, 0, 0], sbs: [0, 0, 0, 0, 0, 0, 0],
+      gp: 0, gk: 0, gn: 0, gv: 0, samp: 0, tf: 0, inBand: 0, listChecked: 0, sb: [0, 0, 0, 0, 0, 0, 0], sbs: [0, 0, 0, 0, 0, 0, 0],
     });
     return a;
   };
@@ -192,7 +192,7 @@ export function summarize(Y, { year, bands, today, owners = {}, practice = false
     const inBand = c.tn - fast - slow;
     const a = adminOf(enumerator);
     a.n += c.n; a.tn += c.tn; a.ts += c.ts; a.days.add(date); a.schools.add(schoolId);
-    a.fast += fast; a.slow += slow; a.late += c.late; a.far += c.far; a.inBand += inBand;
+    a.fast += fast; a.slow += slow; a.late += c.late; a.far += c.far; a.inBand += inBand; a.gp += c.gp || 0; a.gk += c.gk || 0; a.gn += c.gn || 0; a.gv += c.gv || 0;
     a.byGrade[grade].tn += c.tn; a.byGrade[grade].ts += c.ts;
     if (c.sb) mergeSb(a.sb, c.sb);
     if (c.ed) flags.push({ sev: 'warn', type: 'edited', school: schoolId, grade: +grade, admin: enumerator, date, recs: c.ex?.ed || [], text: `${c.ed} test record(s) were opened and changed after they were finished and sent`, hint: 'Finish each assessment on the phone before moving on and do not reopen a finished record. If something needs correcting, tell your RC. HQ makes the change in KoBo and it is logged.', normal: 'finish it once, never reopen it' });
@@ -200,8 +200,10 @@ export function summarize(Y, { year, bands, today, owners = {}, practice = false
     (work[enumerator] ||= []).push([date, schoolId, +grade, c.av, c.tn ? r1(c.ts / c.tn) : null]);
     { const dpx = (dayPeople[schoolId + '|' + date] ||= { names: new Set(), devs: new Set(), tdevs: new Set(), per: {} }); dpx.names.add(enumerator); dpx.tests = (dpx.tests || 0) + (c.n || 0); }
     for (const [dv, cnt] of Object.entries(c.dv || {})) noteDev(dv, enumerator, schoolId, date, cnt, true);
-    const dm = ((dayMap[enumerator] ||= {})[date] ||= { s: new Set(), n: 0, h0: 99, h1: -1 });
+    const dm = ((dayMap[enumerator] ||= {})[date] ||= { s: new Set(), n: 0, h0: 99, h1: -1, tn: 0, ts: 0, fast: 0, slow: 0, late: 0, gp: 0, gk: 0, gn: 0, gv: 0 });
     dm.s.add(schoolId); dm.n += c.av; if (c.h0 < dm.h0) dm.h0 = c.h0; if (c.h1 > dm.h1) dm.h1 = c.h1;
+    dm.tn += c.tn; dm.ts += c.ts; dm.fast += fast; dm.slow += slow; dm.late += c.late; dm.gp += c.gp || 0; dm.gk += c.gk || 0; dm.gn += c.gn || 0; dm.gv += c.gv || 0;
+    { const sg = schools[schoolId]; sg.gp = (sg.gp || 0) + (c.gp || 0); sg.gk = (sg.gk || 0) + (c.gk || 0); sg.gn = (sg.gn || 0) + (c.gn || 0); sg.gv = (sg.gv || 0) + (c.gv || 0); sg.rec = (sg.rec || 0) + (c.n || 0); }
     for (const [pk, pv] of Object.entries(c.ps)) { const dom = pk[0], gg = pk[1]; const slot = sc.res[gg] && sc.res[gg][dom]; if (slot) { slot[0] += pv[0]; slot[1] += pv[1]; } } // results by grade and subject (HQ only downstream)
     let zero = 0;
     for (const v of Object.values(c.st)) zero += v[2];
@@ -350,8 +352,9 @@ export function summarize(Y, { year, bands, today, owners = {}, practice = false
       region: a.staff ? a.staff.region : null,
       position: a.staff ? a.staff.position : null,
       tested: a.tn, avg_min: avgAll ? r1(avgAll) : null, days: a.days.size, schools: a.schools.size,
-      fast: a.fast, slow: a.slow, late: a.late, far: a.far, not_list: a.notList, zero: a.zero,
+      fast: a.fast, slow: a.slow, late: a.late, far: a.far, not_list: a.notList, zero: a.zero, records: a.n, gp: a.gp, gk: a.gk, gn: a.gn, gv: a.gv,
       by_grade: Object.fromEntries([1, 2, 3].map((g) => [g, a.byGrade[g].tn ? r1(a.byGrade[g].ts / a.byGrade[g].tn) : null])),
+      by_grade_n: Object.fromEntries([1, 2, 3].map((g) => [g, a.byGrade[g].tn])),
       quality, fast_share: pct(a.fast, a.tn),
       samp: a.samp, tf: a.tf, sub: subStats(a.sb), subs: subStats(a.sbs), sub_all: subStats(sumSb(a.sb, a.sbs)),
     };
@@ -398,7 +401,7 @@ export function summarize(Y, { year, bands, today, owners = {}, practice = false
     if (['fast', 'slow', 'window', 'gps', 'edited', 'latesub'].includes(f.type)) f.n = cellN[`${f.date}|${f.school}|${f.grade}|${f.admin}`] || 0;
     else if (f.type === 'dup') f.n = (f.recs || []).length || 1; else if (f.type === 'notlist') f.n = parseInt(f.text, 10) || 1; else f.n = 0;
   }
-  return { year, as_of: new Date().toISOString(), today, bands, devices, tl_dates: tlDates, national: nat, regions, schools, admins: adminList, flags: flags.slice(0, 1500), days: Object.fromEntries(Object.entries(dayMap).map(([who, m]) => [who, Object.entries(m).sort().map(([d, v]) => [d, v.s.size, v.n, v.h0 === 99 ? null : v.h0, v.h1 < 0 ? null : v.h1])])), work: Object.fromEntries(Object.entries(work).map(([k, v]) => [k, v.sort((x, y) => (x[0] < y[0] ? 1 : -1)).slice(0, 80)])) };
+  return { year, as_of: new Date().toISOString(), today, bands, devices, tl_dates: tlDates, national: nat, regions, schools, admins: adminList, flags: flags.slice(0, 1500), days: Object.fromEntries(Object.entries(dayMap).map(([who, m]) => [who, Object.entries(m).sort().map(([d, v]) => [d, v.s.size, v.n, v.h0 === 99 ? null : v.h0, v.h1 < 0 ? null : v.h1, v.tn, Math.round(v.ts * 10) / 10, v.fast, v.slow, v.late, v.gp, v.gk, v.gn, v.gv])])), work: Object.fromEntries(Object.entries(work).map(([k, v]) => [k, v.sort((x, y) => (x[0] < y[0] ? 1 : -1)).slice(0, 80)])) };
 }
 
 export const staffRoster = () => STAFF;

@@ -6,6 +6,7 @@ import worker from '../src/index.js';
 import { addStudents, addSampling, addTeachers } from '../src/ingest.js';
 import { recomputeSummaries } from '../src/sync.js';
 import { SCHOOLS_BY_REGION, STAFF, REGIONS } from '../src/config.js';
+import { SCHOOL_COORDS } from '../src/data/school_coords.js';
 
 // fake KoBo: record write-back requests instead of sending them anywhere
 const realFetch = globalThis.fetch; globalThis.__kobo = [];
@@ -50,7 +51,7 @@ function visit(year, region, schoolIdx, date, nSchoolsStaff) {
       const forced = region === 'TANGA' && schoolIdx === 3 && year === '2026';
       const dev = forced ? 'collect:SHARED' : 'collect:' + adm.replace(/\s/g, '');
       const rushed = region === 'TANGA' && g === 2 && i % 7 === 0 && schoolIdx === 1;
-      recs.push({ _id: id++, year, today: date, 'group_intro/date': date, 'id_data/school': s.id, 'id_data/grade': String(g), 'id_data/enumerator': adm, 'stu_info/rand_nr': String(i * 3), start: `${date}T0${8 + (i % 4)}:${10 + i}:00+03:00`, 'end_note_gr/testtime_rounded': String(rushed ? 1.5 : (g * 2.6 + rnd(2, 5)).toFixed(1)), stu_avail: '1', deviceid: dev, ['k' + g + '_g_words']: '1', _submission_time: date + 'T10:00:00' });
+      recs.push({ _id: id++, year, today: date, 'group_intro/date': date, 'id_data/school': s.id, 'id_data/grade': String(g), 'id_data/enumerator': adm, 'stu_info/rand_nr': String(i * 3), start: `${date}T0${8 + (i % 4)}:${10 + i}:00+03:00`, 'end_note_gr/testtime_rounded': String(rushed ? 1.5 : (g * 2.6 + rnd(2, 5)).toFixed(1)), stu_avail: '1', deviceid: dev, ['k' + g + '_g_words']: '1', _submission_time: date + 'T10:00:00', _geolocation: (() => { const c = SCHOOL_COORDS[s.id]; if (!c || i % 3 === 2) return [null, null]; const far = rushed || i % 11 === 0; return [c[0] + (far ? 0.05 : 0.0008 * ((i % 5) - 2)), c[1] + (far ? 0.03 : 0.0006 * ((i % 3) - 1))]; })() });
     }
   }
   // submission times: some people send within the hour, some a day or two later

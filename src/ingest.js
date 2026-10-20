@@ -8,6 +8,8 @@
 // Teacher form  -> `tf[school]` teacher forms completed
 import { SKILLS_BY_GRADE } from './aggregate.js';
 import { isPracticeSchool } from './config.js';
+import { pointOf, metres } from './location.js';
+import { SCHOOL_COORDS } from './data/school_coords.js';
 
 // How late a record was sent: whole days after the visit date (0 = the same day) and hours from finishing the form to sending it
 const parseUtc = (s) => Date.parse(/[zZ]$|[+-]\d\d:?\d\d$/.test(s) ? s : s + 'Z');
@@ -123,6 +125,7 @@ export function addStudents(state, records, opts = {}) {
       if (hr < 7 || hr > 14) { c.late += 1; if (c.ex.late.length < 3) c.ex.late.push([stuid, r['stu_info/rand_nr'] ?? '', tt, (r.start || '').slice(11, 16), setNo, r._id]); }
     }
     const dist = num(r.distance);
+    { const pt = pointOf(r); if (pt) { c.gp = (c.gp || 0) + 1; const sc = SCHOOL_COORDS[school]; if (sc) { const m = metres(pt.p, sc); c.gk = (c.gk || 0) + 1; if (m <= 500) c.gn = (c.gn || 0) + 1; else if (m > 2000) c.gv = (c.gv || 0) + 1; } } } // phone location: only counts are kept (with a point, measurable, at the school, very far), never the point itself
     if (dist !== null && dist > 500) { c.far += 1; if (c.ex.far.length < 2) c.ex.far.push([stuid, r['stu_info/rand_nr'] ?? '', tt, (r.start || '').slice(11, 16), setNo, r._id, Math.round(dist)]); }
 
     for (const f of SKILL_TIME_FIELDS) {
