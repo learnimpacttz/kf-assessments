@@ -11,4 +11,5 @@ ok('Advisors do not request the HQ notes or question counts', app.includes("!not
 const css = fs.readFileSync('../public/style.css', 'utf8');
 ok('the page "i" text can open on a phone (the phone rule must not outrank it)', css.includes('#app .pagehead p.intro.open{display:block}'));
 ok('the region-by-week grid has its own class, apart from the Usage Explorer hour map', app.includes('class="heatw"') && css.includes('.heatw{display:grid') && !/class="heat" style="grid-template-columns/.test(app));
+ok('the map separates Treatment, Control and Pilot by shape and can filter by group', app.includes("arm === 'Control' ? 'rect'") && app.includes('id="mpArm"'));
 done();

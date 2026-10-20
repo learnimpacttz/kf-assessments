@@ -647,7 +647,7 @@ export default {
         for (const s of Object.values(sum.schools || {})) {
           if (who.role !== 'hq' && s.region !== who.region) continue; const c = SCHOOL_COORDS[s.id]; if (!c) continue;
           const tested = [1, 2, 3].reduce((a, g) => a + (s.g[g].av || 0), 0), target = [1, 2, 3].reduce((a, g) => a + (s.g[g].target || 0), 0);
-          const row = { id: s.id, name: s.name, region: s.region, lga: s.lga, lat: c[0], lon: c[1], status: s.done ? 'done' : s.started ? 'started' : 'waiting', tested, target, first: s.first || null, last: s.last || null, today: s.dates ? s.dates.includes(today) : false, approx: COORD_SOURCE[s.id] || null };
+          const row = { id: s.id, name: s.name, region: s.region, lga: s.lga, lat: c[0], lon: c[1], status: s.done ? 'done' : s.started ? 'started' : 'waiting', tested, target, first: s.first || null, last: s.last || null, today: s.dates ? s.dates.includes(today) : false, approx: COORD_SOURCE[s.id] || null, arm: s.arm || null, mne: s.mne || null };
           if (hqFull) { row.loc = { points: s.gp || 0, measured: s.gk || 0, at_school: s.gn || 0, far: s.gv || 0, records: s.rec || 0 }; row.check = (s.gk || 0) >= 5 && ((s.gn || 0) / s.gk < 0.5 || (s.gv || 0) >= 3); if (s.admins) row.people = s.admins.slice(0, 8); if (COORD_WRONG[s.id]) row.wrong = COORD_WRONG[s.id]; }
           out.push(row);
         }
