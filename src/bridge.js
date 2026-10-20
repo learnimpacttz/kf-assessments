@@ -15,7 +15,7 @@ export const MS_DEFAULT = [
 ];
 export async function getMilestones(env) { const s = await kv(env).get(MSKEY); return (s && s.list && s.list.length ? s.list : MS_DEFAULT).map((m) => ({ ...m })); }
 export async function saveMilestones(env, who, list) {
-  if (!(who.role === 'hq' && (who.level || 'admin') === 'admin')) return { error: 'Only an HQ Admin can change targets and milestones', status: 403 };
+  if (!(who.role === 'hq' && (who.level || 'admin') !== 'viewer')) return { error: 'Only an HQ Admin or Editor can change milestones', status: 403 };
   const clean = (Array.isArray(list) ? list : []).slice(0, 12).map((m, i) => ({ id: String(m.id || 'm' + i).replace(/[^a-z0-9_]/gi, '').slice(0, 24) || 'm' + i, label: String(m.label || '').slice(0, 90), date: /^\d{4}-\d\d-\d\d$/.test(m.date || '') ? m.date : null, owner: String(m.owner || '').slice(0, 60), status: ['not started', 'in progress', 'done', 'auto'].includes(m.status) ? m.status : 'not started', kind: m.kind === 'field' ? 'field' : 'after' })).filter((m) => m.label && m.date);
   if (clean.length < 2) return { error: 'Keep at least two milestones' };
   await kv(env).put(MSKEY, { list: clean, by: who.name, at: new Date().toISOString() }); return { ok: true };
