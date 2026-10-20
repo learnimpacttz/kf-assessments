@@ -1626,7 +1626,7 @@ function bvNeeds() {
   for (const n of m) items.push({ sev: 'warn', title: `${n.by} tagged you in a note`, text: n.text.slice(0, 140), act: { seen: n.id, label: 'Got it' } });
   if (!items.length) return '<div class="empty">Nothing needs you right now.</div>';
   const rank = { bad: 0, warn: 1, good: 2 }; items.sort((a, b) => (rank[a.sev] ?? 1) - (rank[b.sev] ?? 1));
-  return items.map((x) => `<div class="flag"><i class="st ${x.sev}"></i><div style="flex:1;min-width:0"><b>${esc(x.title)}</b><span>${esc(x.text)}</span></div>${x.act ? (x.act.seen ? `<button class="btn sm sec" data-act="ntSeen" data-id="${esc(x.act.seen)}">${x.act.label}</button>` : `<button class="btn sm ${x.sev === 'bad' ? '' : 'sec'}" data-act="bvGo" data-tab="${esc(x.act.tab || '')}" ${x.act.filter ? `data-flt="${esc(x.act.filter)}"` : ''} ${x.act.region ? `data-region="${esc(x.act.region)}"` : ''}>${esc(x.act.label)}</button>`) : ''}</div>`).join('');
+  return items.map((x) => `<div class="flag"><i class="st ${x.sev}"></i><div style="flex:1;min-width:0"><b>${esc(x.title)}</b><span>${esc(x.text)}</span></div>${x.act ? (x.act.seen ? `<button class="btn sm sec" data-act="ntSeen" data-id="${esc(x.act.seen)}">${x.act.label}</button>` : `<button class="btn sm ${x.sev === 'bad' ? '' : 'sec'}" data-act="bvGo" data-tab="${esc(x.act.tab || '')}" ${x.act.card ? `data-card="${esc(x.act.card)}"` : ''} ${x.act.filter ? `data-flt="${esc(x.act.filter)}"` : ''} ${x.act.region ? `data-region="${esc(x.act.region)}"` : ''}>${esc(x.act.label)}</button>`) : ''}</div>`).join('');
 }
 // timeline: cumulative pupils tested against the plan, the finish range and the milestones (including those after field work)
 function bvTimeline(T) {
@@ -1665,7 +1665,7 @@ function bvClean() {
 function bvWarn(T) {
   const w = [...S.br.warnings]; for (const r of T.regs) { if (r.last7.length >= 7) { const a = r.last7.slice(-3).reduce((x, y) => x + y, 0) / 3, b = r.last7.slice(0, 4).reduce((x, y) => x + y, 0) / 4; if (b > 0 && a < 0.75 * b) w.push({ sev: 'warn', title: `${title(r.region)} pace fell ${Math.round(100 - (100 * a) / b)}% in the last 3 days`, text: 'Ask the RC what changed (rain, travel, a team away).', act: { region: r.region, label: 'Open region' } }); } }
   if (!w.length) return '<div class="empty">Nothing above the line.</div>';
-  return w.slice(0, 8).map((x) => `<div class="flag"><i class="st ${x.sev}"></i><div style="flex:1;min-width:0"><b>${esc(x.title)}</b><span>${esc(x.text)}</span></div>${x.act ? (x.act.region && !x.act.tab ? `<button class="btn sm sec" data-open="region:${esc(x.act.region)}">${esc(x.act.label)}</button>` : `<button class="btn sm sec" data-act="bvGo" data-tab="${esc(x.act.tab)}">${esc(x.act.label)}</button>`) : ''}</div>`).join('');
+  return w.slice(0, 8).map((x) => `<div class="flag"><i class="st ${x.sev}"></i><div style="flex:1;min-width:0"><b>${esc(x.title)}</b><span>${esc(x.text)}</span></div>${x.act ? (x.act.region && !x.act.tab ? `<button class="btn sm sec" data-open="region:${esc(x.act.region)}">${esc(x.act.label)}</button>` : `<button class="btn sm sec" data-act="bvGo" data-tab="${esc(x.act.tab)}" ${x.act.card ? `data-card="${esc(x.act.card)}"` : ''} ${x.act.filter ? `data-flt="${esc(x.act.filter)}"` : ''}>${esc(x.act.label)}</button>`) : ''}</div>`).join('');
 }
 function bvTargets(T) {
   const b = S.br, f = b.field, c = b.clean; const adm = hqLevel() === 'admin';
@@ -1767,7 +1767,7 @@ function bvAction(a, t, e) {
   else if (a === 'remSnooze') { try { store.set('kf_rem_until', String(Date.now() + 3600e3)); } catch { /* ignore */ } toast('Reminder paused for an hour'); render(); }
   else if (a === 'qMore') { S.qMore = (S.qMore || 0) + 20; render(); }
   else if (a === 'goBack') { const b = S.backTo; S.backTo = null; selectTab(b); }
-  else if (a === 'bvGo') { const tab = t.dataset.tab; if (t.dataset.flt === 'mine') { S.qf = { q: '', type: '', sev: '', region: '', st: 'mine' }; } else if (t.dataset.flt === 'overdue') { S.qf = { q: '', type: '', sev: '', region: '', st: 'open' }; } else if (t.dataset.f) { S.qf = { q: '', type: t.dataset.f, sev: '', region: '', st: 'open' }; } else if (t.dataset.region && tab === 'allq') { S.qf = { q: '', type: '', sev: '', region: t.dataset.region, st: 'open' }; } if (t.dataset.region && tab === 'plan') S.planRegion = t.dataset.region; selectTab(tab, S.tab); }
+  else if (a === 'bvGo') { const tab = t.dataset.tab; if (t.dataset.card && S.tab === tab) { const el = document.getElementById('bv-' + t.dataset.card); if (el) { if (el.tagName === 'DETAILS') el.open = true; el.scrollIntoView({ behavior: 'smooth', block: 'start' }); return; } } if (t.dataset.flt === 'mine') { S.qf = { q: '', type: '', sev: '', region: '', st: 'mine' }; } else if (t.dataset.flt === 'overdue') { S.qf = { q: '', type: '', sev: '', region: '', st: 'open' }; } else if (t.dataset.f) { S.qf = { q: '', type: t.dataset.f, sev: '', region: '', st: 'open' }; } else if (t.dataset.region && tab === 'allq') { S.qf = { q: '', type: '', sev: '', region: t.dataset.region, st: 'open' }; } if (t.dataset.region && tab === 'plan') S.planRegion = t.dataset.region; selectTab(tab, S.tab); }
   else if (a === 'bvSaveView') { const name = prompt('Name this view'); if (!name) return; const v = bvViews().filter((x) => x.name !== name); v.push({ name: name.slice(0, 30), f: { region: S.bv.region, partner: S.bv.partner, period: S.bv.period } }); store.set('kf_bviews', JSON.stringify(v)); render(); }
   else if (a === 'bvCopy') { const el = document.getElementById('bvText'); const m = document.getElementById('bvMsg'); (navigator.clipboard ? navigator.clipboard.writeText(el.value) : Promise.reject()).then(() => { if (m) m.textContent = 'Copied.'; }).catch(() => { el.select(); if (m) m.textContent = 'Press Ctrl+C to copy.'; }); }
   else if (a === 'bvDownload') { const el = document.getElementById('bvText'); const a2 = document.createElement('a'); a2.href = URL.createObjectURL(new Blob([el.value], { type: 'text/plain' })); a2.download = `update-${(S.ov.today || '')}.txt`; a2.click(); }
@@ -2322,13 +2322,14 @@ function guestChrome() {
 }
 // ---------- Talking: direct messages, questions to HQ, HQ-only notes ----------
 const hqWrite = () => S.who && S.who.role === 'hq' && hqLevel() !== 'viewer';
+const notGiven = (k) => Boolean(S.who && Array.isArray(S.who.hide) && S.who.hide.includes(k)); // parts an Advisor is not given
 const ageDays = (iso) => Math.floor((Date.now() - Date.parse(iso)) / 864e5);
 async function loadTalk() {
   if (!S.who || S.viewAs || isGuest()) return; let changed = false;
   try {
     if (S.who.role !== 'hq') { const d = await api('/api/dm/inbox'); if (JSON.stringify(d) !== JSON.stringify(S.dm)) { S.dm = d; changed = true; } }
-    else { const n = await api('/api/hqnotes'); if (JSON.stringify([n.counts, n.mentions]) !== JSON.stringify([S.notesIdx && S.notesIdx.counts, S.notesIdx && S.notesIdx.mentions])) { S.notesIdx = n; changed = true; } }
-    const c = await api('/api/ask/counts'); if (JSON.stringify(c) !== JSON.stringify(S.askC)) { S.askC = c; changed = true; }
+    else if (!notGiven('notes')) { const n = await api('/api/hqnotes'); if (JSON.stringify([n.counts, n.mentions]) !== JSON.stringify([S.notesIdx && S.notesIdx.counts, S.notesIdx && S.notesIdx.mentions])) { S.notesIdx = n; changed = true; } }
+    if (!notGiven('questions')) { const c = await api('/api/ask/counts'); if (JSON.stringify(c) !== JSON.stringify(S.askC)) { S.askC = c; changed = true; } }
   } catch { /* the pages work without it */ }
   if (changed && !document.activeElement?.closest?.('#app textarea, #drawer textarea')) render();
 }
@@ -2367,10 +2368,10 @@ function notesHtml(target) {
   const form = N.can_write ? `<div class="ntform" style="margin-top:8px"><textarea class="ntText" rows="2" maxlength="800" placeholder="A private note for HQ (field staff never see it)" style="width:100%"></textarea><div class="m" style="margin:4px 0">Tag a colleague: ${N.people.filter((p) => p.id !== me).map((p) => `<label style="margin-right:10px"><input type="checkbox" class="ntM" value="${esc(p.id)}"> ${esc(p.name.split(' ')[0])}</label>`).join('')}</div><button class="btn sm" data-act="ntAdd" data-target="${esc(target)}">Add note</button></div>` : '';
   return (list || '<div class="m">No notes yet.</div>') + form;
 }
-async function loadNotes(target) { try { S.notes[target] = await api('/api/hqnotes?target=' + encodeURIComponent(target)); } catch { S.notes[target] = { notes: [], people: [], can_write: false }; } paintNotes(target); }
+async function loadNotes(target) { if (notGiven('notes')) return; try { S.notes[target] = await api('/api/hqnotes?target=' + encodeURIComponent(target)); } catch { S.notes[target] = { notes: [], people: [], can_write: false }; } paintNotes(target); }
 function paintNotes(target) { document.querySelectorAll('[data-notes]').forEach((el) => { if (el.dataset.notes !== target) return; const h = el.querySelector(':scope > h3'); el.innerHTML = (h ? h.outerHTML : '') + notesHtml(target); }); }
 function hydrateNotes() { if (((S.who && S.who.hide) || []).includes('notes')) return; document.querySelectorAll('[data-notes]').forEach((el) => { const t = el.dataset.notes; if (S.notes[t]) { if (!el.querySelector('.ntform, .flag, .m')) paintNotes(t); } else if (!el.dataset.loading) { el.dataset.loading = '1'; loadNotes(t); } }); }
-const noteBtn = (target) => { const n = (S.notesIdx && S.notesIdx.counts && S.notesIdx.counts[target]) || 0; return `<details class="fd" data-nd="${esc(target)}"><summary>HQ notes${n ? ' (' + n + ')' : ''}</summary><div data-notes="${esc(target)}"><div class="empty">Loading…</div></div></details>`; };
+const noteBtn = (target) => { if (notGiven('notes')) return ''; const n = (S.notesIdx && S.notesIdx.counts && S.notesIdx.counts[target]) || 0; return `<details class="fd" data-nd="${esc(target)}"><summary>HQ notes${n ? ' (' + n + ')' : ''}</summary><div data-notes="${esc(target)}"><div class="empty">Loading…</div></div></details>`; };
 document.addEventListener('toggle', (e) => { const d = e.target; if (d && d.dataset && d.dataset.nd && d.open) { const t = d.dataset.nd; const el = d.querySelector('[data-notes]'); if (S.notes[t]) paintNotes(t); else loadNotes(t); void el; } }, true);
 // ---- questions ----
 async function loadAsk() { try { S.ask = await api('/api/ask'); S.askC = S.ask.counts; S.askErr = null; } catch (e) { S.askErr = e.message; } render(); }
@@ -2729,7 +2730,7 @@ document.addEventListener('click', async (e) => {
   const th = e.target.closest('[data-ts]');
   if (th) { const [id, k] = th.dataset.ts.split(':'); const T = S.tbl[id]; if (T.sort === k) T.dir = -T.dir; else { T.sort = k; T.dir = 1; } tblSave(id); render(); return; }
   const t = e.target.closest('[data-tab],[data-act]'); if (!t) return;
-  if (t.dataset.tab) { await selectTab(t.dataset.tab, t.closest('#nav,#nav2,#bbar,#msheet,#side') ? null : S.tab); return; }
+  if (t.dataset.tab && !t.dataset.act) { await selectTab(t.dataset.tab, t.closest('#nav,#nav2,#bbar,#msheet,#side') ? null : S.tab); return; } // a button with an action (bvGo) runs its action, which then opens the tab
   const a = t.dataset.act;
   try {
     if (a === 'login') { const c = $('#code').value.trim().toUpperCase(); if (!c) return; S.code = c; try { const r = await api('/api/login'); S.who = r.who; store.set('kf_code', c); S.tab = null; await go(); } catch { S.code = null; loginScreen('That code was not recognized.'); } }
