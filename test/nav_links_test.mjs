@@ -8,4 +8,7 @@ ok('Bridge links can name a card to open and scroll to', app.includes("t.dataset
 ok('both Bridge "needs" lists pass the card and filter through', (app.match(/x\.act\.card \? `data-card=/g) || []).length === 2);
 ok('operations alerts point at the operations card', (br.match(/card: 'ops', label: 'Open the list'/g) || []).length === 2 && app.includes('id="bv-${id}"'));
 ok('Advisors do not request the HQ notes or question counts', app.includes("!notGiven('notes')") && app.includes("!notGiven('questions')") && app.includes("if (notGiven('notes')) return;"));
+const css = fs.readFileSync('../public/style.css', 'utf8');
+ok('the page "i" text can open on a phone (the phone rule must not outrank it)', css.includes('#app .pagehead p.intro.open{display:block}'));
+ok('the region-by-week grid has its own class, apart from the Usage Explorer hour map', app.includes('class="heatw"') && css.includes('.heatw{display:grid') && !/class="heat" style="grid-template-columns/.test(app));
 done();
