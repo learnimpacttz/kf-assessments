@@ -29,6 +29,7 @@
 | A duplicate or test record | Data cleaning > Delete records (chain: suggest, Joram, Mundo). |
 | Someone lost their phone | Re-issue the code; the old one stops working. |
 | A guest should lose access | Admin > People & access > Guests > Revoke. |
+| Many "pupil tested twice" queries that KoBo does not confirm | Check KoBo first (Admin > the records for that school and grade). If KoBo has no repeats, the stored pupil-number list is doubled. The dashboard now ignores repeated records and shows "Repeated records were ignored" on the Bridge. Run one Students rebuild (Admin > rebuild, students, 2026) to clear the stored repeats, then check that the warning is gone. |
 | The dashboard looks wrong after a correction | Corrections rebuild only the affected forms and years: wait a few minutes. Admin > Health shows it syncing. |
 | An alert or email was sent by mistake | Say so in News straight away. Alerts cannot be recalled. |
 

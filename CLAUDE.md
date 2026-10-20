@@ -15,6 +15,9 @@ A Cloudflare Worker (`src/index.js`) that serves a single-page app (`public/app.
 7. **American spelling** in everything users see and in documents.
 8. **Review the diff yourself** before accepting any AI-written change. Read what changed, not only the summary.
 
+## Data that is built up from KoBo must be safe to read twice
+Anything added to the stored aggregates (`src/ingest.js`, `src/sync.js`, `src/summary.js`) has to give the same answer after a rebuild, and must not invent a repeat when a record is read more than once. Counts are reset by a rebuild (`clearForRebuild`) and normal syncs read each record once (watermark); lists are written once per record id. On 20 Oct 2026 a Students rebuild left the pupil-number list in place and re-added to it, which produced about 200 false "pupil tested twice" queries. So: add to a list only once per KoBo record id (`addRn`), clear only what a form wrote (`clearForRebuild`), read lists through `uniqueRn`, and keep `test/rebuild_integrity_test.mjs` passing. If the Bridge warns "Repeated records were ignored", tell the systems owner.
+
 ## Never
 - Never print, paste, commit or send a secret (access codes, tokens, keys, passphrases). Secrets live in Cloudflare and in the vault. If one is exposed, tell the systems owner at once.
 - Never change `AUTH_SALT`. Every staff, HQ and guest code is derived from it, so changing it stops everyone's sign-in.

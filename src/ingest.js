@@ -85,6 +85,31 @@ export function editedAfterSent(r, approved) {
 }
 function pushEvent(Y, date, ev) { const day = ((Y.tl ||= {})[date] ||= []); if (day.length < 9000) day.push(ev); }
 
+// ---- the pupil-number list of a school and grade (sg.rn): one entry per KoBo record, in the form "number~tester~pupil id~record id".
+// It must stay true however often a record is read (a rebuild, an overlapping sync, a retry), or the duplicate check invents repeats.
+const rnId = (e) => e.slice(e.lastIndexOf('~') + 1);
+export function addRn(sg, entry) {
+  const id = rnId(entry); const i = sg.rn.findIndex((e) => rnId(e) === id);
+  if (i >= 0) sg.rn[i] = entry; else sg.rn.push(entry); // same record again: keep one entry, with the latest values
+}
+export function uniqueRn(rn) { // the list as it should be: the last entry for each record id (used when reading, so older stored repeats cannot count)
+  const m = new Map(); for (const e of rn || []) m.set(rnId(e), e); return [...m.values()];
+}
+// What a rebuild clears: only what that form wrote. A Students rebuild re-reads the tests (totals, times, pupil numbers); a Sampling rebuild re-reads the
+// sampling forms (class size, draws, date, phone). Neither may wipe, or double, what the other form wrote into the same school and grade.
+export function clearForRebuild(Y, kind) {
+  if (kind === 'students') {
+    Y.cells = {}; Y.n = 0; for (const d of Object.keys(Y.tl || {})) Y.tl[d] = Y.tl[d].filter((e) => e[6] !== 't');
+    for (const g of Object.values(Y.sg || {})) g.rn = [];
+  } else if (kind === 'sampling') {
+    Y.nsamp = 0; for (const d of Object.keys(Y.tl || {})) Y.tl[d] = Y.tl[d].filter((e) => e[6] !== 's');
+    for (const [k, g] of Object.entries(Y.sg || {})) {
+      for (const f of ['cal', 'enum', 'dev', 'devWho', 'ed', 'edr', 'sub', 'sb']) delete g[f];
+      g.att = null; g.list = null; g.date = null;
+      if (!g.rn || !g.rn.length) delete Y.sg[k]; // nothing left from the tests either
+    }
+  }
+}
 export function addStudents(state, records, opts = {}) {
   for (const r of records) {
     const year = stateYearOf(r);
@@ -160,7 +185,7 @@ export function addStudents(state, records, opts = {}) {
     const rn = r['stu_info/rand_nr'];
     const sgk = `${school}|${grade}`;
     const sg = (Y.sg[sgk] ||= { att: null, list: null, rn: [], date: null });
-    if (rn !== undefined && rn !== '') sg.rn.push(`${parseInt(rn, 10)}~${enumerator}~${stuid}~${r._id}`);
+    if (rn !== undefined && rn !== '') addRn(sg, `${parseInt(rn, 10)}~${enumerator}~${stuid}~${r._id}`); // one entry per KoBo record, however many times it is read
   }
   return state;
 }

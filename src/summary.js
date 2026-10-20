@@ -2,7 +2,7 @@
 // school progress, test-admin stats, checks/flags, pace and projected finish.
 // Computed once per sync (not per request) and stored; the API only slices it.
 import { devCode as devCodeOf, PRACTICE_BY_ID, PRACTICE_REGION, SCHOOL_BY_ID, SCHOOLS_BY_REGION, REGIONS, FIELD_END, DEFAULT_BANDS, targetPerGrade, staffForKoboName, addWorkingDays, workingDaysBetween, isWorkingDay, STAFF } from './config.js';
-import { HIST_BUCKETS } from './ingest.js';
+import { HIST_BUCKETS, uniqueRn } from './ingest.js';
 
 const pct = (a, b) => (b ? Math.round((a / b) * 100) : null);
 const r1 = (x) => Math.round(x * 10) / 10;
@@ -138,6 +138,7 @@ export function summarize(Y, { year, bands, today, owners = {}, practice = false
   const schools = {};
   const admins = {};
   const flags = [];
+  const integrity = { repeated_entries: 0 };
   const daily = {}; // date -> region -> tests
   const mkSchool = (s) => ({
     id: s.id, name: s.name, region: s.region, lga: s.lga, ward: s.ward, arm: s.arm, mne: s.mne,
@@ -217,7 +218,8 @@ export function summarize(Y, { year, bands, today, owners = {}, practice = false
 
   // sampling checks (random-number list, duplicates, attendance mismatch)
   for (const [sgk, sg0] of Object.entries(Y.sg)) {
-    const sg = { ...sg0, enum: canon(sg0.enum), devWho: canon(sg0.devWho), rn: (sg0.rn || []).map((e) => { const p = e.split('~'); p[1] = canon(p[1]); return p.join('~'); }) };
+    const sg = { ...sg0, enum: canon(sg0.enum), devWho: canon(sg0.devWho), rn: uniqueRn(sg0.rn).map((e) => { const p = e.split('~'); p[1] = canon(p[1]); return p.join('~'); }) };
+    integrity.repeated_entries += (sg0.rn || []).length - sg.rn.length; // repeats of the same KoBo record that were ignored (should stay 0)
     const [schoolId, grade] = sgk.split('|');
     const sc = schools[schoolId];
     if (!sc) continue;
@@ -401,7 +403,7 @@ export function summarize(Y, { year, bands, today, owners = {}, practice = false
     if (['fast', 'slow', 'window', 'gps', 'edited', 'latesub'].includes(f.type)) f.n = cellN[`${f.date}|${f.school}|${f.grade}|${f.admin}`] || 0;
     else if (f.type === 'dup') f.n = (f.recs || []).length || 1; else if (f.type === 'notlist') f.n = parseInt(f.text, 10) || 1; else f.n = 0;
   }
-  return { year, as_of: new Date().toISOString(), today, bands, devices, tl_dates: tlDates, national: nat, regions, schools, admins: adminList, flags: flags.slice(0, 1500), days: Object.fromEntries(Object.entries(dayMap).map(([who, m]) => [who, Object.entries(m).sort().map(([d, v]) => [d, v.s.size, v.n, v.h0 === 99 ? null : v.h0, v.h1 < 0 ? null : v.h1, v.tn, Math.round(v.ts * 10) / 10, v.fast, v.slow, v.late, v.gp, v.gk, v.gn, v.gv])])), work: Object.fromEntries(Object.entries(work).map(([k, v]) => [k, v.sort((x, y) => (x[0] < y[0] ? 1 : -1)).slice(0, 80)])) };
+  return { year, integrity, as_of: new Date().toISOString(), today, bands, devices, tl_dates: tlDates, national: nat, regions, schools, admins: adminList, flags: flags.slice(0, 1500), days: Object.fromEntries(Object.entries(dayMap).map(([who, m]) => [who, Object.entries(m).sort().map(([d, v]) => [d, v.s.size, v.n, v.h0 === 99 ? null : v.h0, v.h1 < 0 ? null : v.h1, v.tn, Math.round(v.ts * 10) / 10, v.fast, v.slow, v.late, v.gp, v.gk, v.gn, v.gv])])), work: Object.fromEntries(Object.entries(work).map(([k, v]) => [k, v.sort((x, y) => (x[0] < y[0] ? 1 : -1)).slice(0, 80)])) };
 }
 
 export const staffRoster = () => STAFF;

@@ -3,7 +3,7 @@
 // a new pass on a schedule. Watermarks are per form, aggregates are shared.
 import { kv } from './store.js';
 import { fetchKoboPage } from './kobo.js';
-import { addStudents, addSampling, addTeachers, yearOf, stateYearOf } from './ingest.js';
+import { addStudents, addSampling, addTeachers, yearOf, stateYearOf, clearForRebuild } from './ingest.js';
 import { buildBands, summarize, phoneDay } from './summary.js';
 import { eatToday, devCode, isPracticeSchool, staffForKoboName } from './config.js';
 
@@ -72,8 +72,7 @@ export async function recomputeSummaries(env, years, { allDays = false } = {}) {
 export async function restartRebuildFrom(env, kind, years, fromId) {
   for (const y of years) {
     const Y = await loadYear(env, y); if (!Y) continue;
-    if (kind === 'students') { Y.cells = {}; Y.n = 0; for (const d of Object.keys(Y.tl || {})) Y.tl[d] = Y.tl[d].filter((e) => e[6] !== 't'); }
-    else if (kind === 'sampling') { Y.sg = {}; Y.nsamp = 0; for (const d of Object.keys(Y.tl || {})) Y.tl[d] = Y.tl[d].filter((e) => e[6] !== 's'); }
+    clearForRebuild(Y, kind);
     await saveYear(env, y, Y);
   }
   await kv(env).put(wmKey(kind), { max_id: Number(fromId) || 0, pages: 0, cursor: null, years: [], last_check: null, records: 0, only: years });
@@ -90,8 +89,7 @@ async function startRebuild(env) {
   const years = rb.filter((x) => x.kind === kind).map((x) => x.year);
   for (const y of years) {
     const Y = await loadYear(env, y); if (!Y) continue;
-    if (kind === 'students') { Y.cells = {}; Y.n = 0; for (const d of Object.keys(Y.tl || {})) Y.tl[d] = Y.tl[d].filter((e) => e[6] !== 't'); }
-    else if (kind === 'sampling') { Y.sg = {}; Y.nsamp = 0; for (const d of Object.keys(Y.tl || {})) Y.tl[d] = Y.tl[d].filter((e) => e[6] !== 's'); }
+    clearForRebuild(Y, kind);
     await saveYear(env, y, Y);
   }
   await kv(env).put(wmKey(kind), { max_id: await firstIdFor(env, kind, years), pages: 0, cursor: null, years: [], last_check: null, records: 0, only: years });
