@@ -110,3 +110,33 @@ export async function postQuery(env, who, { key, text, action, decision, note })
   await kv(env).put(KEY, queries);
   return { q, notify };
 }
+
+// ---------- withdrawing queries that were raised in error ----------
+// On 20 Oct 2026 a rebuild fault inflated the duplicate check and raised many "pupil tested twice" queries that KoBo did not support.
+// Those queries are not deleted. Each is moved, with its whole thread, into a "withdrawn|" record with who and why, so it can never
+// reappear on a later check, and everyone can still see what was written. Replies that now sit on a real (smaller) duplicate check
+// stay where they are and get a plain note in the thread asking the reviewers to read them against the current check.
+export const WITHDRAW_REASON = 'Raised in error on 20 Oct 2026: a system fault inflated the duplicate check (KoBo showed no repeated pupil). Fixed the same day.';
+export const RECHECK_NOTE = 'Note: this check was raised on 20 Oct while a system fault was inflating duplicate checks (fixed the same day). A reply above may describe a different number of repeated pupils than the current check. Reviewers: please read it against the check as it now stands.';
+const typeOf = (k) => String(k).split('|')[0];
+export async function withdrawFalseDuplicates(env, who, currentFlags, { apply = false, doneSchools = new Set(), from = '2026-10-15' } = {}) {
+  const queries = await loadQueries(env); const live = new Set((currentFlags || []).map(flagKey));
+  const out = { apply, withdraw: [], notes: [], left: [], archived: Object.keys(queries).filter((k) => k.startsWith('withdrawn|')).length };
+  for (const [k, q] of Object.entries(queries)) {
+    if (k.startsWith('withdrawn|') || typeOf(k) !== 'dup') continue;
+    const parts = k.split('|'); const school = parts[1], date = parts[3] || '';
+    const active = Boolean((q.thread && q.thread.length) || (q.wf && (q.wf.response || (q.wf.history && q.wf.history.length))) || q.status === 'resolved');
+    if (!active) continue;
+    if (live.has(k)) { if (!(q.thread || []).some((m) => m.text === RECHECK_NOTE)) out.notes.push({ key: k, status: q.status, stage: q.wf && q.wf.stage || 'open' }); continue; }
+    if (date < from) { out.left.push({ key: k, why: 'before the fault' }); continue; }
+    if (doneSchools.has(school)) { out.left.push({ key: k, why: 'a deletion or edit was approved at this school, so the check may be genuine history' }); continue; }
+    out.withdraw.push({ key: k, status: q.status, stage: q.wf && q.wf.stage || 'open', replied: Boolean(q.wf && q.wf.response), by: q.wf && q.wf.response && q.wf.response.by || null, at: q.wf && q.wf.response && q.wf.response.at || null });
+  }
+  if (!apply) return out;
+  const now = new Date().toISOString();
+  await kv(env).put('v2:queries:backup:' + now, queries); // a full copy first, so this can be undone
+  for (const w of out.withdraw) { queries['withdrawn|' + w.key] = { ...queries[w.key], withdrawn: { at: now, by: who.name, reason: WITHDRAW_REASON, original_key: w.key } }; delete queries[w.key]; }
+  for (const n of out.notes) (queries[n.key].thread ||= []).push({ by: 'System', role: 'system', text: RECHECK_NOTE, at: now });
+  await kv(env).put(KEY, queries); out.backup = 'v2:queries:backup:' + now; out.archived += out.withdraw.length; return out;
+}
+export async function listWithdrawn(env) { const q = await loadQueries(env); return Object.entries(q).filter(([k]) => k.startsWith('withdrawn|')).map(([k, v]) => ({ key: v.withdrawn?.original_key || k.slice(10), withdrawn_at: v.withdrawn?.at, reason: v.withdrawn?.reason, status: v.status, replied_by: v.wf?.response?.by || null, replied_at: v.wf?.response?.at || null, response: v.wf?.response?.text || null, thread: (v.thread || []).length })); }

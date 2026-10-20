@@ -32,7 +32,7 @@ import { listNarr, getNarr, saveNarr, compiledHtml } from './narratives.js';
 import { TEMPLATES, buildReport, listReports, getReport, saveReport, deleteReport } from './reports.js';
 import { loadHq, hqChange, hqList, hqByCode, codeFor, levelGate, applySettings, settingsView, saveSettings, logActivity, readActivity, activityLabel, BRAND, assistantName } from './hq.js';
 import { emailSchedule, hqPersonalCodeEmail, morningDigest, eveningGap, loadRecipients, saveRecipients, runDigests, maybeRunScheduledDigests, sendMail, onboardingEmail, runOnboarding, followupEmail, runFollowup, hqCc, hqOnboardingEmail, reminderEmail, runReminders } from './digest.js';
-import { loadQueries, decorate, postQuery, flagKey } from './queries.js';
+import { loadQueries, decorate, postQuery, flagKey, withdrawFalseDuplicates, listWithdrawn } from './queries.js';
 import { identify, staffCodes, canSeeRegion } from './auth.js';
 import { forecast, atRiskSchools } from './predict.js';
 import { ensureRoster, changeRoster, rosterOptions } from './roster.js';
@@ -940,6 +940,14 @@ export default {
         return json(await calendarStatus(env));
       }
       if (path === '/api/admin/do-usage') { return json(await kv(env).usage()); }
+      if (path === '/api/admin/queries-withdraw') { // dry run by default (GET); POST {apply:true} does it. Nothing is deleted: queries are moved to a withdrawn record, with a full copy saved first.
+        try {
+          const sum = await sumNow(env); const dr = (await kv(env).get('v2:delreq')) || []; const done = new Set(dr.filter((r) => ['deleted', 'done'].includes(r.stage)).flatMap((r) => (r.items || []).map((i) => i.school)).filter(Boolean));
+          const b = method === 'POST' ? await request.json().catch(() => ({})) : {}; const r = await withdrawFalseDuplicates(env, who, (sum && sum.flags) || [], { apply: method === 'POST' && b.apply === true, doneSchools: done });
+          if (r.apply) await logActivity(env, who, 'Withdrew queries raised in error', `${r.withdraw.length} withdrawn, ${r.notes.length} noted`);
+          return json({ ...r, withdrawn_list: method === 'GET' && url.searchParams.get('list') ? await listWithdrawn(env) : undefined });
+        } catch (e) { return err(String(e.message || e), 502); }
+      }
       if (path === '/api/admin/location-check') { try { const r = await locationCheck(env, who, Object.fromEntries(url.searchParams)); await logActivity(env, who, 'Ran the location check', r.year || ''); return r.error ? err(r.error, r.status || 422) : json(r); } catch (e) { return err(String(e.message || e), 502); } }
       if (path === '/api/admin/storage') { try { return json({ ...(await storageView(env)), dash: await kv(env).usage().catch(() => null) }); } catch (e) { return err(String(e.message || e), 502); } }
       if (path === '/api/admin/attach') {
