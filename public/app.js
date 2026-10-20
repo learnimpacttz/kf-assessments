@@ -1955,26 +1955,56 @@ function viewPatterns() {
 }
 
 // ---------- Visit map: school pins by status. Field teams see their own region; HQ sees every school plus the location checks ----------
-async function loadMap() { try { S.mp = { ...(S.mp || {}), err: null, busy: true }; const d = await api('/api/map'); S.mp = { ...(S.mp || {}), data: d, err: null, busy: false }; } catch (e) { S.mp = { ...(S.mp || {}), err: e.message, busy: false }; } render(); }
+async function loadMap() { try { S.mp = { ...(S.mp || {}), err: null, busy: true }; const d = await api('/api/map'); S.mp = { ...(S.mp || {}), data: d, err: null, busy: false, vb: null }; } catch (e) { S.mp = { ...(S.mp || {}), err: e.message, busy: false }; } if (!S.tz) { try { S.tz = await (await fetch('/tz_regions.json')).json(); } catch { S.tz = { paths: {}, k: 0.994 }; } } render(); }
 const MP_COL = { done: 'var(--good,#2e8b57)', started: 'var(--gold,#e0a526)', waiting: 'var(--ink3,#8a94a6)' };
+const mpK = () => (S.tz && S.tz.k) || 0.994; const mpX = (lon) => lon * mpK() * 100, mpY = (lat) => -lat * 100;
+function mpFit(list) { // the view that holds these schools with a little room around them
+  const pts = list.length ? list : (S.mp.data.schools || []); if (!pts.length) return [0, 0, 1000, 1000];
+  const xs = pts.map((p) => mpX(p.lon)), ys = pts.map((p) => mpY(p.lat)); let x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+  const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2, span = Math.max(60, x1 - x0, y1 - y0) * 1.24; return [cx - span / 2, cy - span / 2, span, span]; // square frame with room around the schools
+}
+function mpApply() { // update the view in place (no full redraw), keeping pins and labels the same size on screen
+  const svg = document.getElementById('mpsvg'), M = S.mp; if (!svg || !M || !M.vb) return; const [x, y, w, h] = M.vb; svg.setAttribute('viewBox', `${x} ${y} ${w} ${h}`);
+  const px = svg.clientWidth || 360, u = w / px; svg.querySelectorAll('circle[data-r]').forEach((c) => c.setAttribute('r', (+c.dataset.r * u).toFixed(2))); svg.querySelectorAll('text[data-fs]').forEach((t) => { t.setAttribute('font-size', (+t.dataset.fs * u).toFixed(2)); t.setAttribute('stroke-width', (3 * u).toFixed(2)); });
+}
+function mpZoom(f, cx, cy) { const M = S.mp; const [x, y, w, h] = M.vb; const nw = Math.min(2600, Math.max(25, w * f)), nh = h * (nw / w); const fx = cx == null ? 0.5 : cx, fy = cy == null ? 0.5 : cy; M.vb = [x + (w - nw) * fx, y + (h - nh) * fy, nw, nh]; mpApply(); }
 function viewMap() {
-  const head = '<div class="pagehead"><div><h2>Visit map</h2><p class="intro">Every school, coloured by how its visit is going. Tap a school for its details.</p></div></div>';
+  const head = '<div class="pagehead"><div><h2>Visit map</h2><p class="intro">Every school, coloured by how its visit is going. Pinch or use + and - to zoom, drag to move, tap a school for its details.</p></div></div>';
   const M = S.mp || {}; if (M.err) return head + `<div class="banner bad">${esc(M.err)}</div>`;
-  if (!M.data) { if (!M.busy) loadMap(); return head + '<div class="empty">Loading the map…</div>'; }
+  if (!M.data || !S.tz) { if (!M.busy) loadMap(); return head + '<div class="empty">Loading the map…</div>'; }
   const D = M.data; if (D.status === 'waiting') return head + '<div class="empty">The data is not ready yet.</div>';
-  const f = M.f || (M.f = { region: '', status: '', today: false, check: false }); let list = D.schools.filter((s) => (!f.region || s.region === f.region) && (!f.status || s.status === f.status) && (!f.today || s.today) && (!f.check || s.check));
-  const regions = [...new Set(D.schools.map((s) => s.region))].sort();
-  const sel = D.schools.find((s) => s.id === M.sel) || null;
-  const pts = list.length ? list : D.schools; const lats = pts.map((s) => s.lat), lons = pts.map((s) => s.lon); const la0 = Math.min(...lats), la1 = Math.max(...lats), lo0 = Math.min(...lons), lo1 = Math.max(...lons); const k = Math.cos((((la0 + la1) / 2) * Math.PI) / 180); const wspan = Math.max(0.05, (lo1 - lo0) * k), hspan = Math.max(0.05, la1 - la0); const W = 700, H = Math.min(900, Math.max(260, Math.round((W * hspan) / wspan))); const pad = 18;
-  const X = (lo) => pad + ((lo - lo0) * k / wspan) * (W - 2 * pad), Y = (la) => pad + ((la1 - la) / hspan) * (H - 2 * pad);
-  const dots = list.map((s) => `<g data-act="mpPick" data-id="${esc(s.id)}" tabindex="0" role="button" aria-label="${esc(s.name)}"><circle cx="${X(s.lon).toFixed(1)}" cy="${Y(s.lat).toFixed(1)}" r="${s.id === M.sel ? 9 : 5.5}" fill="${MP_COL[s.status]}" stroke="${s.check ? 'var(--bad,#b8432a)' : 'var(--card,#fff)'}" stroke-width="${s.check ? 2.5 : 1.2}"><title>${esc(s.name)} (${esc(title(s.region))}): ${s.status === 'done' ? 'complete' : s.status === 'started' ? 'in progress' : 'not started'}</title></circle></g>`).join('');
+  const f = M.f || (M.f = { region: '', status: '', today: false, check: false }); const list = D.schools.filter((s) => (!f.region || s.region === f.region) && (!f.status || s.status === f.status) && (!f.today || s.today) && (!f.check || s.check));
+  const regions = [...new Set(D.schools.map((s) => s.region))].sort(); const sel = D.schools.find((s) => s.id === M.sel) || null;
+  if (!M.vb) M.vb = mpFit(f.region || f.status || f.today || f.check ? list : D.schools);
+  const px = M.px || 360, u = M.vb[2] / px;
+  const ours = new Set(D.schools.map((s) => s.region.toLowerCase())); const paths = Object.entries(S.tz.paths || {}).map(([nm, d]) => { const mine = ours.has(nm.toLowerCase()) || (nm === 'Mbeya' && ours.has('songwe')); return `<path d="${d}" fill="${mine ? 'var(--teal-soft,rgba(47,143,157,.13))' : 'var(--card,#fff)'}" stroke="var(--ink3,#8a94a6)" stroke-width="1" stroke-opacity="${mine ? '.75' : '.4'}" vector-effect="non-scaling-stroke" stroke-linejoin="round"/>`; }).join('');
+  const cen = {}; for (const s of D.schools) { const c = (cen[s.region] ||= [0, 0, 0]); c[0] += s.lon; c[1] += s.lat; c[2]++; }
+  const labels = Object.entries(cen).filter(([r]) => !f.region || r === f.region).map(([r, c]) => `<text x="${mpX(c[0] / c[2]).toFixed(1)}" y="${mpY(c[1] / c[2]).toFixed(1)}" text-anchor="middle" data-fs="12" font-size="${(12 * u).toFixed(2)}" font-weight="700" fill="var(--ink2,#44506b)" stroke="var(--card,#fff)" stroke-width="${(3 * u).toFixed(2)}" paint-order="stroke" opacity=".85" pointer-events="none">${esc(title(r))}</text>`).join('');
+  const rank = { waiting: 0, started: 1, done: 2 };
+  const dots = list.slice().sort((a, b) => (a.check ? 1 : 0) - (b.check ? 1 : 0) || rank[a.status] - rank[b.status]).map((s) => { const on = s.id === M.sel, r = on ? 7 : 3.6; return `<circle data-act="mpPick" data-id="${esc(s.id)}" data-r="${r}" cx="${mpX(s.lon).toFixed(1)}" cy="${mpY(s.lat).toFixed(1)}" r="${(r * u).toFixed(2)}" fill="${MP_COL[s.status]}" stroke="${s.check ? 'var(--bad,#b8432a)' : 'var(--card,#fff)'}" stroke-width="${s.check ? 2.5 : 1.3}" vector-effect="non-scaling-stroke" tabindex="0" role="button" aria-label="${esc(s.name)}"><title>${esc(s.name)} (${esc(title(s.region))}): ${s.status === 'done' ? 'complete' : s.status === 'started' ? 'in progress' : 'not started'}</title></circle>`; }).join('');
   const n = (st) => D.schools.filter((s) => s.status === st).length;
   const legend = `<div class="mplg"><span><i style="background:${MP_COL.done}"></i>Complete ${n('done')}</span><span><i style="background:${MP_COL.started}"></i>In progress ${n('started')}</span><span><i style="background:${MP_COL.waiting}"></i>Not started ${n('waiting')}</span>${D.detail ? '<span><i style="background:none;border:2.5px solid var(--bad,#b8432a)"></i>Location check</span>' : ''}</div>`;
   const ctl = `<div class="toolbar"><label>Region <select id="mpReg"><option value="">${D.detail ? 'All regions' : 'My region'}</option>${regions.map((r) => `<option value="${esc(r)}" ${f.region === r ? 'selected' : ''}>${esc(title(r))}</option>`).join('')}</select></label><label>Status <select id="mpSt"><option value="">All</option>${[['done', 'Complete'], ['started', 'In progress'], ['waiting', 'Not started']].map(([v, t]) => `<option value="${v}" ${f.status === v ? 'selected' : ''}>${t}</option>`).join('')}</select></label><label class="cb"><input type="checkbox" id="mpToday" ${f.today ? 'checked' : ''}> Visited today</label>${D.detail ? `<label class="cb"><input type="checkbox" id="mpChk" ${f.check ? 'checked' : ''}> Location check needed</label>` : ''}</div>`;
   let card = '<div class="note" style="margin-top:10px">Tap a school on the map to see it here.</div>';
-  if (sel) { const L = sel.loc; card = `<div class="card" style="margin-top:10px"><h3 style="margin:0">${D.detail ? `<a href="#" data-open="school:${esc(sel.id)}">${esc(sel.name)}</a>` : esc(sel.name)} ${chip(sel.status === 'done' ? 'Complete' : sel.status === 'started' ? 'In progress' : 'Not started', sel.status === 'done' ? 'good' : sel.status === 'started' ? 'warn' : 'mute')}</h3><div class="m">${esc(title(sel.region))} · ${esc(sel.lga || '')}${sel.today ? ' · visited today' : ''}</div>${sel.approx ? `<div class="m">This school's point comes from ${esc(sel.approx)} and may be a little off.</div>` : ''}<p style="margin:8px 0">${fmt(sel.tested)} of ${fmt(sel.target)} pupils tested${sel.first ? ` · first visit ${esc(shortDate(sel.first))}` : ''}${sel.last && sel.last !== sel.first ? `, latest ${esc(shortDate(sel.last))}` : ''}</p>${L ? `<div class="note"><b>Location check (HQ).</b> ${L.points} of ${L.records} records carry a phone location; ${L.measured ? `${L.at_school} of ${L.measured} within 500 m of the school${L.far ? `, ${L.far} more than 2 km away` : ''}` : 'none could be measured yet'}.${sel.check ? ' <b>Worth a look:</b> many tests were recorded away from the school. The school coordinates may be off, or the phones may have lost location.' : ''}</div>${sel.people && sel.people.length ? `<div class="m" style="margin-top:6px">Testers: ${sel.people.map((p) => `<a href="#" data-open="person:${esc(p)}">${esc(p)}</a>`).join(', ')}</div>` : ''}` : ''}</div>`; }
+  if (sel) { const L = sel.loc; card = `<div class="card" style="margin-top:10px"><h3 style="margin:0">${D.detail ? `<a href="#" data-open="school:${esc(sel.id)}">${esc(sel.name)}</a>` : esc(sel.name)} ${chip(sel.status === 'done' ? 'Complete' : sel.status === 'started' ? 'In progress' : 'Not started', sel.status === 'done' ? 'good' : sel.status === 'started' ? 'warn' : 'mute')}</h3><div class="m">${esc(title(sel.region))} · ${esc(sel.lga || '')}${sel.today ? ' · visited today' : ''}</div>${sel.approx ? `<div class="m">This school's point comes from ${esc(sel.approx)} and may be a little off.</div>` : ''}${sel.wrong ? `<div class="m"><b>HQ:</b> the school list had a point far outside this school's region (${esc(sel.wrong)}).</div>` : ''}<p style="margin:8px 0">${fmt(sel.tested)} of ${fmt(sel.target)} pupils tested${sel.first ? ` · first visit ${esc(shortDate(sel.first))}` : ''}${sel.last && sel.last !== sel.first ? `, latest ${esc(shortDate(sel.last))}` : ''}</p>${L ? `<div class="note"><b>Location check (HQ).</b> ${L.points} of ${L.records} records carry a phone location; ${L.measured ? `${L.at_school} of ${L.measured} within 500 m of the school${L.far ? `, ${L.far} more than 2 km away` : ''}` : 'none could be measured yet'}.${sel.check ? ' <b>Worth a look:</b> many tests were recorded away from the school. The school coordinates may be off, or the phones may have lost location.' : ''}</div>${sel.people && sel.people.length ? `<div class="m" style="margin-top:6px">Testers: ${sel.people.map((p) => `<a href="#" data-open="person:${esc(p)}">${esc(p)}</a>`).join(', ')}</div>` : ''}` : ''}</div>`; }
   const dropped = D.without_coordinates ? `<div class="m" style="margin-top:6px">${D.without_coordinates} school${D.without_coordinates > 1 ? 's have' : ' has'} no coordinates yet and ${D.without_coordinates > 1 ? 'are' : 'is'} not on the map.</div>` : '';
-  return `${head}<div class="card">${ctl}${legend}<div class="mpwrap"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Map of school visits" class="mpsvg"><rect x="0" y="0" width="${W}" height="${H}" rx="10" fill="var(--soft,#f2f5f8)"/>${dots}</svg></div><div class="m">${list.length} school${list.length === 1 ? '' : 's'} shown. Pins are school locations, not people.${D.detail ? '' : ' HQ sees more detail.'}</div>${dropped}${card}</div>`;
+  requestAnimationFrame(() => { const sv = document.getElementById('mpsvg'); if (sv && S.mp) { S.mp.px = sv.clientWidth; mpApply(); } });
+  return `${head}<div class="card">${ctl}${legend}<div class="mpwrap"><svg id="mpsvg" viewBox="${M.vb.map((v) => +v.toFixed(1)).join(' ')}" role="img" aria-label="Map of school visits" class="mpsvg"><rect x="-100000" y="-100000" width="200000" height="200000" fill="var(--soft,#eef3f7)"/>${paths}${dots}${labels}</svg><div class="mpzoom"><button class="btn sm sec" data-act="mpZoom" data-d="in" aria-label="Zoom in">+</button><button class="btn sm sec" data-act="mpZoom" data-d="out" aria-label="Zoom out">−</button><button class="btn sm sec" data-act="mpZoom" data-d="fit" aria-label="Show all">⤢</button></div></div><div class="m">${list.length} school${list.length === 1 ? '' : 's'} shown. Pins are school locations, not people.${D.detail ? '' : ' HQ sees more detail.'}</div>${dropped}<div class="m" style="margin-top:4px;opacity:.75">${esc((S.tz && S.tz.attribution) || '')}</div>${card}</div>`;
+}
+// drag, pinch and wheel on the map (delegated, so a redraw never loses them)
+{
+  const ptrs = new Map(); let last = null, moved = 0;
+  const svgOf = (e) => (e.target && e.target.closest ? e.target.closest('#mpsvg') : null);
+  document.addEventListener('pointerdown', (e) => { const sv = svgOf(e); if (!sv || !S.mp || !S.mp.vb) return; ptrs.set(e.pointerId, [e.clientX, e.clientY]); last = ptrs.size === 2 ? pinchState() : null; moved = 0; S.mp.moved = false; S.mp.px = sv.clientWidth; });
+  const pinchState = () => { const p = [...ptrs.values()]; return Math.hypot(p[0][0] - p[1][0], p[0][1] - p[1][1]); };
+  document.addEventListener('pointermove', (e) => {
+    if (!ptrs.has(e.pointerId) || !S.mp || !S.mp.vb) return; const sv = document.getElementById('mpsvg'); if (!sv) return; const prev = ptrs.get(e.pointerId); ptrs.set(e.pointerId, [e.clientX, e.clientY]); const r = sv.getBoundingClientRect();
+    if (ptrs.size === 2) { const d = pinchState(); if (last) { const c = [...ptrs.values()]; mpZoom(last / d, ((c[0][0] + c[1][0]) / 2 - r.left) / r.width, ((c[0][1] + c[1][1]) / 2 - r.top) / r.height); S.mp.moved = true; } last = d; return; }
+    const dx = e.clientX - prev[0], dy = e.clientY - prev[1]; moved += Math.abs(dx) + Math.abs(dy); if (moved < 6) return; S.mp.moved = true; const [x, y, w, h] = S.mp.vb; S.mp.vb = [x - dx * (w / r.width), y - dy * (h / r.height), w, h]; mpApply();
+  });
+  const end = (e) => { ptrs.delete(e.pointerId); last = null; };
+  document.addEventListener('pointerup', end); document.addEventListener('pointercancel', end);
+  document.addEventListener('wheel', (e) => { const sv = svgOf(e); if (!sv || !S.mp || !S.mp.vb) return; e.preventDefault(); const r = sv.getBoundingClientRect(); mpZoom(e.deltaY > 0 ? 1.18 : 1 / 1.18, (e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height); }, { passive: false });
 }
 
 // ---------- Payments (HQ Admin only): the COD calculation by school; no names or bank details ----------
@@ -2861,7 +2891,8 @@ document.addEventListener('click', async (e) => {
     }
     else if (a === 'ntAct') { const box = t.closest('[data-notes]'); const target = box.dataset.notes; if (t.dataset.op === 'delete' && !confirm('Delete this note?')) return; try { await api('/api/hqnotes', { method: 'POST', body: { action: t.dataset.op, id: t.dataset.id } }); await loadNotes(target); loadTalk(); } catch (e) { alert(e.message); } }
     else if (a === 'ptOpen') { S.pt.open = S.pt.open === t.dataset.n ? null : t.dataset.n; render(); }
-    else if (a === 'mpPick') { S.mp.sel = t.dataset.id; render(); }
+    else if (a === 'mpPick') { if (S.mp.moved) { S.mp.moved = false; return; } S.mp.sel = t.dataset.id; render(); }
+    else if (a === 'mpZoom') { const d = t.dataset.d; if (d === 'fit') { S.mp.vb = null; render(); } else mpZoom(d === 'in' ? 1 / 1.5 : 1.5); }
     else if (a === 'ntSeen') { try { await api('/api/hqnotes', { method: 'POST', body: { action: 'seen', id: t.dataset.id } }); await loadTalk(); } catch {} render(); }
     else if (a === 'askSend') {
       const g = (id) => document.getElementById(id); S.askMsg = 'Sending…'; render();
@@ -2984,10 +3015,10 @@ document.addEventListener('change', async (e) => {
   if (e.target.id === 'tkReg' || e.target.id === 'tkPer') { const v = e.target.value; e.target.value = ''; if (v) openDetail((e.target.id === 'tkReg' ? 'region:' : 'person:') + v); return; }
   if (e.target.id === 'bvDesk') { try { store.set('kf_desk', e.target.value); } catch { /* ignore */ } render(); return; }
   if (e.target.dataset && e.target.dataset.opst) { bvSaveOps(S.bv.ops.map((x) => (x.id === e.target.dataset.opst ? { ...x, status: e.target.value } : x))); return; }
-  if (e.target.id === 'mpReg') { S.mp.f.region = e.target.value; S.mp.sel = null; render(); return; }
-  if (e.target.id === 'mpSt') { S.mp.f.status = e.target.value; render(); return; }
-  if (e.target.id === 'mpToday') { S.mp.f.today = e.target.checked; render(); return; }
-  if (e.target.id === 'mpChk') { S.mp.f.check = e.target.checked; render(); return; }
+  if (e.target.id === 'mpReg') { S.mp.f.region = e.target.value; S.mp.sel = null; S.mp.vb = null; render(); return; }
+  if (e.target.id === 'mpSt') { S.mp.f.status = e.target.value; S.mp.vb = null; render(); return; }
+  if (e.target.id === 'mpToday') { S.mp.f.today = e.target.checked; S.mp.vb = null; render(); return; }
+  if (e.target.id === 'mpChk') { S.mp.f.check = e.target.checked; S.mp.vb = null; render(); return; }
   if (e.target.id === 'bvReg') { S.bv.region = e.target.value; S.bv.partner = 'all'; S.bv.row = null; render(); return; }
   if (e.target.id === 'bvPar') { S.bv.partner = e.target.value; S.bv.region = 'all'; S.bv.row = null; render(); return; }
   if (e.target.id === 'bvView') { const v = bvViews()[Number(e.target.value)]; if (v) { Object.assign(S.bv, v.f); render(); } return; }
