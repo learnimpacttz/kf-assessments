@@ -4,6 +4,7 @@ import { ownWork, teamBlock, coordinatorOverview } from './own.js';
 import { buildCalendar, markCalendarDirty, syncCalendar, calendarStatus, setCalSync, loadCalSync } from './calendar.js';
 import { pupilRecords, workFiles, flagRecords } from './pupils.js';
 import { pilotView, pilotSet, PILOT_ALLOC } from './pilot.js';
+import { locationCheck } from './location.js';
 import { findRecords as findToMove, previewMove, applyMove, correctionsView, correctionCopy } from './corrections.js';
 import { qrPng } from './qr.js';
 import { codFromYear } from './paymentdata.js';
@@ -915,6 +916,7 @@ export default {
         return json(await calendarStatus(env));
       }
       if (path === '/api/admin/do-usage') { return json(await kv(env).usage()); }
+      if (path === '/api/admin/location-check') { try { const r = await locationCheck(env, who, Object.fromEntries(url.searchParams)); await logActivity(env, who, 'Ran the location check', r.year || ''); return r.error ? err(r.error, r.status || 422) : json(r); } catch (e) { return err(String(e.message || e), 502); } }
       if (path === '/api/admin/storage') { try { return json({ ...(await storageView(env)), dash: await kv(env).usage().catch(() => null) }); } catch (e) { return err(String(e.message || e), 502); } }
       if (path === '/api/admin/attach') {
         try {
