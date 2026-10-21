@@ -64,4 +64,5 @@ ok('the box routes do not write to the activity log', !/\/api\/box/.test(hq) && 
 ok('the app does not count visits to the box pages', app.includes("tab === 'box' || tab === 'boxed') return;"));
 ok('the box page is not stored in the usage trail or the sign-in remembered page', !/store\.set\('kf_start[^;]*'box'/.test(app));
 ok('the private key page forgets what it decrypted when you leave', app.includes("S.tab === 'boxed' && k !== 'boxed' && S.bx) { S.bx.msgs = null"));
+ok('the Executive Director can download the messages as a file, with or without names', app.includes("data-act=\"bxSave\" data-names=\"0\"") && app.includes("data-act=\"bxSave\" data-names=\"1\"") && app.includes('Sanduku_maoni_'));
 done();
