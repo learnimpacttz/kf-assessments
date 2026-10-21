@@ -10,11 +10,12 @@ export const BOX_DAILY_CAP = 150, BOX_CT_MAX = 9000, BOX_WK_MAX = 700;
 const B64 = /^[A-Za-z0-9+/]+={0,2}$/;
 const randId = () => Array.from(globalThis.crypto.getRandomValues(new Uint8Array(9))).map((x) => x.toString(36).padStart(2, '0')).join('').slice(0, 14);
 export const isReader = (who, env) => Boolean(who && who.role === 'hq' && !who.viewAs && (who.level || 'admin') === 'admin' && String(who.hq_id) === String((env && env.BOX_READER) || 'h3'));
-export const canWrite = (who) => Boolean(who && !who.viewAs && ['volunteer', 'rc', 'arc'].includes(who.role));
+const fieldRole = (who) => Boolean(who && ['volunteer', 'rc', 'arc'].includes(who.role));
+export const canWrite = (who) => fieldRole(who) && !who.viewAs; // a preview (HQ viewing as someone) can look but never send
 const month = (day) => String(day).slice(0, 7);
 
 export async function boxPublic(env, who) {
-  if (!canWrite(who) && !isReader(who, env)) return { error: 'Not allowed', status: 403 };
+  if (!fieldRole(who) && !isReader(who, env)) return { error: 'Not allowed', status: 403 }; // the public key is not secret, so a preview may read it
   const k = await kv(env).get(KEY); return k ? { open: true, spki: k.spki, fp: k.fp, at: k.at, reader: isReader(who, env), history: isReader(who, env) ? k.history : undefined } : { open: false, reader: isReader(who, env) };
 }
 export async function setBoxKey(env, who, b) {

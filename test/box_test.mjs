@@ -81,4 +81,6 @@ ok('the page saves new messages by itself and reminds on every page until they a
 ok('the box is easy to find once it is open: top of the home pages, an icon in the top bar, a link on the main pages and in the account menu', app.includes("ph.insertAdjacentElement('afterend', d)") && app.includes('id="boxBtn"') && app.includes('const boxStrip') && app.includes("data-tab=\"box\">Sanduku la maoni · Suggestion box</button>") && app.includes('Mpya · New'));
 ok('nothing is shown to the field team until the Executive Director has opened the box', app.includes('!S.bxOpen || S.tab ===') && app.includes('boxField() && S.bxOpen ?'));
 ok('only the field team sees the sender card and icon, not HQ', app.includes("['volunteer', 'rc', 'arc'].includes(S.who.role)"));
+ok('a preview (HQ viewing as a volunteer) can read the public key but cannot send', (await boxPublic(env, { ...vol, viewAs: true })).open === true && (await submitBox(env, { ...vol, viewAs: true }, { v: 1, kfp: keys.fp, ...lk })).status === 403 && (await listBox(env, { ...vol, viewAs: true })).status === 403);
+ok('the preview says it is a preview and turns Send off', app.includes('<b>Preview.</b> You are viewing as') && app.includes('B.sending || boxPreview() ? \'disabled\''));
 done();

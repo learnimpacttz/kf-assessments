@@ -2019,7 +2019,8 @@ function viewMap() {
 
 // ---------- Suggestion box (Sanduku la maoni). The message is locked on this phone (boxcrypto.js) with a key only the Executive Director holds. ----------
 const BOX_CATS = { pendekezo: ['Pendekezo · Suggestion', 'teal'], tatizo: ['Tatizo · Problem', 'warn'], zuri: ['Jambo zuri · Good news', 'good'], mzito: ['Wasiwasi mzito · Serious concern (safety, harassment, money)', 'bad'] };
-const boxField = () => Boolean(S.who && ['volunteer', 'rc', 'arc'].includes(S.who.role) && !S.viewAs);
+const boxField = () => Boolean(S.who && ['volunteer', 'rc', 'arc'].includes(S.who.role)); // also in a preview (HQ viewing as someone), where sending is off
+const boxPreview = () => Boolean(S.viewAs);
 const boxReader = () => Boolean(S.who && S.who.role === 'hq' && S.who.hq_id === 'h3' && (S.who.level || 'admin') === 'admin' && !S.viewAs);
 const boxNew = () => { try { return !localStorage.getItem('kf_bx_seen'); } catch { return false; } }; // a "new" tag until the page has been opened once on this phone
 const boxCard = () => (boxField() ? `<div class="card boxcard" style="margin-top:10px"><h3>${boxNew() ? '<span class="chip c-gold">Mpya · New</span> ' : ''}Sanduku la maoni · Suggestion box</h3><div class="sub">Una wazo, tatizo, jambo zuri au wasiwasi? Andika bila jina. Ni ED pekee anayesoma. · An idea, a problem, good news or a worry? Write it without your name. Only the ED reads it.</div><button class="btn" data-tab="box">Andika ujumbe · Write a message</button></div>` : '');
@@ -2036,7 +2037,8 @@ function addBoxCard() { // the box is easy to find: a card at the top of the hom
 function viewBox() {
   const B = (S.bx ||= {}); if (!B.key && !B.err && !B.busy) loadBoxKey();
   const head = '<div class="pagehead"><div><h2>Sanduku la maoni</h2><p>Suggestion box</p></div></div>';
-  const promise = `<div class="note" style="margin-top:10px"><p style="margin:0 0 6px"><b>Ujumbe wako unafungwa kwenye simu yako kabla ya kutumwa. Ni Mkurugenzi Mtendaji (ED) pekee anayeweza kuusoma.</b> Mfumo hauhifadhi jina lako, namba yako ya siri wala eneo lako, isipokuwa ukichagua kuviandika.</p><p style="margin:0"><b>Your message is locked on your phone before it is sent. Only the Executive Director can read it.</b> The system does not store your name, your code or your region unless you choose to write them.</p></div>`;
+  const prev = boxPreview() ? `<div class="banner" role="status"><b>Preview.</b> You are viewing as ${esc(S.who.name)}. This is what they see. Sending is turned off, so nothing is sent under their name.</div>` : '';
+  const promise = prev + `<div class="note" style="margin-top:10px"><p style="margin:0 0 6px"><b>Ujumbe wako unafungwa kwenye simu yako kabla ya kutumwa. Ni Mkurugenzi Mtendaji (ED) pekee anayeweza kuusoma.</b> Mfumo hauhifadhi jina lako, namba yako ya siri wala eneo lako, isipokuwa ukichagua kuviandika.</p><p style="margin:0"><b>Your message is locked on your phone before it is sent. Only the Executive Director can read it.</b> The system does not store your name, your code or your region unless you choose to write them.</p></div>`;
   if (B.err) return head + promise + `<div class="banner bad">${esc(B.err)}</div>`;
   if (!B.key) return head + promise + '<div class="empty">Inapakia… · Loading…</div>';
   if (!B.key.open) return head + promise + '<div class="banner">Sanduku litafunguliwa hivi karibuni. · The box will open soon.</div>';
@@ -2044,12 +2046,13 @@ function viewBox() {
   const form = `<div class="card" style="margin-top:12px"><label>Aina ya ujumbe · Type<select id="bxCat" style="width:100%;max-width:100%">${Object.entries(BOX_CATS).map(([k, v]) => `<option value="${k}" ${cat === k ? 'selected' : ''}>${esc(v[0])}</option>`).join('')}</select></label>
   <label style="display:block;margin-top:10px">Ujumbe wako · Your message<textarea id="bxText" rows="8" maxlength="1500" placeholder="Andika hapa… · Write here…" style="width:100%">${esc(B.draft || '')}</textarea></label>
   <label class="cb" style="margin-top:10px"><input type="checkbox" id="bxNamed" ${B.named ? 'checked' : ''}> Nataka ED ajue ni mimi (itabaki siri). · I want the ED to know it is me (kept confidential).</label>
-  <p style="margin-top:10px"><button class="btn" data-act="bxSend" ${B.sending ? 'disabled' : ''}>${B.sending ? 'Inatuma… · Sending…' : 'Tuma · Send'}</button></p>
+  <p style="margin-top:10px"><button class="btn" data-act="bxSend" ${B.sending || boxPreview() ? 'disabled' : ''}>${B.sending ? 'Inatuma… · Sending…' : 'Tuma · Send'}</button></p>
   ${B.msg ? `<div class="banner ${B.bad ? 'bad' : 'good'}" role="status"><b>${esc(B.msg)}</b></div>` : ''}</div>`;
   const care = `<div class="m" style="margin-top:12px"><p><b>Ili ubaki bila kujulikana:</b> usiandike majina ya watu wala taarifa za kibinafsi. Maneno au mtindo wako wa kuandika unaweza kukutambulisha, hasa kwenye timu ndogo. Jambo la dharura ambalo haliwezi kusubiri, mwambie RC wako au HQ moja kwa moja.</p><p><b>To stay anonymous:</b> do not write names or personal details. Your words or writing style can identify you, especially in a small team. For something urgent that cannot wait, tell your RC or HQ directly.</p><p>Alama ya ufunguo · Key code: <b>${esc(B.key.fp)}</b> (ED anaweza kuithibitisha · the ED can confirm it)</p></div>`;
   return head + promise + form + care;
 }
 async function boxSend() {
+  if (boxPreview()) return;
   const B = (S.bx ||= {}), g = (id) => document.getElementById(id); const text = g('bxText').value.trim(), cat = g('bxCat').value, named = g('bxNamed').checked; B.draft = text; B.cat = cat; B.named = named;
   if (text.length < 5) { B.msg = 'Andika ujumbe kwanza. · Write your message first.'; B.bad = true; render(); return; }
   try {
