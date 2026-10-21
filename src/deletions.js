@@ -7,6 +7,7 @@ import { tellHQ } from './formjob.js';
 import { pushTo } from './push.js';
 import { FIELDS, checkEdit, patchFor, describe, runEdit, attGuard } from './edits.js';
 import { previewMove, applyMove } from './corrections.js';
+import { logActivity } from './hq.js';
 
 const KEY = 'v2:delreq', LOG = 'v2:delog', CAP = 200;
 const uid = () => Math.random().toString(36).slice(2, 10);
@@ -67,7 +68,13 @@ export async function listRequests(env, who) {
 async function notify(env, r, text, pred) { try { await pushTo(env, pred, { title: r.type === 'edit' ? 'Data edit request' : 'Data deletion request', body: text.slice(0, 120), url: '/#clean' }); } catch { /* the page still shows it */ } }
 const hqLvl = (n) => (w) => w && w.role === 'hq' && (w.review_level || 0) >= n;
 
+// Successful steps are logged by the request log (hq.js). Refused attempts were not logged anywhere, so a user who pressed Suggest and got an error left no trace.
 export async function actOnRequest(env, who, b) {
+  const r = await actInner(env, who, b);
+  if (r && r.error) { try { await logActivity(env, who, `Data cleaning: ${b.action || 'request'} refused`, `${[b.kind, b.id].filter(Boolean).join(' ')} ${String(r.error).slice(0, 140)}`.trim()); } catch { /* logging never blocks the action */ } }
+  return r;
+}
+async function actInner(env, who, b) {
   const d = await load(env); const a = b.action; const now = new Date().toISOString();
   if (a === 'suggest') {
     if (who.role === 'volunteer' || (who.role === 'hq' && lvl(who) < 2)) return { error: 'You cannot suggest deletions with this access.', status: 403 };
@@ -108,6 +115,7 @@ export async function actOnRequest(env, who, b) {
     if (r.by_id === me) return { error: 'You cannot initiate your own suggestion.', status: 403 };
     removeIds(b.remove); if (!r.ids.length) return { error: 'Nothing left in the request. Reject it instead.' }; r.stage = 'initiated'; r.initiated_by = me; r.history.push(hist(who, 'initiated', text || (b.remove?.length ? `Removed ${b.remove.length} record(s) from the list.` : 'Reviewed and passed to Mundo.')));
     await notify(env, r, `${r.ids.length} record(s) waiting for your decision`, hqLvl(3));
+    await notify(env, r, `Your request was reviewed by ${who.name} and passed to Mundo for the final decision`, (w) => w && String(w.id ?? w.hq_id) === r.by_id);
   } else if (a === 'send_back' || a === 'reject') {
     const e = needReason(); if (e) return { error: e };
     const allowed = (r.stage === 'suggested' && lvl(who) >= 2) || (r.stage === 'initiated' && lvl(who) >= 3) || (r.stage === 'rework' && false); if (!allowed) return { error: 'It is not your step.', status: 403 };
@@ -147,6 +155,7 @@ async function effect(env, who, r, d, b) {
   const years = [...new Set(r.items.map((i) => (i.school && /^TRAIN/i.test(i.school) ? 'practice' : (i.date || '').slice(0, 4))).filter(Boolean))];
   const rb = (await kv(env).get('v2:rebuild')) || []; for (const y of years) if (!rb.find((x) => x.kind === kind && x.year === y)) rb.push({ kind, year: y }); await kv(env).put('v2:rebuild', rb);
   await tellHQ(env, 'KiuFunza 4 · Automated update · Records deleted from KoBo', [`${who.name} deleted ${done.length} record(s) from the ${KINDS[kind].label} project after the approval chain (suggested by ${r.by}). KoBo count ${before} to ${after}.`, `Reason: ${r.reason}`, 'A full copy of the records is stored in the dashboard system. The dashboard totals are being rebuilt.']).catch(() => {});
+  try { await notify(env, r, ok ? `Your deletion request was carried out: ${done.length} record(s) deleted (a full copy is saved)` : 'Your deletion request was tried but stopped. Open it to see why', (w) => w && String(w.id ?? w.hq_id) === r.by_id); } catch { /* the page still shows it */ }
   return { ok, deleted: done.length, before, after, failed };
 }
 export async function copyOf(env, id) { return kv(env).get(`v2:delcopy:${id}`); }
@@ -174,5 +183,6 @@ async function effectEdit(env, who, r, d, b) {
     const rb = (await kv(env).get('v2:rebuild')) || []; for (const y of years) if (!rb.find((x) => x.kind === r.kind && x.year === y)) rb.push({ kind: r.kind, year: y }); await kv(env).put('v2:rebuild', rb);
     await tellHQ(env, 'KiuFunza 4 · Automated update · Records edited in KoBo', [`${who.name} applied an edit (${FIELDS[r.edit.field]}) to ${res.done.length} record(s) in the ${KINDS[r.kind].label} project after the approval chain (suggested by ${r.by}).`, `Reason: ${r.reason}`, 'The originals are saved in the dashboard system. The dashboard totals are being rebuilt.']).catch(() => {});
   }
+  try { await notify(env, r, res.ok ? `Your edit request was carried out: ${(res.done || []).length} record(s) changed and checked in KoBo` : 'Your edit request was tried but stopped. Open it to see why', (w) => w && String(w.id ?? w.hq_id) === r.by_id); } catch { /* the page still shows it */ }
   return { ok: res.ok, changed: (res.done || []).length, failed: res.failed || [] };
 }
