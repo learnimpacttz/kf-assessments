@@ -1,6 +1,6 @@
 // Edits change labels only (school, grade, tester, district, region, pupil number), never answers or times
 import { ok, done } from './_kit.mjs';
-import { patchFor, checkEdit } from '../src/edits.js';
+import { patchFor, checkEdit, attGuard, describe } from '../src/edits.js';
 import { SCHOOL_BY_ID, STAFF } from '../src/config.js';
 const rec = { _id: 1, stuid: '2026PS03020232073', rand_long: '073', 'stu_info/rand_nr': '73', 'stu_info/name': '73', 'id_data/grade': '2', 'stu_info/grade_conf': '2', 'id_data/school': 'PS0302023', 'id_data/enumerator': 'Old Name', 'id_data/lga': 'A', 'id_data/region': 'DODOMA', 'end_note_gr/testtime': '450', start: '2026-10-15T09:00:00', 's1/k101': '1', a101_b: '1' };
 const keep = (p) => !Object.keys(p).some((k) => /testtime|start|^s1\/|_b$|k1/.test(k));
@@ -21,4 +21,18 @@ ok('tester must be on the roster', Boolean(checkEdit({ field: 'tester', value: '
 ok('pupil numbers do not exist in the sampling project', Boolean(checkEdit({ field: 'pupil', values: { 1: 5 } }, 'sampling', adm).error));
 ok('pupil number must be 1 to 400', Boolean(checkEdit({ field: 'pupil', values: { 1: 999 } }, 'students', adm).error));
 const other = Object.values(SCHOOL_BY_ID).find((s) => s.region !== 'TANGA'); ok('an RC cannot move records to another region', Boolean(checkEdit({ field: 'school', value: other.id }, 'students', rcw).error));
+
+// ---- attendance on a Sampling record: only the attendance answer, only when 20 or fewer were present
+const samp = { _id: 9, 'id_data/school': 'PS0302023', 'id_data/grade': '2', 'att_gr/att': '6', 'att_gr/skipint': '0.3', 'att_gr/fj1': '-13', 'att_gr/int1': '0', 'att_gr/int2': '0', 'selection/list1': '', _submission_time: '2026-10-19T10:00:00' };
+p = patchFor('sampling', 'att', samp, '7');
+ok('attendance: only the attendance answer changes', Object.keys(p).join() === 'att_gr/att' && p['att_gr/att'] === '7', JSON.stringify(p));
+ok('attendance: the helper numbers, the draw lists and every other answer are untouched', !Object.keys(p).some((k) => /skipint|fj\d|int\d|list|school|grade/.test(k)));
+ok('attendance: no change when the value is the same', Object.keys(patchFor('sampling', 'att', samp, '6')).length === 0);
+ok('attendance: only for the Sampling project', Boolean(checkEdit({ field: 'att', value: '7' }, 'students', adm).error) && !checkEdit({ field: 'att', value: '7' }, 'sampling', adm).error);
+ok('attendance must be a whole number from 1 to 20', ['0', '21', '7.5', 'abc', ''].every((v) => Boolean(checkEdit({ field: 'att', value: v }, 'sampling', adm).error)) && !checkEdit({ field: 'att', value: '20' }, 'sampling', adm).error && !checkEdit({ field: 'att', value: '1' }, 'sampling', adm).error);
+ok('attGuard allows 6 to 7', attGuard(samp, 7) === null);
+ok('attGuard blocks a class with more than 20 present (the draw depends on it)', /new draw/.test(attGuard({ ...samp, 'att_gr/att': '34' }, 18)));
+ok('attGuard blocks changing to the same number', /already 6/.test(attGuard(samp, 6)));
+ok('attGuard blocks a value above 20 and a record without attendance', Boolean(attGuard(samp, 25)) && Boolean(attGuard({ _id: 1 }, 7)));
+ok('the request lines read "present 6 to 7"', describe({ field: 'att', value: '7' }, { att: '6' }) === 'Pupils present 6 to 7');
 done();

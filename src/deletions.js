@@ -5,7 +5,7 @@ import { kv } from './store.js';
 import { SCHOOL_BY_ID, SCHOOLS_BY_REGION } from './config.js';
 import { tellHQ } from './formjob.js';
 import { pushTo } from './push.js';
-import { FIELDS, checkEdit, patchFor, describe, runEdit } from './edits.js';
+import { FIELDS, checkEdit, patchFor, describe, runEdit, attGuard } from './edits.js';
 import { previewMove, applyMove } from './corrections.js';
 
 const KEY = 'v2:delreq', LOG = 'v2:delog', CAP = 200;
@@ -82,6 +82,7 @@ export async function actOnRequest(env, who, b) {
       const c = checkEdit(b, kind, who); if (c.error) return { error: c.error, status: c.status };
       edit = c.edit; if (edit.field === 'pupil' && want.some((i) => !edit.values[i])) return { error: 'Type a new pupil number for every ticked record.' };
       if (edit.field === 'grade' && recs.some((x) => x.grade === edit.value)) return { error: 'Some of these records are already in that grade.' };
+      if (edit.field === 'att') for (const raw of rawRecs) { const why = attGuard(raw, edit.value); if (why) return { error: `Record ${raw._id}: ${why}` }; }
       if (edit.field === 'school' && recs.some((x) => x.school === edit.value)) return { error: 'Some of these records are already at that school.' };
       if (edit.field === 'pupil' || edit.field === 'grade') for (const raw of rawRecs) { const ns = patchFor(kind, edit.field, raw, edit.field === 'pupil' ? edit.values[raw._id] : edit.value).stuid; if (ns) { const clash = await koboData(env, kind, { stuid: ns }, 5); if (clash.length) return { error: `Pupil ID ${ns} already exists in KoBo (record ${clash[0]._id}). That change would create a duplicate.` }; } }
     }
