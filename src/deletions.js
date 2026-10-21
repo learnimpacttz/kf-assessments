@@ -14,6 +14,10 @@ const uid = () => Math.random().toString(36).slice(2, 10);
 const KINDS = { students: { env: 'KOBO_ASSET_ID', label: 'Students assessment' }, sampling: { env: 'KOBO_ASSET_SAMPLING', label: 'Sampling' } };
 export const STAGE_LABEL = { suggested: 'Waiting for Joram', initiated: 'Waiting for Mundo', rework: 'Sent back to the person who suggested it', deleted: 'Deleted', done: 'Applied', rejected: 'Rejected', withdrawn: 'Withdrawn' };
 const lvl = (w) => (w.role === 'hq' ? w.review_level || 0 : 0);
+// The chain: Mundo and Joram (and the regional coordinators) can suggest. Joram confirms what the field and Mundo suggest, and Mundo gives the final decision.
+// Joram's suggestions go straight to Mundo. The Executive Director's too, and the Executive Director may also give the final decision on what they started.
+const isMundoW = (w) => Boolean(w && w.role === 'hq' && (w.hq_id === 'h1' || /mundo/i.test(w.name || '')));
+const isEd = (w) => Boolean(w && w.role === 'hq' && lvl(w) >= 3 && !isMundoW(w));
 const sfx = (r, s) => { for (const k in r) if (k === s || k.endsWith('/' + s)) return r[k]; return undefined; };
 const srv = (env) => `https://${env.KOBO_SERVER || 'kf.kobotoolbox.org'}`;
 const H = (env) => ({ Authorization: `Token ${env.KOBO_TOKEN}` });
@@ -95,10 +99,10 @@ async function actInner(env, who, b) {
     }
     if (recs.length !== want.length) return { error: 'Some records no longer exist in KoBo. Search again.' };
     if (recs.some((r) => !regionOk(who, r.school))) return { error: 'Some records are not in your region.', status: 403 };
-    const level = lvl(who); const r = { id: uid(), type: edit ? 'edit' : 'delete', edit, kind, ids: want, items: recs, regions: [...new Set(recs.map((x) => x.region).filter(Boolean))], reason: String(b.reason).trim().slice(0, 1500), link: String(b.link || '').slice(0, 200), by: who.name, by_id: String(who.id ?? who.hq_id ?? ''), by_role: who.role === 'hq' ? 'HQ' : who.position || who.role, by_level: level, created_at: now, updated_at: now, stage: level === 2 ? 'initiated' : 'suggested', history: [hist(who, 'suggested', b.reason)] };
-    if (level === 2) { r.initiated_by = r.by_id; r.history.push(hist(who, 'initiated', 'Suggested and initiated by the same person; Mundo decides.')); }
+    const level = lvl(who); const r = { id: uid(), type: edit ? 'edit' : 'delete', edit, kind, ids: want, items: recs, regions: [...new Set(recs.map((x) => x.region).filter(Boolean))], reason: String(b.reason).trim().slice(0, 1500), link: String(b.link || '').slice(0, 200), by: who.name, by_id: String(who.id ?? who.hq_id ?? ''), by_role: who.role === 'hq' ? 'HQ' : who.position || who.role, by_level: level, created_at: now, updated_at: now, stage: level === 2 || isEd(who) ? 'initiated' : 'suggested', history: [hist(who, 'suggested', b.reason)] };
+    if (level === 2 || isEd(who)) { r.initiated_by = r.by_id; r.history.push(hist(who, 'initiated', level === 2 ? 'Suggested and initiated by the same person; it goes straight to Mundo.' : 'Started by the Executive Director; it goes straight to Mundo for the final decision.')); }
     d.unshift(r); await save(env, d);
-    await notify(env, r, `${who.name}: ${want.length} record(s) to ${edit ? 'edit' : 'delete'}`, hqLvl(r.stage === 'initiated' ? 3 : 2));
+    await notify(env, r, `${who.name}: ${want.length} record(s) to ${edit ? 'edit' : 'delete'}`, r.stage === 'initiated' ? hqLvl(3) : (w) => Boolean(w && w.role === 'hq' && (w.review_level || 0) === 2)); // the next person: Mundo for the final decision, Joram to confirm
     return { ok: true, id: r.id, stage: r.stage };
   }
   const r = d.find((x) => x.id === b.id); if (!r) return { error: 'Not found', status: 404 };
@@ -111,7 +115,8 @@ async function actInner(env, who, b) {
   if (a === 'withdraw') { if (r.by_id !== me) return { error: 'Only the person who suggested it can withdraw it.', status: 403 }; r.stage = 'withdrawn'; r.history.push(hist(who, 'withdrawn', text)); }
   else if (a === 'resubmit') { if (r.stage !== 'rework' || r.by_id !== me) return { error: 'Not allowed', status: 403 }; if (text.length < 15) return { error: 'Write the reason again, clearly.' }; r.reason = text; removeIds(b.remove); if (!r.ids.length) return { error: 'Nothing left in the request.' }; r.stage = r.by_level >= 3 ? 'suggested' : r.by_level === 2 ? 'initiated' : 'suggested'; r.history.push(hist(who, 'resubmitted', text)); }
   else if (a === 'initiate') {
-    if (r.stage !== 'suggested' || lvl(who) < 2) return { error: 'Only Joram (or Mundo) can initiate a suggestion.', status: 403 };
+    if (r.stage !== 'suggested' || lvl(who) < 2 || isMundoW(who)) return { error: 'Joram confirms a suggestion (the Executive Director can stand in). Mundo gives the final decision.', status: 403 };
+    if (r.by_level >= 3 && /mundo/i.test(r.by || '') && lvl(who) >= 3) return { error: 'Joram has to confirm what Mundo suggests.', status: 403 };
     if (r.by_id === me) return { error: 'You cannot initiate your own suggestion.', status: 403 };
     removeIds(b.remove); if (!r.ids.length) return { error: 'Nothing left in the request. Reject it instead.' }; r.stage = 'initiated'; r.initiated_by = me; r.history.push(hist(who, 'initiated', text || (b.remove?.length ? `Removed ${b.remove.length} record(s) from the list.` : 'Reviewed and passed to Mundo.')));
     await notify(env, r, `${r.ids.length} record(s) waiting for your decision`, hqLvl(3));
@@ -132,7 +137,7 @@ async function effect(env, who, r, d, b) {
   const me = String(who.id ?? who.hq_id ?? '');
   if (r.stage !== 'initiated') return { error: 'The request is not waiting for the final decision.' };
   if (lvl(who) < 3) return { error: 'Only Mundo (final approval) can delete.', status: 403 };
-  if (r.initiated_by === me) return { error: 'The person who initiated it cannot also delete it.', status: 403 };
+  if (r.initiated_by === me && !(isEd(who) && r.by_id === me)) return { error: 'The person who initiated it cannot also delete it.', status: 403 };
   if (Number(b.confirm) !== r.ids.length) return { error: `Type the number of records (${r.ids.length}) to confirm.` };
   const kind = r.kind;
   const recs = await koboData(env, kind, { _id: { $in: r.ids } });
@@ -164,7 +169,7 @@ async function effectEdit(env, who, r, d, b) {
   const me = String(who.id ?? who.hq_id ?? '');
   if (r.stage !== 'initiated') return { error: 'The request is not waiting for the final decision.' };
   if (lvl(who) < 3) return { error: 'Only Mundo (final approval) can apply an edit.', status: 403 };
-  if (r.initiated_by === me) return { error: 'The person who initiated it cannot also apply it.', status: 403 };
+  if (r.initiated_by === me && !(isEd(who) && r.by_id === me)) return { error: 'The person who initiated it cannot also apply it.', status: 403 };
   if (Number(b.confirm) !== r.ids.length) return { error: `Type the number of records (${r.ids.length}) to confirm.` };
   const recs = await koboData(env, r.kind, { _id: { $in: r.ids } });
   if (recs.length !== r.ids.length) return { error: 'Some records no longer exist in KoBo. Reject this request and suggest it again.' };

@@ -13,10 +13,11 @@ ok('the page "i" text can open on a phone (the phone rule must not outrank it)',
 ok('the region-by-week grid has its own class, apart from the Usage Explorer hour map', app.includes('class="heatw"') && css.includes('.heatw{display:grid') && !/class="heat" style="grid-template-columns/.test(app));
 ok('the map separates Treatment, Control and Pilot by shape and can filter by group', app.includes("arm === 'Control' ? 'rect'") && app.includes('id="mpArm"'));
 ok('buttons on a query say they only open the form', app.includes('Correct the pupil number (opens the form)') && !app.includes("clean('edit', 'students', 'Suggest correcting"));
-ok('Data cleaning shows what was sent, where it is and what happens next', app.includes('class="reqstrip"') && app.includes('Nothing is sent until you press this button') && app.includes('Next: Joram reviews it.') && app.includes("id=\"req-${esc(r.id)}\""));
+ok('Data cleaning shows what was sent, where it is and what happens next', app.includes('class="reqstrip"') && app.includes('Nothing is sent until you press this button') && app.includes('Next: Joram confirms it.') && app.includes("id=\"req-${esc(r.id)}\""));
 ok('an error appears next to the Suggest button, not only at the top', app.includes("<div class=\"banner ${C.bad ? 'bad' : ''}\" role=\"status\">"));
 ok('reviewers see what needs them above the form', app.indexOf('flash + strip + arrived + needsYou') > 0);
 const del = fs.readFileSync('../src/deletions.js', 'utf8');
 ok('a refused attempt is written to the activity log (successes already were)', del.includes('async function actInner') && del.includes('refused`') && del.includes('logActivity'));
 ok('the person who suggested is told when it is passed on and when it is done', (del.match(/\(w\) => w && String\(w\.id \?\? w\.hq_id\) === r\.by_id/g) || []).length >= 3);
+ok('the chain: Mundo and Joram suggest, Joram confirms Mundo and the field, Mundo decides, the Executive Director can decide what they started', del.includes('const isEd =') && del.includes("level === 2 || isEd(who) ? 'initiated' : 'suggested'") && del.includes('Joram has to confirm what Mundo suggests') && del.includes('!(isEd(who) && r.by_id === me)') && app.includes('const chainNext'));
 done();
