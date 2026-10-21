@@ -1,7 +1,7 @@
 // Suggestion box: locked on the sender's phone, nothing about the sender stored, readable only by the Executive Director
 import { env, mem, ok, done } from './_kit.mjs';
 import BoxCrypto from '../public/boxcrypto.js';
-import { boxPublic, setBoxKey, submitBox, listBox, markBox, deleteBox, isReader, canWrite, BOX_DAILY_CAP, boxSummary, markSaved, takePending } from '../src/box.js';
+import { boxPublic, setBoxKey, setBoxLive, canPreview, submitBox, listBox, markBox, deleteBox, isReader, canWrite, BOX_DAILY_CAP, boxSummary, markSaved, takePending } from '../src/box.js';
 import fs from 'node:fs';
 const ed = { role: 'hq', level: 'admin', hq_id: 'h3', name: 'Michael Kamukulu' };
 const mundo = { role: 'hq', level: 'admin', hq_id: 'h1', name: 'Chogohe Edwin Mundo' };
@@ -27,8 +27,10 @@ ok('the field team writes, HQ does not', canWrite(vol) && canWrite(rc) && !canWr
 ok('nobody but the Executive Director can set the key', (await setBoxKey(env, mundo, { spki: keys.spki, fp: keys.fp })).status === 403 && (await setBoxKey(env, joram, { spki: keys.spki, fp: keys.fp })).status === 403);
 ok('a message cannot be sent before the box is open', (await submitBox(env, vol, { v: 1, kfp: keys.fp, ...lk })).status === 503);
 ok('a bad key is refused', (await setBoxKey(env, ed, { spki: 'not a key!', fp: 'x' })).status === 422);
-ok('the Executive Director opens the box with the public key', (await setBoxKey(env, ed, { spki: keys.spki, fp: keys.fp })).ok === true && (await boxPublic(env, vol)).open === true);
-ok('the public key is shown to the field and the reader, and not to guests', (await boxPublic(env, rc)).fp === keys.fp && (await boxPublic(env, ed)).reader === true && (await boxPublic(env, { role: 'guest' })).status === 403);
+ok('saving the key does not open the box: the field team sees nothing and cannot send', (await setBoxKey(env, ed, { spki: keys.spki, fp: keys.fp })).ok === true && (await boxPublic(env, vol)).open === false && !(await boxPublic(env, vol)).spki && (await submitBox(env, vol, { v: 1, kfp: keys.fp, ...lk })).status === 503);
+ok('only the Executive Director can preview a hidden box, by viewing as a field user', canPreview({ ...vol, viewAs: true, viewBy: 'h3' }, env) && !canPreview({ ...vol, viewAs: true, viewBy: 'h1' }, env) && !canPreview(vol, env) && (await boxPublic(env, { ...vol, viewAs: true, viewBy: 'h3' })).open === true && (await boxPublic(env, { ...vol, viewAs: true, viewBy: 'h3' })).hidden === true && (await boxPublic(env, { ...vol, viewAs: true, viewBy: 'h1' })).open === false);
+ok('only the Executive Director can open or hide it, and only once there is a key', (await setBoxLive(env, mundo, { live: true })).status === 403 && (await setBoxLive(env, vol, { live: true })).status === 403 && (await setBoxLive(env, ed, { live: true })).live === true);
+ok('once open, the public key is shown to the field and the reader, and not to guests', (await boxPublic(env, vol)).open === true && (await boxPublic(env, rc)).fp === keys.fp && (await boxPublic(env, ed)).live === true && (await boxPublic(env, ed)).reader === true && (await boxPublic(env, { role: 'guest' })).status === 403);
 
 // sending
 const sent = await submitBox(env, vol, { v: 1, kfp: keys.fp, ...lk });
@@ -83,4 +85,7 @@ ok('nothing is shown to the field team until the Executive Director has opened t
 ok('only the field team sees the sender card and icon, not HQ', app.includes("['volunteer', 'rc', 'arc'].includes(S.who.role)"));
 ok('a preview (HQ viewing as a volunteer) can read the public key but cannot send', (await boxPublic(env, { ...vol, viewAs: true })).open === true && (await submitBox(env, { ...vol, viewAs: true }, { v: 1, kfp: keys.fp, ...lk })).status === 403 && (await listBox(env, { ...vol, viewAs: true })).status === 403);
 ok('the preview says it is a preview and turns Send off', app.includes('<b>Preview.</b> You are viewing as') && app.includes('B.sending || boxPreview() ? \'disabled\''));
+ok('hiding it again stops sending at once and keeps what was sent', (await setBoxLive(env, ed, { live: false })).live === false && (await boxPublic(env, vol)).open === false && (await submitBox(env, vol, { v: 1, kfp: keys.fp, ...lk })).status === 503 && (await listBox(env, ed)).items.length >= 1);
+ok('a new key never opens a hidden box by itself, and keeps an open one open', await (async () => { const k2 = await BoxCrypto.genKeys(); await setBoxKey(env, ed, { spki: k2.spki, fp: k2.fp }); const hidden = (await boxPublic(env, vol)).open === false; await setBoxLive(env, ed, { live: true }); await setBoxKey(env, ed, { spki: keys.spki, fp: keys.fp }); return hidden && (await boxPublic(env, vol)).open === true; })());
+ok('the page has an open and hide switch for the Executive Director, and the key button no longer says open', app.includes('data-act="bxLive"') && app.includes('Hidden from the field team') && app.includes('I saved the file, save my key') && !app.includes('I saved the file, open the box'));
 done();

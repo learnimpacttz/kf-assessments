@@ -6,7 +6,7 @@ import { pupilRecords, workFiles, flagRecords } from './pupils.js';
 import { pilotView, pilotSet, PILOT_ALLOC } from './pilot.js';
 import { locationCheck } from './location.js';
 import { computePatterns } from './patterns.js';
-import { boxPublic, setBoxKey, submitBox, listBox, markBox, deleteBox, boxSummary, markSaved, takePending } from './box.js';
+import { boxPublic, setBoxKey, setBoxLive, submitBox, listBox, markBox, deleteBox, boxSummary, markSaved, takePending } from './box.js';
 import { SCHOOL_COORDS, COORD_SOURCE, COORD_WRONG } from './data/school_coords.js';
 import { findRecords as findToMove, previewMove, applyMove, correctionsView, correctionCopy } from './corrections.js';
 import { qrPng } from './qr.js';
@@ -646,6 +646,7 @@ export default {
           const readBody = async () => request.json().catch(() => ({})); let r = null;
           if (path === '/api/box/key' && method === 'GET') r = await boxPublic(env, who);
           else if (path === '/api/box/key' && method === 'POST') r = await setBoxKey(env, who, await readBody());
+          else if (path === '/api/box/live' && method === 'POST') r = await setBoxLive(env, who, await readBody());
           else if (path === '/api/box' && method === 'POST') r = await submitBox(env, who, await readBody());
           else if (path === '/api/box/items' && method === 'GET') r = await listBox(env, who, Number(url.searchParams.get('months')) || 3);
           else if (path === '/api/box/mark' && method === 'POST') r = await markBox(env, who, await readBody());

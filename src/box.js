@@ -11,22 +11,32 @@ const B64 = /^[A-Za-z0-9+/]+={0,2}$/;
 const randId = () => Array.from(globalThis.crypto.getRandomValues(new Uint8Array(9))).map((x) => x.toString(36).padStart(2, '0')).join('').slice(0, 14);
 export const isReader = (who, env) => Boolean(who && who.role === 'hq' && !who.viewAs && (who.level || 'admin') === 'admin' && String(who.hq_id) === String((env && env.BOX_READER) || 'h3'));
 const fieldRole = (who) => Boolean(who && ['volunteer', 'rc', 'arc'].includes(who.role));
+export const canPreview = (who, env) => Boolean(who && who.viewAs && fieldRole(who) && String(who.viewBy) === String((env && env.BOX_READER) || 'h3')); // only the reader may preview a box that is still hidden
 export const canWrite = (who) => fieldRole(who) && !who.viewAs; // a preview (HQ viewing as someone) can look but never send
 const month = (day) => String(day).slice(0, 7);
 
 export async function boxPublic(env, who) {
   if (!fieldRole(who) && !isReader(who, env)) return { error: 'Not allowed', status: 403 }; // the public key is not secret, so a preview may read it
-  const k = await kv(env).get(KEY); return k ? { open: true, spki: k.spki, fp: k.fp, at: k.at, reader: isReader(who, env), history: isReader(who, env) ? k.history : undefined } : { open: false, reader: isReader(who, env) };
+  const k = await kv(env).get(KEY); const reader = isReader(who, env); if (!k) return { open: false, reader };
+  // The box has two switches: the key exists, and the Executive Director has opened it to the field team. Until then the field team sees nothing; only the reader can preview it.
+  if (reader) return { open: true, live: Boolean(k.live), spki: k.spki, fp: k.fp, at: k.at, reader: true, history: k.history };
+  if (!k.live && !canPreview(who, env)) return { open: false };
+  return { open: true, spki: k.spki, fp: k.fp, at: k.at, preview: Boolean(who.viewAs), hidden: !k.live };
+}
+export async function setBoxLive(env, who, b) {
+  if (!isReader(who, env)) return { error: 'Only the Executive Director can open or hide the box', status: 403 };
+  const k = await kv(env).get(KEY); if (!k) return { error: 'Make your key first', status: 409 };
+  k.live = b.live === true; k.live_at = new Date().toISOString(); await kv(env).put(KEY, k); return { ok: true, live: k.live };
 }
 export async function setBoxKey(env, who, b) {
   if (!isReader(who, env)) return { error: 'Only the Executive Director can set the box key', status: 403 };
   const spki = String(b.spki || ''); if (!B64.test(spki) || spki.length < 300 || spki.length > 1400) return { error: 'That does not look like a public key', status: 422 };
   const fp = String(b.fp || '').slice(0, 40); const cur = await kv(env).get(KEY); const history = [...((cur && cur.history) || []), { fp, at: new Date().toISOString() }].slice(-20);
-  await kv(env).put(KEY, { spki, fp, at: new Date().toISOString(), history }); return { ok: true, fp };
+  await kv(env).put(KEY, { spki, fp, at: new Date().toISOString(), history, live: Boolean(cur && cur.live) }); return { ok: true, fp }; // a new key never opens the box by itself
 }
 export async function submitBox(env, who, b) {
   if (!canWrite(who)) return { error: 'The suggestion box is for the field team', status: 403 };
-  const k = await kv(env).get(KEY); if (!k) return { error: 'The box is not open yet', status: 503 };
+  const k = await kv(env).get(KEY); if (!k || !k.live) return { error: 'The box is not open yet', status: 503 };
   if (b.v !== 1 || String(b.kfp || '') !== k.fp) return { error: 'The box key changed. Close this page and open it again, then send again.', status: 409 };
   const { iv, ct, wk } = b; if (![iv, ct, wk].every((x) => typeof x === 'string' && B64.test(x))) return { error: 'The message could not be read', status: 422 };
   if (iv.length > 24 || wk.length > BOX_WK_MAX || ct.length > BOX_CT_MAX || ct.length < 20) return { error: 'The message is too long. Shorten it and send again.', status: 413 };
