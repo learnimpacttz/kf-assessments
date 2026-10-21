@@ -1337,18 +1337,19 @@ function applyBrand() {
 const TABS = {
   public: [['progress', 'Progress'], ['compare', 'Compare']],
   guest: [['progress', 'Progress'], ['compare', 'Compare'], ['greports', 'Reports']],
-  volunteer: [['day', 'My day'], ['pilot', 'Pilot day'], ['news', 'News'], ['map', 'Visit map'], ['work', 'My work'], ['queries', 'My queries'], ['stats', 'My stats'], ['phones', 'Phones'], ['pupils', 'Pupil records'], ['compare', 'Compare'], ['practice', 'Practice (Mafunzo)'], ['ask', 'Ask a question'], ['help', 'Help']],
-  rc: [['region', 'Region'], ['news', 'News'], ['ask', 'Questions'], ['plan', 'Plan & calendar'], ['map', 'Visit map'], ['team', 'My team'], ['pilot', 'Pilot day'], ['allq', 'Queries'], ['phones', 'Phones'], ['compare', 'Compare'], ['reports', 'Reports'], ['narr', 'School reports'], ['clean', 'Data cleaning'], ['explore', 'Data explorer'], ['practice', 'Practice (Mafunzo)'], ['help', 'Help']],
-  hq: [['today', 'Today'], ['hq', 'HQ'], ['questions', 'Questions'], ['usage', 'Usage & analytics'], ['news', 'News'], ['messages', 'Write and schedule'], ['clean', 'Data cleaning'], ['regions', 'Regions & plans'], ['plan', 'Plan & calendar'], ['pilot', 'Pilot day'], ['people', 'People'], ['map', 'Visit map'], ['patterns', 'Team patterns'], ['allq', 'Queries'], ['phones', 'Phones'], ['compare', 'Compare'], ['reports', 'Reports'], ['payments', 'Payments'], ['explore', 'Data explorer'], ['admin', 'Admin'], ['help', 'Help'], ['practice', 'Practice (Mafunzo)']],
+  volunteer: [['day', 'My day'], ['pilot', 'Pilot day'], ['news', 'News'], ['map', 'Visit map'], ['box', 'Sanduku la maoni'], ['work', 'My work'], ['queries', 'My queries'], ['stats', 'My stats'], ['phones', 'Phones'], ['pupils', 'Pupil records'], ['compare', 'Compare'], ['practice', 'Practice (Mafunzo)'], ['ask', 'Ask a question'], ['help', 'Help']],
+  rc: [['region', 'Region'], ['news', 'News'], ['ask', 'Questions'], ['plan', 'Plan & calendar'], ['map', 'Visit map'], ['box', 'Sanduku la maoni'], ['team', 'My team'], ['pilot', 'Pilot day'], ['allq', 'Queries'], ['phones', 'Phones'], ['compare', 'Compare'], ['reports', 'Reports'], ['narr', 'School reports'], ['clean', 'Data cleaning'], ['explore', 'Data explorer'], ['practice', 'Practice (Mafunzo)'], ['help', 'Help']],
+  hq: [['today', 'Today'], ['hq', 'HQ'], ['questions', 'Questions'], ['usage', 'Usage & analytics'], ['news', 'News'], ['messages', 'Write and schedule'], ['boxed', 'Suggestion box (private)'], ['clean', 'Data cleaning'], ['regions', 'Regions & plans'], ['plan', 'Plan & calendar'], ['pilot', 'Pilot day'], ['people', 'People'], ['map', 'Visit map'], ['patterns', 'Team patterns'], ['allq', 'Queries'], ['phones', 'Phones'], ['compare', 'Compare'], ['reports', 'Reports'], ['payments', 'Payments'], ['explore', 'Data explorer'], ['admin', 'Admin'], ['help', 'Help'], ['practice', 'Practice (Mafunzo)']],
 };
-const GROUPS = { public: [['Progress', ['progress']], ['Compare', ['compare']]], guest: [['Progress', ['progress']], ['Compare', ['compare']], ['Reports', ['greports']]], rc: [['Home', ['region', 'news', 'ask']], ['Plan', ['plan', 'map', 'team', 'pilot']], ['Checks', ['allq', 'clean', 'phones', 'compare', 'explore']], ['Reports', ['reports', 'narr']], ['More', ['practice', 'help']]], volunteer: [['Today', ['day', 'pilot', 'news', 'ask']], ['My work', ['work', 'queries', 'stats']], ['Team', ['map', 'phones', 'pupils', 'compare']], ['More', ['practice', 'help']]] };
-const HQ_GROUPS = [['Today', ['today']], ['Field', ['hq', 'regions', 'plan', 'pilot', 'people', 'map', 'practice']], ['Checks', ['allq', 'patterns', 'clean', 'phones', 'compare', 'explore']], ['Messages', ['news', 'messages', 'questions']], ['Reports', ['reports', 'narr', 'payments']], ['Admin', ['admin', 'usage']], ['Help', ['help']]];
+const GROUPS = { public: [['Progress', ['progress']], ['Compare', ['compare']]], guest: [['Progress', ['progress']], ['Compare', ['compare']], ['Reports', ['greports']]], rc: [['Home', ['region', 'news', 'ask']], ['Plan', ['plan', 'map', 'team', 'pilot']], ['Checks', ['allq', 'clean', 'phones', 'compare', 'explore']], ['Reports', ['reports', 'narr']], ['More', ['box', 'practice', 'help']]], volunteer: [['Today', ['day', 'pilot', 'news', 'ask']], ['My work', ['work', 'queries', 'stats']], ['Team', ['map', 'phones', 'pupils', 'compare']], ['More', ['box', 'practice', 'help']]] };
+const HQ_GROUPS = [['Today', ['today']], ['Field', ['hq', 'regions', 'plan', 'pilot', 'people', 'map', 'practice']], ['Checks', ['allq', 'patterns', 'clean', 'phones', 'compare', 'explore']], ['Messages', ['news', 'messages', 'questions', 'boxed']], ['Reports', ['reports', 'narr', 'payments']], ['Admin', ['admin', 'usage']], ['Help', ['help']]];
 const REPORTS_READY = true;
 const LEVEL_TXT = { admin: 'Admin', editor: 'Editor', viewer: 'Viewer' };
 const hqLevel = () => (S.who?.role === 'hq' ? S.who.level || 'admin' : null);
 const canWrite = () => !S.who || S.who.role !== 'hq' || hqLevel() !== 'viewer'; // editors and admins write messages and reports
 function tabAllowed(k) {
   { const hid = (S.who && S.who.role === 'hq' && S.who.hide) || []; if (hid.length && ({ messages: 'messages', questions: 'questions', people: 'people', phones: 'phones', usage: 'usage', payments: 'payments', clean: 'clean', pilot: 'pilot', practice: 'practice' }[k] && hid.includes(k))) return false; }
+  if (k === 'boxed') return boxReader();
   if (k === 'patterns') return Boolean(S.who && S.who.role === 'hq' && !(Array.isArray(S.who.hide) && S.who.hide.length));
   if (k === 'admin') return hqLevel() === 'admin';
   if (k === 'payments') return hqLevel() === 'admin';
@@ -1363,7 +1364,7 @@ function tabAllowed(k) {
 }
 const roleKey = () => (!S.who ? 'public' : S.who.role === 'arc' ? 'rc' : S.who.role);
 const isGuest = () => Boolean(S.who && S.who.role === 'guest');
-const VIEWS = { progress: viewProgress, compare: viewCompare, day: viewDay, work: viewWork, queries: viewQueries, stats: viewStats, region: viewRegion, plan: viewPlan, team: viewTeam, explore: viewExplore, hq: viewHQ, regions: viewRegionsHQ, people: viewPeopleHQ, admin: viewAdmin, allq: viewAllQueries, phones: viewPhones, practice: viewPractice, news: () => dmInboxCard() + viewNews(), pilot: viewPilot, payments: viewPayments, patterns: viewPatterns, map: viewMap, pupils: viewPupils, messages: viewMessages, reports: viewReports, narr: viewNarr, ask: viewAsk, questions: viewQuestions, greports: viewGuestReports, usage: viewUsage, clean: viewClean, today: viewToday, help: viewHelp };
+const VIEWS = { progress: viewProgress, compare: viewCompare, day: viewDay, work: viewWork, queries: viewQueries, stats: viewStats, region: viewRegion, plan: viewPlan, team: viewTeam, explore: viewExplore, hq: viewHQ, regions: viewRegionsHQ, people: viewPeopleHQ, admin: viewAdmin, allq: viewAllQueries, phones: viewPhones, practice: viewPractice, news: () => dmInboxCard() + viewNews(), pilot: viewPilot, payments: viewPayments, patterns: viewPatterns, map: viewMap, box: viewBox, boxed: viewBoxED, pupils: viewPupils, messages: viewMessages, reports: viewReports, narr: viewNarr, ask: viewAsk, questions: viewQuestions, greports: viewGuestReports, usage: viewUsage, clean: viewClean, today: viewToday, help: viewHelp };
 
 // Admin is long: each card folds away so you can jump to what you need. The first card stays open; your choices are remembered.
 // On a phone, a wide table becomes a stack of small cards so nothing hides behind a sideways scroll
@@ -1455,7 +1456,7 @@ function collapseIntros() {
 // ---- usage tracking (kept inside the system; only HQ sees the analysis) ----
 const isPhone = () => (window.matchMedia && window.matchMedia('(max-width:720px)').matches) || /Mobi|Android|iPhone/i.test(navigator.userAgent);
 function trackSend(tab, ms, open) {
-  if (!S.who || S.viewAs || !S.code || !tab) return;
+  if (!S.who || S.viewAs || !S.code || !tab || tab === 'box' || tab === 'boxed') return; // the suggestion box is never counted, so nobody can tell who opened it
   try { fetch('/api/usage', { method: 'POST', keepalive: true, headers: { 'content-type': 'application/json', 'x-access-code': S.code }, body: JSON.stringify({ tab, ms, open: Boolean(open), dev: isPhone() ? 'm' : 'd' }) }).catch(() => {}); } catch { /* tracking never blocks the app */ }
 }
 function trackTab() {
@@ -1495,7 +1496,7 @@ async function arrAction(a, t) {
   else if (a === 'arrSave' || a === 'arrReset') { try { await api('/api/layouts', { method: 'POST', noView: true, body: a === 'arrReset' ? { role: A.role, tab: A.tab, reset: true } : { role: A.role, tab: A.tab, order: A.order, hidden: A.hidden } }); S.arr = null; await loadLayout(); toast(a === 'arrReset' ? 'Back to the default layout' : 'Layout saved'); } catch (e) { A.msg = e.message; render(); } }
 }
 // HQ desk: HQ works from its own sidebar of HQ pages on wide screens; field pages (My day, My work) are not part of it
-const DESK_GROUPS = [['Today', ['today']], ['Field operations', ['hq', 'regions', 'plan', 'map', 'pilot', 'practice']], ['Data quality', ['allq', 'patterns', 'clean', 'phones', 'compare', 'explore']], ['People', ['people']], ['Communication', ['news', 'messages', 'questions']], ['Reports', ['reports', 'narr', 'payments']], ['System', ['admin', 'usage', 'help']]];
+const DESK_GROUPS = [['Today', ['today']], ['Field operations', ['hq', 'regions', 'plan', 'map', 'pilot', 'practice']], ['Data quality', ['allq', 'patterns', 'clean', 'phones', 'compare', 'explore']], ['People', ['people']], ['Communication', ['news', 'messages', 'questions', 'boxed']], ['Reports', ['reports', 'narr', 'payments']], ['System', ['admin', 'usage', 'help']]];
 function renderSide(tabs, badge) {
   let side = document.getElementById('side'); const on = roleKey() === 'hq' && S.who && (!S.viewAs || /^hq:/.test(S.viewAs));
   document.body.classList.toggle('hqdesk', Boolean(on)); if (!on) { if (side) side.remove(); return; }
@@ -1552,7 +1553,7 @@ function render() {
   collapseIntros();
   if (S.who && S.who.role === 'hq' && !S.viewAs) hydrateNotes();
   guestChrome();
-  enhanceCollapsible(); stackTables();
+  enhanceCollapsible(); stackTables(); addBoxCard();
   aiRender();
 }
 
@@ -1785,6 +1786,7 @@ const HELP = {
     ['Install the app on your phone (iPhone)', '<ol style="margin:4px 0 8px;padding-left:20px"><li>Open the link in <b>Safari</b>, not inside WhatsApp or another app.</li><li>Enter your access code.</li><li>Tap <b>Share</b> (the square with an arrow), scroll down, tap <b>Add to Home Screen</b>, then <b>Add</b>.</li><li>Open the <b>KiuFunza</b> icon from your home screen. Alerts work only when it is opened from that icon.</li></ol>'],
     ['Language and appearance', 'Open the account menu (your initials, top right). Under <b>Lugha · Language</b> choose Kiswahili or English (Kiswahili covers the pages for test admins). Under <b>Appearance</b> choose light, dark or automatic.'],
     ['Visit map', 'Every school in your region as a dot: green is complete, gold is in progress, grey is not started. Tap a dot for the school, how many pupils are tested and the dates of the visits. The dots are school locations, not people. HQ sees every region and extra checks.'],
+    ['Sanduku la maoni · Suggestion box', 'Una wazo, tatizo, jambo zuri au wasiwasi? Fungua <b>Sanduku la maoni</b> (kwenye ukurasa wako wa kwanza au kwenye More), andika, kisha bonyeza Tuma. Ujumbe unafungwa kwenye simu yako na ni Mkurugenzi Mtendaji (ED) pekee anayeweza kuusoma. Mfumo hauhifadhi jina lako, namba yako wala eneo lako, isipokuwa ukichagua kuandika jina lako ili ED akujue. Usiandike majina ya watu ukitaka kubaki bila kujulikana. · Have an idea, a problem, good news or a worry? Open <b>Sanduku la maoni</b> (on your first page or under More), write, and press Send. The message is locked on your phone and only the Executive Director can read it. The system does not store your name, code or region unless you choose to add your name so the ED can know it is you. Do not write other people\'s names if you want to stay anonymous.'],
     ['Messages for you', 'A message from HQ or your coordinator shows at the top of <b>News</b> and as a banner, and you get a phone alert. Press <b>Got it</b> so the sender knows you have read it.'],
     ['What is this?', 'One place for the field work: who is where, which schools are done, what needs a reply, and what is next. It reads the KoBo forms every few minutes. It never shows pupil names.'],
     ['How do I sign in?', 'Use the code you were sent. It is yours alone. Do not share it. If it does not work, ask your RC or HQ for a new one.'],
@@ -1813,6 +1815,7 @@ const HELP = {
   ],
   hq: [
     ['Correct the attendance on a sampling form', 'Data cleaning, Suggest a deletion or an edit, Edit records. Choose the Sampling project, find the school, tick the form, choose Pupils present on the sampling day, type the right number (1 to 20) and write the reason. Only the attendance answer changes. It works only when 20 or fewer pupils were present (the form draws nobody then, so every present pupil is tested). A class with more than 20 present needs a new random draw, so ask the systems owner. It goes through the same chain as other edits: Joram initiates, Mundo applies, the original is saved and the record is read back and checked.'],
+    ['Suggestion box (private)', 'The field team can send anonymous messages through Sanduku la maoni. Each message is locked on the sender\'s phone and only the Executive Director can read it, with a key file kept on his own device. Nobody else in HQ, the systems owner or the builder can open the messages or see who sent them, and the box is not counted in the usage pages or the activity log.'],
     ['Team patterns', 'Under Checks. It shows which test administrators may need support, ranked, each with the reasons it flagged them (many fast or slow tests, late first test, few tests a day, phone location missing or away from the school, frequent data-quality checks) and possible causes to check first. It compares people with others in the same role, needs at least 3 days and 20 tests, and looks for repeated patterns (for example fast tests mostly on Tuesdays). It is a prompt for a supportive conversation, never a verdict, and it changes nothing. Add what you learn in the HQ note on each person. Advisors do not see it.'],
     ['Visit map (HQ)', 'All 325 schools coloured by visit status. Tap a school for its tests and, for HQ only, a location check: how many records carry a phone location and how many were recorded within 500 m of the school. A red ring means many tests were recorded away from the school, which can be a wrong school coordinate or a phone that lost its location, so check before assuming anything. A school whose point came from OpenStreetMap says so.'],
     ['The Bridge (your landing page)', '<p>Today opens on the Bridge: field status, headline numbers (tap one to open it in place), what needs you, the timeline with milestones, the region board, data cleanliness, early warnings, targets and the management update. Filters and saved views sit above the numbers. Type a command such as overdue or targets in the search box to jump. Each person has a desk (Coordination, Management, Leadership or Systems) that sets the order; change it from the Desk menu. The Monday update for the ED is drafted at 07:00 and can be edited, copied or saved at the bottom of the page.</p>'],
@@ -2009,6 +2012,92 @@ function viewMap() {
   const end = (e) => { ptrs.delete(e.pointerId); last = null; };
   document.addEventListener('pointerup', end); document.addEventListener('pointercancel', end);
   document.addEventListener('wheel', (e) => { const sv = svgOf(e); if (!sv || !S.mp || !S.mp.vb) return; e.preventDefault(); const r = sv.getBoundingClientRect(); mpZoom(e.deltaY > 0 ? 1.18 : 1 / 1.18, (e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height); }, { passive: false });
+}
+
+// ---------- Suggestion box (Sanduku la maoni). The message is locked on this phone (boxcrypto.js) with a key only the Executive Director holds. ----------
+const BOX_CATS = { pendekezo: ['Pendekezo · Suggestion', 'teal'], tatizo: ['Tatizo · Problem', 'warn'], zuri: ['Jambo zuri · Good news', 'good'], mzito: ['Wasiwasi mzito · Serious concern (safety, harassment, money)', 'bad'] };
+const boxField = () => Boolean(S.who && ['volunteer', 'rc', 'arc'].includes(S.who.role) && !S.viewAs);
+const boxReader = () => Boolean(S.who && S.who.role === 'hq' && S.who.hq_id === 'h3' && (S.who.level || 'admin') === 'admin' && !S.viewAs);
+const boxCard = () => (boxField() ? `<div class="card boxcard" style="margin-top:14px"><h3>Sanduku la maoni · Suggestion box</h3><div class="sub">Una wazo, tatizo au jambo zuri? Andika bila jina. Ni ED pekee anayesoma. · An idea, a problem or good news? Write it without your name. Only the ED reads it.</div><button class="btn" data-tab="box">Andika ujumbe · Write a message</button></div>` : '');
+async function loadBoxKey() { const B = (S.bx ||= {}); B.busy = true; try { B.key = await api('/api/box/key'); B.err = null; } catch (e) { B.err = e.message; } B.busy = false; render(); }
+function addBoxCard() { const app = document.getElementById('app'); if (!app || !boxField() || (S.tab !== 'day' && S.tab !== 'region')) return; const d = document.createElement('div'); d.innerHTML = boxCard(); app.appendChild(d); } // a card on the volunteer and coordinator home pages, so everyone can find it
+function viewBox() {
+  const B = (S.bx ||= {}); if (!B.key && !B.err && !B.busy) loadBoxKey();
+  const head = '<div class="pagehead"><div><h2>Sanduku la maoni</h2><p>Suggestion box</p></div></div>';
+  const promise = `<div class="note" style="margin-top:10px"><p style="margin:0 0 6px"><b>Ujumbe wako unafungwa kwenye simu yako kabla ya kutumwa. Ni Mkurugenzi Mtendaji (ED) pekee anayeweza kuusoma.</b> Mfumo hauhifadhi jina lako, namba yako ya siri wala eneo lako, isipokuwa ukichagua kuviandika.</p><p style="margin:0"><b>Your message is locked on your phone before it is sent. Only the Executive Director can read it.</b> The system does not store your name, your code or your region unless you choose to write them.</p></div>`;
+  if (B.err) return head + promise + `<div class="banner bad">${esc(B.err)}</div>`;
+  if (!B.key) return head + promise + '<div class="empty">Inapakia… · Loading…</div>';
+  if (!B.key.open) return head + promise + '<div class="banner">Sanduku litafunguliwa hivi karibuni. · The box will open soon.</div>';
+  const cat = B.cat || 'pendekezo';
+  const form = `<div class="card" style="margin-top:12px"><label>Aina ya ujumbe · Type<select id="bxCat" style="width:100%;max-width:100%">${Object.entries(BOX_CATS).map(([k, v]) => `<option value="${k}" ${cat === k ? 'selected' : ''}>${esc(v[0])}</option>`).join('')}</select></label>
+  <label style="display:block;margin-top:10px">Ujumbe wako · Your message<textarea id="bxText" rows="8" maxlength="1500" placeholder="Andika hapa… · Write here…" style="width:100%">${esc(B.draft || '')}</textarea></label>
+  <label class="cb" style="margin-top:10px"><input type="checkbox" id="bxNamed" ${B.named ? 'checked' : ''}> Nataka ED ajue ni mimi (itabaki siri). · I want the ED to know it is me (kept confidential).</label>
+  <p style="margin-top:10px"><button class="btn" data-act="bxSend" ${B.sending ? 'disabled' : ''}>${B.sending ? 'Inatuma… · Sending…' : 'Tuma · Send'}</button></p>
+  ${B.msg ? `<div class="banner ${B.bad ? 'bad' : 'good'}" role="status"><b>${esc(B.msg)}</b></div>` : ''}</div>`;
+  const care = `<div class="m" style="margin-top:12px"><p><b>Ili ubaki bila kujulikana:</b> usiandike majina ya watu wala taarifa za kibinafsi. Maneno au mtindo wako wa kuandika unaweza kukutambulisha, hasa kwenye timu ndogo. Jambo la dharura ambalo haliwezi kusubiri, mwambie RC wako au HQ moja kwa moja.</p><p><b>To stay anonymous:</b> do not write names or personal details. Your words or writing style can identify you, especially in a small team. For something urgent that cannot wait, tell your RC or HQ directly.</p><p>Alama ya ufunguo · Key code: <b>${esc(B.key.fp)}</b> (ED anaweza kuithibitisha · the ED can confirm it)</p></div>`;
+  return head + promise + form + care;
+}
+async function boxSend() {
+  const B = (S.bx ||= {}), g = (id) => document.getElementById(id); const text = g('bxText').value.trim(), cat = g('bxCat').value, named = g('bxNamed').checked; B.draft = text; B.cat = cat; B.named = named;
+  if (text.length < 5) { B.msg = 'Andika ujumbe kwanza. · Write your message first.'; B.bad = true; render(); return; }
+  try {
+    B.sending = true; B.msg = ''; render();
+    const payload = { t: text, c: cat, at: new Date().toISOString() }; if (named) payload.n = { name: S.who.name, position: S.who.position || S.who.role, region: S.who.region || '' };
+    const locked = await BoxCrypto.encrypt(B.key.spki, payload);
+    await api('/api/box', { method: 'POST', body: { v: 1, kfp: B.key.fp, ...locked } });
+    B.draft = ''; B.cat = null; B.named = false; B.bad = false;
+    B.msg = named ? 'Imetumwa. Asante. Jina lako litaonekana na ED pekee. · Sent. Thank you. Only the ED will see your name.' : 'Imetumwa. Asante. Hakuna jina lililohifadhiwa. · Sent. Thank you. No name was stored.';
+  } catch (e) { B.msg = e.message; B.bad = true; }
+  B.sending = false; render();
+}
+// ---- the Executive Director's private page: reads the locked messages with a key file that never leaves this device ----
+async function loadBoxED() {
+  const B = (S.bx ||= {}); B.busy = true; render();
+  try { B.key = await api('/api/box/key'); B.err = null; if (B.key.open) { B.list = await api('/api/box/items?months=' + (B.months || 3)); await boxDecryptAll(); } } catch (e) { B.err = e.message; }
+  B.busy = false; render();
+}
+async function boxDecryptAll() {
+  const B = S.bx; B.msgs = []; if (!B.list) return;
+  for (const it of B.list.items) { const base = { id: it.id, day: it.day, status: it.status, kfp: it.kfp };
+    if (B.jwk && B.fpMine === it.kfp) { try { B.msgs.push({ ...(await BoxCrypto.decrypt(B.jwk, it)), ...base, ok: true }); } catch { B.msgs.push({ ...base, ok: false, broken: true }); } } else B.msgs.push({ ...base, ok: false }); }
+}
+function boxDownload(jwk, fp) { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([JSON.stringify(jwk)], { type: 'application/json' })); a.download = `Sanduku_private_key_${fp.replace(/\s/g, '')}.json`; a.click(); }
+function viewBoxED() {
+  const B = (S.bx ||= {}); const head = '<div class="pagehead"><div><h2>Suggestion box (private)</h2><p>Only you can read these. They are locked on the sender\'s phone and the server cannot open them.</p></div></div>';
+  if (B.err) return head + `<div class="banner bad">${esc(B.err)}</div>`;
+  if (!B.key) { if (!B.busy) loadBoxED(); return head + '<div class="empty">Loading…</div>'; }
+  // 1. no key yet, or making a new one
+  if (!B.key.open || B.newKey) {
+    const k = B.fresh;
+    return head + `<div class="card" style="margin-top:12px"><h3>${B.key.open ? 'Make a new key' : 'Set up your key'}</h3><ol class="ptl"><li>Press <b>Create my key</b>. A key file downloads to this device and a short key code is shown.</li><li><b>Save that file now</b> in your own password manager or phone safe, and keep a sealed paper copy. <b>Do not put it in the shared team vault.</b></li><li>Only then press <b>I saved the file, open the box</b>. The box opens for the field team and starts using this key.</li></ol><p class="m"><b>If you lose the file, messages sent with that key can never be read.</b> Nobody, including the builder, can recover them. ${B.key.open ? 'Messages sent before a new key stay locked with the old key file, so keep both.' : ''}</p>
+    <p><button class="btn ${k ? 'sec' : ''}" data-act="bxGen">${k ? 'Create another key' : 'Create my key'}</button>${k ? ` <button class="btn" data-act="bxPublish">I saved the file, open the box</button>` : ''}${B.key.open ? ' <button class="btn ghost" data-act="bxCancelNew">Cancel</button>' : ''}</p>${k ? `<div class="note">Key code <b>${esc(k.fp)}</b>. The key file was downloaded as <b>Sanduku_private_key_${esc(k.fp.replace(/\s/g, ''))}.json</b>. The field team sees this same code on the box page, so a swapped key can be spotted.</div>` : ''}${B.msg ? `<div class="banner ${B.bad ? 'bad' : 'good'}">${esc(B.msg)}</div>` : ''}</div>`;
+  }
+  const keyInfo = `<div class="m" style="margin-top:6px">Current key code <b>${esc(B.key.fp)}</b>${B.key.history && B.key.history.length > 1 ? ` · changed ${B.key.history.length - 1} time(s): ${B.key.history.map((h) => esc(h.fp) + ' (' + esc(String(h.at).slice(0, 10)) + ')').join(', ')}. If you did not make a change, tell the builder at once.` : ''}</div>`;
+  // 2. locked: open the key file
+  if (!B.jwk) return head + keyInfo + `<div class="card" style="margin-top:12px"><h3>Open my key file</h3><p class="m">The file stays on this device. It is kept in memory only until you close or sign out of the app.</p><input type="file" id="bxFile" accept=".json,application/json"> ${B.msg ? `<div class="banner ${B.bad ? 'bad' : 'good'}">${esc(B.msg)}</div>` : ''}<p style="margin-top:10px"><button class="btn sec" data-act="bxNew">Make a new key</button></p></div>${boxCounts(B)}`;
+  // 3. unlocked
+  const f = B.filter || 'all'; const all = B.msgs || []; const list = all.filter((m) => f === 'all' || m.status === f);
+  const chipS = { new: ['New', 'warn'], read: ['Read', 'mute'], board: ['Above me, for the Board', 'teal'], done: ['Done', 'good'] };
+  const cards = list.map((m) => !m.ok ? `<div class="card" style="margin-top:10px"><div class="m">${esc(m.day)} · locked with another key (${esc(m.kfp)})${m.broken ? ' · could not be opened' : ''}. Open the key file that matches.</div></div>` :
+    `<div class="card" style="margin-top:10px"><div class="m">${esc(m.day)} · ${chip(esc((BOX_CATS[m.c] || [m.c])[0]), (BOX_CATS[m.c] || [0, 'mute'])[1])} · ${m.n ? `<b>Named: ${esc(m.n.name)}</b> (${esc(m.n.position)}${m.n.region ? ', ' + esc(title(m.n.region)) : ''})` : 'anonymous'} · ${chip(chipS[m.status][0], chipS[m.status][1])}</div><p style="white-space:pre-wrap;margin:8px 0">${esc(m.t)}</p><div class="acts" style="display:flex;gap:6px;flex-wrap:wrap">${['read', 'board', 'done'].map((s) => `<button class="btn sm ${m.status === s ? '' : 'sec'}" data-act="bxMark" data-id="${esc(m.id)}" data-s="${s}">${{ read: 'Read', board: 'Above me', done: 'Done' }[s]}</button>`).join('')}<button class="btn sm ghost" data-act="bxCopy" data-id="${esc(m.id)}">Copy without the name</button><button class="btn sm ghost" data-act="bxDel" data-id="${esc(m.id)}">Delete</button></div></div>`).join('');
+  const sel = `<div class="toolbar"><label>Show <select id="bxFilter">${[['all', 'All'], ['new', 'New'], ['read', 'Read'], ['board', 'Above me'], ['done', 'Done']].map(([v, t]) => `<option value="${v}" ${f === v ? 'selected' : ''}>${t} (${v === 'all' ? all.length : all.filter((m) => m.status === v).length})</option>`).join('')}</select></label><label>Period <select id="bxMonths">${[[1, 'This month'], [3, 'Last 3 months'], [12, 'Last 12 months']].map(([v, t]) => `<option value="${v}" ${(B.months || 3) === v ? 'selected' : ''}>${t}</option>`).join('')}</select></label><button class="btn sm sec" data-act="bxMonthCopy">Copy the month without names</button></div>`;
+  return head + keyInfo + sel + (B.msg ? `<div class="banner ${B.bad ? 'bad' : 'good'}">${esc(B.msg)}</div>` : '') + boxCounts(B) + (cards || '<div class="empty" style="margin-top:10px">Nothing here yet.</div>') + '<p class="m" style="margin-top:14px">Delete messages when you no longer need them. These are kept until you delete them. Anything about you or HQ that you decide is above you can be shared with the Board with the name removed.</p>';
+}
+const boxCounts = (B) => (B.list ? `<div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(120px,1fr));margin-top:10px"><div class="note"><b>${B.list.items.length}</b><br>messages in this period</div><div class="note"><b>${B.list.items.filter((i) => i.status === 'new').length}</b><br>not yet marked</div></div>` : '');
+const boxTxt = (m) => `${m.day} · ${(BOX_CATS[m.c] || [m.c])[0]}\n${m.t}`;
+async function boxAction(a, t) {
+  const B = (S.bx ||= {});
+  try {
+    if (a === 'bxGen') { if (B.fresh && !confirm('Create another key? The file you downloaded before will not be used.')) return; B.fresh = await BoxCrypto.genKeys(); boxDownload(B.fresh.jwk, B.fresh.fp); B.msg = ''; }
+    else if (a === 'bxPublish') { const k = B.fresh; if (!k) return; await api('/api/box/key', { method: 'POST', body: { spki: k.spki, fp: k.fp } }); B.jwk = k.jwk; B.fpMine = k.fp; B.fresh = null; B.newKey = false; B.msg = 'The box is open. Messages are locked with this key.'; B.bad = false; await loadBoxED(); return; }
+    else if (a === 'bxNew') { B.newKey = true; B.fresh = null; }
+    else if (a === 'bxCancelNew') { B.newKey = false; B.fresh = null; }
+    else if (a === 'bxMark') { const m = (B.msgs || []).find((x) => x.id === t.dataset.id); if (m) { const to = m.status === t.dataset.s ? 'new' : t.dataset.s; await api('/api/box/mark', { method: 'POST', body: { id: m.id, status: to } }); m.status = to; const it = B.list && B.list.items.find((x) => x.id === m.id); if (it) it.status = to; } }
+    else if (a === 'bxDel') { if (!confirm('Delete this message for good?')) return; await api('/api/box/delete', { method: 'POST', body: { id: t.dataset.id } }); B.msgs = (B.msgs || []).filter((x) => x.id !== t.dataset.id); if (B.list) B.list.items = B.list.items.filter((x) => x.id !== t.dataset.id); }
+    else if (a === 'bxCopy') { const m = (B.msgs || []).find((x) => x.id === t.dataset.id); if (m) { await navigator.clipboard.writeText(boxTxt(m)); toast('Copied, without the name'); } return; }
+    else if (a === 'bxMonthCopy') { await navigator.clipboard.writeText((B.msgs || []).filter((m) => m.ok).map(boxTxt).join('\n\n---\n\n')); toast('Copied, without names'); return; }
+  } catch (e) { B.msg = e.message; B.bad = true; }
+  render();
 }
 
 // ---------- Payments (HQ Admin only): the COD calculation by school; no names or bank details ----------
@@ -2821,7 +2910,8 @@ async function go() {
 async function selectTab(k, from) {
   S.backTo = from && from !== k ? from : null; S.qMore = 0;
   if (k === 'pilot') { S.tab = k; render(); await loadPilot(); return; }
-  S.tab = k; S.selVisit = null; if (S.tab === 'messages') { render(); await loadMsgs(); } if (S.tab === 'clean') { if (S.cl) { S.cl.flash = null; S.cl.arrived = false; S.cl.hl = null; } render(); await loadClean(); } if (S.tab === 'payments') { await loadPayments();  return; } if (S.tab === 'patterns') { S.pt = { ...(S.pt || {}), data: null }; render(); await loadPatterns(); return; } if (S.tab === 'map') { S.mp = { ...(S.mp || {}), data: null, sel: null }; render(); await loadMap(); return; } if (S.tab === 'plan') { await loadPlan(); } if (S.tab === 'phones') { S.ph = null; render(); await loadPhones(); } if (S.tab === 'practice') { S.pr = null; render(); await loadPractice(); } if (S.tab === 'news') { await openNews(); } if (S.tab === 'reports') { render(); await openReports(); } if (S.tab === 'narr') { render(); await loadNarr(); } if (S.tab === 'today') { S.bv.upd = null; render(); await loadBridge(false); } if (S.tab === 'ask' || S.tab === 'questions') { render(); await loadAsk(); } if (S.tab === 'usage') { S.ux.key = ''; render(); await loadUsage(); } if (S.tab === 'admin') await loadAdmin(); render();
+  if (S.tab === 'boxed' && k !== 'boxed' && S.bx) { S.bx.msgs = null; S.bx.list = null; } // what was read is not kept once you leave the page
+  S.tab = k; S.selVisit = null; if (S.tab === 'messages') { render(); await loadMsgs(); } if (S.tab === 'clean') { if (S.cl) { S.cl.flash = null; S.cl.arrived = false; S.cl.hl = null; } render(); await loadClean(); } if (S.tab === 'payments') { await loadPayments();  return; } if (S.tab === 'box') { S.bx = { ...(S.bx || {}), key: null, err: null, msg: '', bad: false }; render(); await loadBoxKey(); return; } if (S.tab === 'boxed') { S.bx = { ...(S.bx || {}), key: null, err: null, msg: '', bad: false, newKey: false }; render(); await loadBoxED(); return; } if (S.tab === 'patterns') { S.pt = { ...(S.pt || {}), data: null }; render(); await loadPatterns(); return; } if (S.tab === 'map') { S.mp = { ...(S.mp || {}), data: null, sel: null }; render(); await loadMap(); return; } if (S.tab === 'plan') { await loadPlan(); } if (S.tab === 'phones') { S.ph = null; render(); await loadPhones(); } if (S.tab === 'practice') { S.pr = null; render(); await loadPractice(); } if (S.tab === 'news') { await openNews(); } if (S.tab === 'reports') { render(); await openReports(); } if (S.tab === 'narr') { render(); await loadNarr(); } if (S.tab === 'today') { S.bv.upd = null; render(); await loadBridge(false); } if (S.tab === 'ask' || S.tab === 'questions') { render(); await loadAsk(); } if (S.tab === 'usage') { S.ux.key = ''; render(); await loadUsage(); } if (S.tab === 'admin') await loadAdmin(); render();
 }
 
 // ---------- refresh: a button and pull-down; also picks up a new version of the app ----------
@@ -2864,7 +2954,7 @@ document.addEventListener('click', async (e) => {
   const a = t.dataset.act;
   try {
     if (a === 'login') { const c = $('#code').value.trim().toUpperCase(); if (!c) return; S.code = c; try { const r = await api('/api/login'); S.who = r.who; store.set('kf_code', c); S.tab = null; await go(); } catch { S.code = null; loginScreen('That code was not recognized.'); } }
-    else if (a === 'logout') { S.code = null; S.who = null; S.ov = null; S.plan = null; S.draft = null; store.set('kf_code', null); try { localStorage.removeItem('kf_snap'); } catch {} S.tab = null; loginScreen(); }
+    else if (a === 'logout') { S.bx = null; S.code = null; S.who = null; S.ov = null; S.plan = null; S.draft = null; store.set('kf_code', null); try { localStorage.removeItem('kf_snap'); } catch {} S.tab = null; loginScreen(); }
     else if (a === 'showLogin') loginScreen();
     else if (a === 'tblReset') { const T = S.tbl[t.dataset.id]; if (T) { T.f = {}; T.q = ''; store.set(memKey('t:' + t.dataset.id), null); } render(); }
     else if (a === 'moreMenu') { const m = document.getElementById('msheet'); if (m) m.hidden = !m.hidden; }
@@ -2913,6 +3003,8 @@ document.addEventListener('click', async (e) => {
       try { await api('/api/hqnotes', { method: 'POST', body: { action: 'add', target, text, mentions } }); await loadNotes(target); loadTalk(); } catch (e) { alert(e.message); }
     }
     else if (a === 'ntAct') { const box = t.closest('[data-notes]'); const target = box.dataset.notes; if (t.dataset.op === 'delete' && !confirm('Delete this note?')) return; try { await api('/api/hqnotes', { method: 'POST', body: { action: t.dataset.op, id: t.dataset.id } }); await loadNotes(target); loadTalk(); } catch (e) { alert(e.message); } }
+    else if (a === 'bxSend') await boxSend();
+    else if (/^bx[A-Z]/.test(a)) await boxAction(a, t);
     else if (a === 'ptOpen') { S.pt.open = S.pt.open === t.dataset.n ? null : t.dataset.n; render(); }
     else if (a === 'mpPick') { if (S.mp.moved) { S.mp.moved = false; return; } S.mp.sel = t.dataset.id; render(); }
     else if (a === 'mpZoom') { const d = t.dataset.d; if (d === 'fit') { S.mp.vb = null; render(); } else mpZoom(d === 'in' ? 1 / 1.5 : 1.5); }
@@ -3038,6 +3130,9 @@ document.addEventListener('change', async (e) => {
   if (e.target.id === 'tkReg' || e.target.id === 'tkPer') { const v = e.target.value; e.target.value = ''; if (v) openDetail((e.target.id === 'tkReg' ? 'region:' : 'person:') + v); return; }
   if (e.target.id === 'bvDesk') { try { store.set('kf_desk', e.target.value); } catch { /* ignore */ } render(); return; }
   if (e.target.dataset && e.target.dataset.opst) { bvSaveOps(S.bv.ops.map((x) => (x.id === e.target.dataset.opst ? { ...x, status: e.target.value } : x))); return; }
+  if (e.target.id === 'bxFile') { const file = e.target.files && e.target.files[0]; if (file) { const B = (S.bx ||= {}); try { const jwk = JSON.parse(await file.text()); B.fpMine = await BoxCrypto.fingerprintOfJwk(jwk); B.jwk = jwk; B.bad = B.fpMine !== B.key.fp; B.msg = B.bad ? 'This is not the current key. Messages locked with this key code can be opened; the others stay locked.' : ''; await boxDecryptAll(); } catch { B.msg = 'That file is not a key file.'; B.bad = true; } render(); } return; }
+  if (e.target.id === 'bxFilter') { S.bx.filter = e.target.value; render(); return; }
+  if (e.target.id === 'bxMonths') { S.bx.months = Number(e.target.value); await loadBoxED(); return; }
   if (e.target.id === 'mpReg') { S.mp.f.region = e.target.value; S.mp.sel = null; S.mp.vb = null; render(); return; }
   if (e.target.id === 'mpArm') { S.mp.f.arm = e.target.value; S.mp.vb = null; render(); return; }
   if (e.target.id === 'mpSt') { S.mp.f.status = e.target.value; S.mp.vb = null; render(); return; }

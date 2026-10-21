@@ -6,6 +6,7 @@ import { pupilRecords, workFiles, flagRecords } from './pupils.js';
 import { pilotView, pilotSet, PILOT_ALLOC } from './pilot.js';
 import { locationCheck } from './location.js';
 import { computePatterns } from './patterns.js';
+import { boxPublic, setBoxKey, submitBox, listBox, markBox, deleteBox } from './box.js';
 import { SCHOOL_COORDS, COORD_SOURCE, COORD_WRONG } from './data/school_coords.js';
 import { findRecords as findToMove, previewMove, applyMove, correctionsView, correctionCopy } from './corrections.js';
 import { qrPng } from './qr.js';
@@ -638,6 +639,20 @@ export default {
           if (method === 'POST') { const r = await actOnRequest(env, who, await request.json().catch(() => ({}))); return r.error ? err(r.error, r.status || 422) : json(r); }
           return json(await listRequests(env, who));
         } catch (e) { return err(String(e.message || e), 502); }
+      }
+      // ---------- suggestion box (Sanduku la maoni): the server only ever holds locked text. Nothing here is written to the activity log. ----------
+      if (path === '/api/box' || path.startsWith('/api/box/')) {
+        try {
+          const readBody = async () => request.json().catch(() => ({})); let r = null;
+          if (path === '/api/box/key' && method === 'GET') r = await boxPublic(env, who);
+          else if (path === '/api/box/key' && method === 'POST') r = await setBoxKey(env, who, await readBody());
+          else if (path === '/api/box' && method === 'POST') r = await submitBox(env, who, await readBody());
+          else if (path === '/api/box/items' && method === 'GET') r = await listBox(env, who, Number(url.searchParams.get('months')) || 3);
+          else if (path === '/api/box/mark' && method === 'POST') r = await markBox(env, who, await readBody());
+          else if (path === '/api/box/delete' && method === 'POST') r = await deleteBox(env, who, await readBody());
+          else return err('Not found', 404);
+          return r.error ? err(r.error, r.status || 422) : json(r);
+        } catch { return err('The suggestion box is not available just now. Try again in a moment.', 502); }
       }
       // ---------- visit map: school pins by status. Field teams see their own region; HQ sees every school and the location checks ----------
       if (path === '/api/map') {
