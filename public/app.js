@@ -1427,7 +1427,8 @@ function whoHtml() {
   const bell = pushSupported() && !isGuest() ? `<button class="ico ${S.alertsOn ? 'on' : ''}" id="alertsBtn" data-act="alerts" title="${esc(alertsLabel())}" aria-label="${esc(alertsLabel())}">${BELL}</button>` : '';
   const back = S.viewAs ? '<button class="ghost" data-act="exitPreview">Back to HQ</button>' : '';
   const rf = `<button class="ico" id="rfb" data-act="refresh" title="Refresh" aria-label="Refresh">${REFRESH}</button>`;
-  return `${back}${rf}${bell}<div class="umw"><button class="uav" data-act="umenu" aria-haspopup="true" aria-label="Account menu">${esc(ini)}</button><div class="um" id="um" hidden>
+  const bx = boxField() && S.bxOpen ? `<button class="ico" id="boxBtn" data-tab="box" title="Sanduku la maoni" aria-label="Sanduku la maoni">${CHAT}</button>` : '';
+  return `${back}${bx}${rf}${bell}<div class="umw"><button class="uav" data-act="umenu" aria-haspopup="true" aria-label="Account menu">${esc(ini)}</button><div class="um" id="um" hidden>
   <div class="who2"><b>${esc(w.name)}</b><span>${esc(sub)}</span></div>
   ${viewAsControl() ? `<div class="row"><label>View the app as</label>${viewAsControl()}</div>` : ''}
   ${S.viewAs ? '' : `<div class="row"><label>Open the app on</label><select id="startSel" aria-label="Start page"><option value="">The first tab (default)</option>${TABS[roleKey()].filter(([k]) => tabAllowed(k)).map(([k, t]) => `<option value="${k}" ${startKey() === k ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select></div>`}
@@ -1435,6 +1436,7 @@ function whoHtml() {
   <div class="row"><label>Appearance</label><select id="themeSel" aria-label="Appearance"><option value="" ${themePref() === '' ? 'selected' : ''}>Match my phone (automatic)</option><option value="light" ${themePref() === 'light' ? 'selected' : ''}>Light</option><option value="dark" ${themePref() === 'dark' ? 'selected' : ''}>Dark</option></select></div>
   ${isRealHQ() && (S.real || S.who).level === 'admin' && S.who ? '<button class="mbtn" data-act="arrStart">Arrange this page</button>' : ''}
   ${isGuest() ? '' : `<button class="mbtn" data-act="alerts">${esc(alertsLabel())}</button>`}
+  ${boxField() && S.bxOpen ? '<button class="mbtn" data-tab="box">Sanduku la maoni · Suggestion box</button>' : ''}
   <button class="mbtn out" data-act="logout">Sign out</button></div></div>`;
 }
 function pilotBanner() {
@@ -1553,7 +1555,8 @@ function render() {
   collapseIntros();
   if (S.who && S.who.role === 'hq' && !S.viewAs) hydrateNotes();
   guestChrome();
-  enhanceCollapsible(); stackTables(); addBoxCard();
+  enhanceCollapsible(); stackTables(); addBoxCard(); if (boxField() && S.bxOpen === undefined) loadBoxOpen();
+  document.body.classList.toggle('hasbox', Boolean(boxField() && S.bxOpen)); // the top bar has one more icon, so the platform name gives way on a small phone
   aiRender();
 }
 
@@ -2018,9 +2021,18 @@ function viewMap() {
 const BOX_CATS = { pendekezo: ['Pendekezo · Suggestion', 'teal'], tatizo: ['Tatizo · Problem', 'warn'], zuri: ['Jambo zuri · Good news', 'good'], mzito: ['Wasiwasi mzito · Serious concern (safety, harassment, money)', 'bad'] };
 const boxField = () => Boolean(S.who && ['volunteer', 'rc', 'arc'].includes(S.who.role) && !S.viewAs);
 const boxReader = () => Boolean(S.who && S.who.role === 'hq' && S.who.hq_id === 'h3' && (S.who.level || 'admin') === 'admin' && !S.viewAs);
-const boxCard = () => (boxField() ? `<div class="card boxcard" style="margin-top:14px"><h3>Sanduku la maoni · Suggestion box</h3><div class="sub">Una wazo, tatizo au jambo zuri? Andika bila jina. Ni ED pekee anayesoma. · An idea, a problem or good news? Write it without your name. Only the ED reads it.</div><button class="btn" data-tab="box">Andika ujumbe · Write a message</button></div>` : '');
+const boxNew = () => { try { return !localStorage.getItem('kf_bx_seen'); } catch { return false; } }; // a "new" tag until the page has been opened once on this phone
+const boxCard = () => (boxField() ? `<div class="card boxcard" style="margin-top:10px"><h3>${boxNew() ? '<span class="chip c-gold">Mpya · New</span> ' : ''}Sanduku la maoni · Suggestion box</h3><div class="sub">Una wazo, tatizo, jambo zuri au wasiwasi? Andika bila jina. Ni ED pekee anayesoma. · An idea, a problem, good news or a worry? Write it without your name. Only the ED reads it.</div><button class="btn" data-tab="box">Andika ujumbe · Write a message</button></div>` : '');
+const boxStrip = () => (boxField() ? `<div class="boxstrip"><span>💬 <b>Sanduku la maoni</b> · Tell us anything, without your name</span><button class="btn sm" data-tab="box">Andika · Write</button></div>` : '');
+const CHAT = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a8 8 0 0 1-11.5 7.2L4 21l1.8-5A8 8 0 1 1 21 12z"/></svg>';
+async function loadBoxOpen() { if (!boxField() || S.bxOpen !== undefined) return; S.bxOpen = null; try { const k = await api('/api/box/key'); S.bxOpen = Boolean(k && k.open); } catch { S.bxOpen = false; } render(); }
 async function loadBoxKey() { const B = (S.bx ||= {}); B.busy = true; try { B.key = await api('/api/box/key'); B.err = null; } catch (e) { B.err = e.message; } B.busy = false; render(); }
-function addBoxCard() { const app = document.getElementById('app'); if (!app || !boxField() || (S.tab !== 'day' && S.tab !== 'region')) return; const d = document.createElement('div'); d.innerHTML = boxCard(); app.appendChild(d); } // a card on the volunteer and coordinator home pages, so everyone can find it
+function addBoxCard() { // the box is easy to find: a card at the top of the home pages, a one-line link at the bottom of the main pages, an icon in the top bar and an entry in the account menu
+  const app = document.getElementById('app'); if (!app || !boxField() || !S.bxOpen || S.tab === 'box') return;
+  const land = S.tab === 'day' || S.tab === 'region'; if (!land && !['news', 'work', 'queries', 'stats', 'plan', 'team', 'ask', 'help', 'phones', 'compare', 'pilot', 'map'].includes(S.tab)) return;
+  const d = document.createElement('div'); d.className = 'boxslot'; d.innerHTML = land ? boxCard() : boxStrip();
+  if (land) { const ph = app.querySelector('.pagehead'); if (ph) ph.insertAdjacentElement('afterend', d); else app.insertBefore(d, app.firstChild); } else app.appendChild(d);
+}
 function viewBox() {
   const B = (S.bx ||= {}); if (!B.key && !B.err && !B.busy) loadBoxKey();
   const head = '<div class="pagehead"><div><h2>Sanduku la maoni</h2><p>Suggestion box</p></div></div>';
@@ -2930,6 +2942,8 @@ async function selectTab(k, from) {
   S.backTo = from && from !== k ? from : null; S.qMore = 0;
   if (k === 'pilot') { S.tab = k; render(); await loadPilot(); return; }
   if (boxReader()) loadBoxSummary(k === 'boxed');
+  if (boxField()) loadBoxOpen();
+  if (k === 'box') { try { localStorage.setItem('kf_bx_seen', '1'); } catch { /* ignore */ } }
   if (S.tab === 'boxed' && k !== 'boxed' && S.bx) { S.bx.msgs = null; S.bx.list = null; } // what was read is not kept once you leave the page
   S.tab = k; S.selVisit = null; if (S.tab === 'messages') { render(); await loadMsgs(); } if (S.tab === 'clean') { if (S.cl) { S.cl.flash = null; S.cl.arrived = false; S.cl.hl = null; } render(); await loadClean(); } if (S.tab === 'payments') { await loadPayments();  return; } if (S.tab === 'box') { S.bx = { ...(S.bx || {}), key: null, err: null, msg: '', bad: false }; render(); await loadBoxKey(); return; } if (S.tab === 'boxed') { S.bx = { ...(S.bx || {}), key: null, err: null, msg: '', bad: false, newKey: false }; render(); await loadBoxED(); return; } if (S.tab === 'patterns') { S.pt = { ...(S.pt || {}), data: null }; render(); await loadPatterns(); return; } if (S.tab === 'map') { S.mp = { ...(S.mp || {}), data: null, sel: null }; render(); await loadMap(); return; } if (S.tab === 'plan') { await loadPlan(); } if (S.tab === 'phones') { S.ph = null; render(); await loadPhones(); } if (S.tab === 'practice') { S.pr = null; render(); await loadPractice(); } if (S.tab === 'news') { await openNews(); } if (S.tab === 'reports') { render(); await openReports(); } if (S.tab === 'narr') { render(); await loadNarr(); } if (S.tab === 'today') { S.bv.upd = null; render(); await loadBridge(false); } if (S.tab === 'ask' || S.tab === 'questions') { render(); await loadAsk(); } if (S.tab === 'usage') { S.ux.key = ''; render(); await loadUsage(); } if (S.tab === 'admin') await loadAdmin(); render();
 }
@@ -2974,7 +2988,7 @@ document.addEventListener('click', async (e) => {
   const a = t.dataset.act;
   try {
     if (a === 'login') { const c = $('#code').value.trim().toUpperCase(); if (!c) return; S.code = c; try { const r = await api('/api/login'); S.who = r.who; store.set('kf_code', c); S.tab = null; await go(); } catch { S.code = null; loginScreen('That code was not recognized.'); } }
-    else if (a === 'logout') { S.bx = null; S.code = null; S.who = null; S.ov = null; S.plan = null; S.draft = null; store.set('kf_code', null); try { localStorage.removeItem('kf_snap'); } catch {} S.tab = null; loginScreen(); }
+    else if (a === 'logout') { S.bx = null; S.bxOpen = undefined; S.bxSum = null; S.code = null; S.who = null; S.ov = null; S.plan = null; S.draft = null; store.set('kf_code', null); try { localStorage.removeItem('kf_snap'); } catch {} S.tab = null; loginScreen(); }
     else if (a === 'showLogin') loginScreen();
     else if (a === 'tblReset') { const T = S.tbl[t.dataset.id]; if (T) { T.f = {}; T.q = ''; store.set(memKey('t:' + t.dataset.id), null); } render(); }
     else if (a === 'moreMenu') { const m = document.getElementById('msheet'); if (m) m.hidden = !m.hidden; }

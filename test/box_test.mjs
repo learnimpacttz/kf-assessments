@@ -78,4 +78,7 @@ ok('the daily alert has a number to report, and then starts again from zero', pe
 ok('the alert carries a number only, never the text', index.includes("`${n} new message${n > 1 ? 's' : ''} in the suggestion box`") && index.includes("hhmm === '14:30'"));
 ok('the saved marks are backed up and cleaned up with the message', fs.readFileSync('../src/backup.js', 'utf8').includes('v2:box:saved') && box.includes('delete sv[id]'));
 ok('the page saves new messages by itself and reminds on every page until they are saved', app.includes('async function boxAutoSave') && app.includes('const boxBanner') && app.includes('remBanner() + boxBanner()') && app.includes('The system cannot save for you when your key is not open'));
+ok('the box is easy to find once it is open: top of the home pages, an icon in the top bar, a link on the main pages and in the account menu', app.includes("ph.insertAdjacentElement('afterend', d)") && app.includes('id="boxBtn"') && app.includes('const boxStrip') && app.includes("data-tab=\"box\">Sanduku la maoni · Suggestion box</button>") && app.includes('Mpya · New'));
+ok('nothing is shown to the field team until the Executive Director has opened the box', app.includes('!S.bxOpen || S.tab ===') && app.includes('boxField() && S.bxOpen ?'));
+ok('only the field team sees the sender card and icon, not HQ', app.includes("['volunteer', 'rc', 'arc'].includes(S.who.role)"));
 done();

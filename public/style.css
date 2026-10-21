@@ -493,3 +493,8 @@ header.top{padding-inline:14px}
 .banner.good{background:color-mix(in srgb,var(--good,#2e8b57) 16%,var(--surface,#fff));border:1px solid var(--good,#2e8b57)}
 .reqstrip{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}.reqstrip span{background:var(--soft,#eef3f7);border-radius:999px;padding:5px 12px;font-size:13px;color:var(--ink2,#44506b)}.reqstrip span.on{background:var(--gold,#e0a526);color:var(--on-gold,#1e2a44)}.reqstrip b{margin-right:4px}
 .reqhl{box-shadow:0 0 0 3px var(--gold,#e0a526);transition:box-shadow .4s}
+
+/* Suggestion box: easy to find */
+.boxslot{margin-top:6px}.boxcard{border-left:4px solid var(--gold,#e0a526)}
+.boxstrip{display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap;margin-top:16px;padding:10px 12px;border:1px dashed var(--line,#d9dee6);border-radius:10px;font-size:13.5px;color:var(--ink2,#44506b)}
+@media(max-width:480px){body.hasbox .top .brand{display:none}body.hasbox .top .in{gap:6px}}
