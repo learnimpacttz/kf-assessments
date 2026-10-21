@@ -8,6 +8,7 @@ import { pushTo } from './push.js';
 import { FIELDS, checkEdit, patchFor, describe, runEdit, attGuard } from './edits.js';
 import { previewMove, applyMove } from './corrections.js';
 import { logActivity } from './hq.js';
+import { archiveClosedByChange } from './queries.js';
 
 const KEY = 'v2:delreq', LOG = 'v2:delog', CAP = 200;
 const uid = () => Math.random().toString(36).slice(2, 10);
@@ -72,6 +73,18 @@ export async function listRequests(env, who) {
 async function notify(env, r, text, pred) { try { await pushTo(env, pred, { title: r.type === 'edit' ? 'Data edit request' : 'Data deletion request', body: text.slice(0, 120), url: '/#clean' }); } catch { /* the page still shows it */ } }
 const hqLvl = (n) => (w) => w && w.role === 'hq' && (w.review_level || 0) >= n;
 
+// Once a request is finished and the dashboard has rebuilt, the checks it cleared are archived (see queries.js) and listed on the request.
+// Waits for the rebuild and for a few minutes after the change, and handles each request once.
+export async function reconcileClosedChecks(env, liveFlags, now = Date.now()) {
+  const d = await load(env); const todo = d.filter((r) => (r.stage === 'done' || r.stage === 'deleted') && !r.closed_checked_at && now - Date.parse(r.updated_at || 0) > 6 * 60e3);
+  if (!todo.length) return 0;
+  if (((await kv(env).get('v2:rebuild')) || []).length) return 0; // the totals are still being rebuilt
+  const results = {}; let n = 0;
+  for (const r of todo) { results[r.id] = await archiveClosedByChange(env, liveFlags, (r.items || []).map((i) => ({ school: i.school, grade: i.grade })), r.id); n += results[r.id].length; }
+  const d2 = await load(env); // reload, so a request someone acted on meanwhile is not overwritten
+  for (const r of d2) if (results[r.id]) { r.closed_checks = results[r.id]; r.closed_checked_at = new Date(now).toISOString(); }
+  await save(env, d2); return n;
+}
 // Successful steps are logged by the request log (hq.js). Refused attempts were not logged anywhere, so a user who pressed Suggest and got an error left no trace.
 export async function actOnRequest(env, who, b) {
   const r = await actInner(env, who, b);

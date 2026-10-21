@@ -20,4 +20,6 @@ const del = fs.readFileSync('../src/deletions.js', 'utf8');
 ok('a refused attempt is written to the activity log (successes already were)', del.includes('async function actInner') && del.includes('refused`') && del.includes('logActivity'));
 ok('the person who suggested is told when it is passed on and when it is done', (del.match(/\(w\) => w && String\(w\.id \?\? w\.hq_id\) === r\.by_id/g) || []).length >= 3);
 ok('the chain: Mundo and Joram suggest, Joram confirms Mundo and the field, Mundo decides, the Executive Director can decide what they started', del.includes('const isEd =') && del.includes("level === 2 || isEd(who) ? 'initiated' : 'suggested'") && del.includes('Joram has to confirm what Mundo suggests') && del.includes('!(isEd(who) && r.by_id === me)') && app.includes('const chainNext'));
+ok('the log is titled for deletions and edits and says what each change was', app.includes('Change log: deletions and edits') && !app.includes('<h3>Deletion log</h3>') && app.includes('Read back, matched'));
+ok('the request card shows which checks the change cleared', app.includes('Checks cleared by this change') && app.includes('No open check was waiting on this change'));
 done();

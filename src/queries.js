@@ -140,3 +140,23 @@ export async function withdrawFalseDuplicates(env, who, currentFlags, { apply = 
   await kv(env).put(KEY, queries); out.backup = 'v2:queries:backup:' + now; out.archived += out.withdraw.length; return out;
 }
 export async function listWithdrawn(env) { const q = await loadQueries(env); return Object.entries(q).filter(([k]) => k.startsWith('withdrawn|')).map(([k, v]) => ({ key: v.withdrawn?.original_key || k.slice(10), withdrawn_at: v.withdrawn?.at, reason: v.withdrawn?.reason, status: v.status, replied_by: v.wf?.response?.by || null, replied_at: v.wf?.response?.at || null, response: v.wf?.response?.text || null, thread: (v.thread || []).length })); }
+
+// ---------- checks that an approved data change cleared ----------
+// A correction or deletion changes the numbers, the dashboard rebuilds, and the check simply stops appearing. Its query (and any reply) would then sit in the
+// store with no trace on any page. Nothing is deleted: the query moves, with its whole thread, to a "closed|" record that says which request cleared it, and the request
+// card lists it. A later check with the same key starts clean instead of inheriting an old reply.
+const CLEARABLE = new Set(['over', 'short', 'dup', 'notlist', 'nosample', 'edited']);
+export async function archiveClosedByChange(env, liveFlags, targets, requestId) {
+  const queries = await loadQueries(env); const live = new Set((liveFlags || []).map(flagKey)); const out = [];
+  const keep = JSON.stringify(queries); const now = new Date().toISOString();
+  for (const [k, q] of Object.entries(queries)) {
+    if (k.startsWith('withdrawn|') || k.startsWith('closed|') || live.has(k)) continue;
+    const [type, school, grade] = k.split('|'); if (!CLEARABLE.has(type)) continue;
+    if (!(targets || []).some((t) => t.school === school && String(t.grade) === String(grade))) continue;
+    const active = Boolean((q.thread && q.thread.length) || (q.wf && (q.wf.response || (q.wf.history && q.wf.history.length))) || q.status === 'resolved'); if (!active) continue;
+    out.push({ key: k, type, school, grade, status: q.status, stage: (q.wf && q.wf.stage) || 'open', replied_by: (q.wf && q.wf.response && q.wf.response.by) || null, replied_at: (q.wf && q.wf.response && q.wf.response.at) || null });
+    queries['closed|' + k] = { ...q, closed: { at: now, request: requestId, reason: `The check no longer applies: an approved data change (request ${requestId}) put the numbers right.` } }; delete queries[k];
+  }
+  if (out.length) { await kv(env).put('v2:queries:backup:' + now, JSON.parse(keep)); await kv(env).put(KEY, queries); }
+  return out;
+}

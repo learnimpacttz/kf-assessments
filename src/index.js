@@ -12,7 +12,7 @@ import { qrPng } from './qr.js';
 import { codFromYear } from './paymentdata.js';
 import { INFRA_WINNERS } from './data/infra_winners.js';
 import { attachList, attachFetch, attachDelete, storageView } from './attachments.js';
-import { findRecords, listRequests, actOnRequest, copyOf } from './deletions.js';
+import { findRecords, listRequests, actOnRequest, copyOf, reconcileClosedChecks } from './deletions.js';
 import { messagesApi, builtinSave, runDueMessages } from './messages.js';
 import { formsView, formsRehearse, formsDeploy, formsRollback } from './formsadmin.js';
 import { loadFormJob, saveFormJob, runFormJob, maybeRunFormJob } from './formjob.js';
@@ -1064,6 +1064,7 @@ export default {
       }
       try { if (hhmm === '05:30' || hhmm === '12:00') { const rr = await hqReminders(env, ctx, hhmm.replace(':', '')); if (rr && rr.length) console.log('hq reminders ' + JSON.stringify(rr)); } } catch (e) { console.error('hq reminders failed: ' + (e && e.message)); }
       try { if (hourNow >= 2 && hourNow <= 17 && new Date().getUTCMinutes() % 2 === 0) await refreshBridgeAll(env, ctx); } catch (e) { console.error('bridge refresh failed: ' + (e && e.message)); }
+      try { if (new Date().getUTCMinutes() % 3 === 0) { const s = await sumNow(env); const n = await reconcileClosedChecks(env, (s && s.flags) || []); if (n) console.log('closed checks archived: ' + n); } } catch (e) { console.error('closed-check reconcile failed: ' + (e && e.message)); }
       try { const cs = await syncCalendar(env); if (cs) console.log('calendar ' + JSON.stringify(cs).slice(0, 400)); } catch (e) { console.error('calendar sync failed: ' + (e && e.message)); }
       try { const fj = await maybeRunFormJob(env); if (fj) console.log('formjob ' + JSON.stringify(fj).slice(0, 600)); } catch (e) { console.error('form job failed: ' + (e && e.message)); }
       try { const nw = await runDueNews(env); if (nw.length) console.log('news ' + JSON.stringify(nw)); if (new Date().getUTCMinutes() % 15 === 0) { const ms = await checkMilestones(env); if (ms && ms.length) console.log('milestones ' + JSON.stringify(ms)); } } catch (e) { console.error('news failed: ' + (e && e.message)); }
