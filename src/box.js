@@ -5,7 +5,7 @@
 import { kv } from './store.js';
 import { eatToday } from './config.js';
 
-const KEY = 'v2:box:key', ITEM = 'v2:box:i:', IDX = 'v2:box:idx:', CNT = 'v2:box:cnt:', MARK = 'v2:box:mark';
+const KEY = 'v2:box:key', ITEM = 'v2:box:i:', IDX = 'v2:box:idx:', CNT = 'v2:box:cnt:', MARK = 'v2:box:mark', SAVED = 'v2:box:saved', PENDING = 'v2:box:pending';
 export const BOX_DAILY_CAP = 150, BOX_CT_MAX = 9000, BOX_WK_MAX = 700;
 const B64 = /^[A-Za-z0-9+/]+={0,2}$/;
 const randId = () => Array.from(globalThis.crypto.getRandomValues(new Uint8Array(9))).map((x) => x.toString(36).padStart(2, '0')).join('').slice(0, 14);
@@ -33,12 +33,13 @@ export async function submitBox(env, who, b) {
   await kv(env).put(ck, n + 1);
   const id = randId(); await kv(env).put(ITEM + id, { id, day, iv, ct, wk, kfp: k.fp }); // nothing about the sender
   const ik = IDX + month(day); const idx = (await kv(env).get(ik)) || []; idx.push(id); await kv(env).put(ik, idx);
+  await kv(env).put(PENDING, ((await kv(env).get(PENDING)) || 0) + 1); // only a count, for the once-a-day alert
   return { ok: true };
 }
 export async function listBox(env, who, months = 3) {
   if (!isReader(who, env)) return { error: 'Not allowed', status: 403 };
-  const now = new Date(Date.now() + 3 * 3600e3); const out = []; const marks = (await kv(env).get(MARK)) || {};
-  for (let i = 0; i < Math.min(12, Math.max(1, months)); i++) { const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i, 1)); const ik = IDX + d.toISOString().slice(0, 7); for (const id of (await kv(env).get(ik)) || []) { const it = await kv(env).get(ITEM + id); if (it) out.push({ ...it, status: marks[id] || 'new' }); } }
+  const now = new Date(Date.now() + 3 * 3600e3); const out = []; const marks = (await kv(env).get(MARK)) || {}; const saved = (await kv(env).get(SAVED)) || {};
+  for (let i = 0; i < Math.min(12, Math.max(1, months)); i++) { const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i, 1)); const ik = IDX + d.toISOString().slice(0, 7); for (const id of (await kv(env).get(ik)) || []) { const it = await kv(env).get(ITEM + id); if (it) out.push({ ...it, status: marks[id] || 'new', saved: Boolean(saved[id]) }); } }
   out.sort((a, b) => (a.day < b.day ? 1 : a.day > b.day ? -1 : 0)); return { items: out, key: (await kv(env).get(KEY))?.fp || null };
 }
 export async function markBox(env, who, b) {
@@ -51,5 +52,19 @@ export async function deleteBox(env, who, b) {
   const id = String(b.id || ''); if (!/^[a-z0-9]{6,20}$/.test(id)) return { error: 'Choose a message', status: 422 };
   const it = await kv(env).get(ITEM + id); if (!it) return { ok: true };
   const ik = IDX + month(it.day); const idx = ((await kv(env).get(ik)) || []).filter((x) => x !== id); await kv(env).put(ik, idx); await kv(env).delete(ITEM + id);
-  const m = (await kv(env).get(MARK)) || {}; delete m[id]; await kv(env).put(MARK, m); return { ok: true };
+  const m = (await kv(env).get(MARK)) || {}; delete m[id]; await kv(env).put(MARK, m); const sv = (await kv(env).get(SAVED)) || {}; delete sv[id]; await kv(env).put(SAVED, sv); return { ok: true };
 }
+// Counts only, for the reader: how many messages there are, how many are unmarked, and how many have not been saved to a file yet.
+export async function boxSummary(env, who) {
+  if (!isReader(who, env)) return { error: 'Not allowed', status: 403 };
+  const now = new Date(Date.now() + 3 * 3600e3); const marks = (await kv(env).get(MARK)) || {}; const saved = (await kv(env).get(SAVED)) || {}; let total = 0, fresh = 0, unsaved = 0;
+  for (let i = 0; i < 12; i++) { const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i, 1)).toISOString().slice(0, 7); for (const id of (await kv(env).get(IDX + d)) || []) { total++; if (!marks[id]) fresh++; if (!saved[id]) unsaved++; } }
+  return { total, new: fresh, unsaved };
+}
+export async function markSaved(env, who, b) {
+  if (!isReader(who, env)) return { error: 'Not allowed', status: 403 };
+  const ids = (Array.isArray(b.ids) ? b.ids : []).map(String).filter((x) => /^[a-z0-9]{6,20}$/.test(x)).slice(0, 500); if (!ids.length) return { ok: true, n: 0 };
+  const sv = (await kv(env).get(SAVED)) || {}; for (const id of ids) sv[id] = true; await kv(env).put(SAVED, sv); return { ok: true, n: ids.length };
+}
+// Once a day the system tells the reader how many messages arrived (a number, never the text, and not at the minute of sending).
+export async function takePending(env) { const n = (await kv(env).get(PENDING)) || 0; if (n) await kv(env).put(PENDING, 0); return n; }

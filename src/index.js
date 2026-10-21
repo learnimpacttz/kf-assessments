@@ -6,7 +6,7 @@ import { pupilRecords, workFiles, flagRecords } from './pupils.js';
 import { pilotView, pilotSet, PILOT_ALLOC } from './pilot.js';
 import { locationCheck } from './location.js';
 import { computePatterns } from './patterns.js';
-import { boxPublic, setBoxKey, submitBox, listBox, markBox, deleteBox } from './box.js';
+import { boxPublic, setBoxKey, submitBox, listBox, markBox, deleteBox, boxSummary, markSaved, takePending } from './box.js';
 import { SCHOOL_COORDS, COORD_SOURCE, COORD_WRONG } from './data/school_coords.js';
 import { findRecords as findToMove, previewMove, applyMove, correctionsView, correctionCopy } from './corrections.js';
 import { qrPng } from './qr.js';
@@ -649,6 +649,8 @@ export default {
           else if (path === '/api/box' && method === 'POST') r = await submitBox(env, who, await readBody());
           else if (path === '/api/box/items' && method === 'GET') r = await listBox(env, who, Number(url.searchParams.get('months')) || 3);
           else if (path === '/api/box/mark' && method === 'POST') r = await markBox(env, who, await readBody());
+          else if (path === '/api/box/summary' && method === 'GET') r = await boxSummary(env, who);
+          else if (path === '/api/box/saved' && method === 'POST') r = await markSaved(env, who, await readBody());
           else if (path === '/api/box/delete' && method === 'POST') r = await deleteBox(env, who, await readBody());
           else return err('Not found', 404);
           return r.error ? err(r.error, r.status || 422) : json(r);
@@ -1080,6 +1082,7 @@ export default {
       try { if (hhmm === '05:30' || hhmm === '12:00') { const rr = await hqReminders(env, ctx, hhmm.replace(':', '')); if (rr && rr.length) console.log('hq reminders ' + JSON.stringify(rr)); } } catch (e) { console.error('hq reminders failed: ' + (e && e.message)); }
       try { if (hourNow >= 2 && hourNow <= 17 && new Date().getUTCMinutes() % 2 === 0) await refreshBridgeAll(env, ctx); } catch (e) { console.error('bridge refresh failed: ' + (e && e.message)); }
       try { if (new Date().getUTCMinutes() % 3 === 0) { const s = await sumNow(env); const n = await reconcileClosedChecks(env, (s && s.flags) || []); if (n) console.log('closed checks archived: ' + n); } } catch (e) { console.error('closed-check reconcile failed: ' + (e && e.message)); }
+      try { if (hhmm === '14:30') { const n = await takePending(env); if (n > 0) await pushTo(env, (w) => Boolean(w && w.role === 'hq' && String(w.id) === 'hq:' + (env.BOX_READER || 'h3')), { title: 'Suggestion box', body: `${n} new message${n > 1 ? 's' : ''} in the suggestion box`, url: '/#boxed' }); } } catch (e) { console.error('box alert failed'); }
       try { const cs = await syncCalendar(env); if (cs) console.log('calendar ' + JSON.stringify(cs).slice(0, 400)); } catch (e) { console.error('calendar sync failed: ' + (e && e.message)); }
       try { const fj = await maybeRunFormJob(env); if (fj) console.log('formjob ' + JSON.stringify(fj).slice(0, 600)); } catch (e) { console.error('form job failed: ' + (e && e.message)); }
       try { const nw = await runDueNews(env); if (nw.length) console.log('news ' + JSON.stringify(nw)); if (new Date().getUTCMinutes() % 15 === 0) { const ms = await checkMilestones(env); if (ms && ms.length) console.log('milestones ' + JSON.stringify(ms)); } } catch (e) { console.error('news failed: ' + (e && e.message)); }

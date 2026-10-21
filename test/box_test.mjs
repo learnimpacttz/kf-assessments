@@ -1,7 +1,7 @@
 // Suggestion box: locked on the sender's phone, nothing about the sender stored, readable only by the Executive Director
 import { env, mem, ok, done } from './_kit.mjs';
 import BoxCrypto from '../public/boxcrypto.js';
-import { boxPublic, setBoxKey, submitBox, listBox, markBox, deleteBox, isReader, canWrite, BOX_DAILY_CAP } from '../src/box.js';
+import { boxPublic, setBoxKey, submitBox, listBox, markBox, deleteBox, isReader, canWrite, BOX_DAILY_CAP, boxSummary, markSaved, takePending } from '../src/box.js';
 import fs from 'node:fs';
 const ed = { role: 'hq', level: 'admin', hq_id: 'h3', name: 'Michael Kamukulu' };
 const mundo = { role: 'hq', level: 'admin', hq_id: 'h1', name: 'Chogohe Edwin Mundo' };
@@ -65,4 +65,17 @@ ok('the app does not count visits to the box pages', app.includes("tab === 'box'
 ok('the box page is not stored in the usage trail or the sign-in remembered page', !/store\.set\('kf_start[^;]*'box'/.test(app));
 ok('the private key page forgets what it decrypted when you leave', app.includes("S.tab === 'boxed' && k !== 'boxed' && S.bx) { S.bx.msgs = null"));
 ok('the Executive Director can download the messages as a file, with or without names', app.includes("data-act=\"bxSave\" data-names=\"0\"") && app.includes("data-act=\"bxSave\" data-names=\"1\"") && app.includes('Sanduku_maoni_'));
+
+// automation: counts, saved marks and the once-a-day number (the text is never needed for any of it)
+const S0 = await boxSummary(env, ed);
+ok('the reader sees counts only: total, not yet marked, not yet saved', S0.total === 1 && S0.new === 1 && S0.unsaved === 1 && Object.keys(S0).sort().join() === 'new,total,unsaved');
+ok('nobody else can read the counts', (await boxSummary(env, mundo)).status === 403 && (await boxSummary(env, vol)).status === 403);
+const idNow = (await listBox(env, ed)).items[0].id;
+ok('saving marks a message as saved, and only the reader can say so', (await markSaved(env, mundo, { ids: [idNow] })).status === 403 && (await markSaved(env, ed, { ids: [idNow, 'bad id!'] })).n === 1 && (await boxSummary(env, ed)).unsaved === 0 && (await listBox(env, ed)).items[0].saved === true);
+ok('a new message is unsaved until it is saved', await (async () => { mem.set('v2:box:cnt:' + new Date(Date.now() + 3 * 3600e3).toISOString().slice(0, 10), JSON.stringify(0)); await submitBox(env, vol, { v: 1, kfp: keys.fp, ...await BoxCrypto.encrypt(keys.spki, { t: 'ujumbe mpya' }) }); return (await boxSummary(env, ed)).unsaved === 1; })());
+const pend = await takePending(env);
+ok('the daily alert has a number to report, and then starts again from zero', pend >= 1 && (await takePending(env)) === 0);
+ok('the alert carries a number only, never the text', index.includes("`${n} new message${n > 1 ? 's' : ''} in the suggestion box`") && index.includes("hhmm === '14:30'"));
+ok('the saved marks are backed up and cleaned up with the message', fs.readFileSync('../src/backup.js', 'utf8').includes('v2:box:saved') && box.includes('delete sv[id]'));
+ok('the page saves new messages by itself and reminds on every page until they are saved', app.includes('async function boxAutoSave') && app.includes('const boxBanner') && app.includes('remBanner() + boxBanner()') && app.includes('The system cannot save for you when your key is not open'));
 done();
