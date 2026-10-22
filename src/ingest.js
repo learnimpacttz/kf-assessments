@@ -10,6 +10,7 @@ import { SKILLS_BY_GRADE } from './aggregate.js';
 import { isPracticeSchool } from './config.js';
 import { pointOf, metres } from './location.js';
 import { SCHOOL_COORDS } from './data/school_coords.js';
+import { recordPattern, addPattern, emptyAp } from './answers.js';
 
 // How late a record was sent: whole days after the visit date (0 = the same day) and hours from finishing the form to sending it
 const parseUtc = (s) => Date.parse(/[zZ]$|[+-]\d\d:?\d\d$/.test(s) ? s : s + 'Z');
@@ -143,6 +144,15 @@ export function addStudents(state, records, opts = {}) {
       c.ex.lo.push(rec); c.ex.lo.sort((a, b) => a[2] - b[2]); if (c.ex.lo.length > 4) c.ex.lo.pop();
       c.ex.hi.push(rec); c.ex.hi.sort((a, b) => b[2] - a[2]); if (c.ex.hi.length > 3) c.ex.hi.pop();
     }
+    // answer pattern: counts of blocks asked / mixed, never the answers. An extra check, so a problem here must never stop a record being counted.
+    try {
+      const pat = String(r.stu_avail) !== '2' ? recordPattern(r, +grade) : null;
+      if (pat) {
+        addPattern((c.ap ||= emptyAp()), pat);
+        if (pat.full && pat.nm === 0) { const e = ((c.ex ||= {}).ap ||= []); if (e.length < 4 && !e.some((x) => x[5] === r._id)) e.push([stuid, r['stu_info/rand_nr'] ?? '', tt, (r.start || '').slice(11, 16), setNo, r._id, pat.shape]); }
+        if (pat.mm > 0) { const e = ((c.ex ||= {}).mm ||= []); if (e.length < 3 && !e.some((x) => x[0] === r._id)) e.push([r._id, (r.start || '').slice(11, 16), pat.mm]); } // the exact submissions, no pupil details
+      }
+    } catch (e) { /* ignore */ }
     const hr = localHour(r.start);
     if (hr !== null) {
       if (hr < c.h0) c.h0 = hr;

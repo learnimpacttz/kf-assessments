@@ -1,8 +1,9 @@
 // Turns the raw per-day aggregates into everything the dashboards show:
 // school progress, test-admin stats, checks/flags, pace and projected finish.
 // Computed once per sync (not per request) and stored; the API only slices it.
-import { devCode as devCodeOf, PRACTICE_BY_ID, PRACTICE_REGION, SCHOOL_BY_ID, SCHOOLS_BY_REGION, REGIONS, FIELD_END, DEFAULT_BANDS, targetPerGrade, staffForKoboName, addWorkingDays, workingDaysBetween, isWorkingDay, STAFF } from './config.js';
+import { devCode as devCodeOf, PRACTICE_BY_ID, PRACTICE_REGION, SCHOOL_BY_ID, SCHOOLS_BY_REGION, REGIONS, FIELD_END, DEFAULT_BANDS, targetPerGrade, staffForKoboName, PILOT_DAY, addWorkingDays, workingDaysBetween, isWorkingDay, STAFF } from './config.js';
 import { HIST_BUCKETS, uniqueRn } from './ingest.js';
+import { summarizeAnswers } from './answers.js';
 
 const pct = (a, b) => (b ? Math.round((a / b) * 100) : null);
 const r1 = (x) => Math.round(x * 10) / 10;
@@ -167,6 +168,17 @@ export function summarize(Y, { year, bands, today, owners = {}, practice = false
     const r = (devReg[dev] ||= { names: {}, days: new Set(), schools: new Set(), n: 0 });
     if (who) r.names[who] = (r.names[who] || 0) + n; r.days.add(date); r.schools.add(schoolId); r.n += n;
   };
+  // one person's phones: who sent tests from which phone, on which days, at which schools (field days only: the pilot day is a training day when everyone used spare phones)
+  const pdev = {};      // person -> device -> { n, days: Set, schools: Set }
+  const pdevDay = {};   // person -> date -> device -> { schools, tests }
+  const phoneUsers = {}; // device -> person -> tests
+  const notePersonDev = (who, dev, date, schoolId, n) => {
+    if (!who || !dev || date === PILOT_DAY) return;
+    const a = ((pdev[who] ||= {})[dev] ||= { n: 0, days: new Set(), schools: new Set() }); a.n += n; a.days.add(date); a.schools.add(schoolId);
+    const dd = (((pdevDay[who] ||= {})[date] ||= {})[dev] ||= { s: new Set(), n: 0 }); dd.s.add(schoolId); dd.n += n;
+    const u = (phoneUsers[dev] ||= {}); u[who] = (u[who] || 0) + n;
+  };
+  const apEx = {}, mmEx = {}; // person -> exemplar tests with no mixed answer block / a grade that disagrees with the typed answer, so a check can point at the exact submissions
   const dayMap = {}; // admin -> date -> { schools, tested, h0, h1 }
   const work = {}; // admin -> recent rows [date, school, grade, tested, avg_min]
   const hasSampling = Boolean(Y.nsamp);
@@ -200,10 +212,12 @@ export function summarize(Y, { year, bands, today, owners = {}, practice = false
     if (c.sb && c.sb[2] + c.sb[3] > 0) flags.push({ sev: 'warn', type: 'latesub', school: schoolId, grade: +grade, admin: enumerator, date, text: `${c.sb[2] + c.sb[3]} test record(s) sent 2 or more days after the visit`, hint: 'Send records the same day. Turn on auto send in KoBo Collect so nothing waits on the phone.' });
     (work[enumerator] ||= []).push([date, schoolId, +grade, c.av, c.tn ? r1(c.ts / c.tn) : null]);
     { const dpx = (dayPeople[schoolId + '|' + date] ||= { names: new Set(), devs: new Set(), tdevs: new Set(), per: {} }); dpx.names.add(enumerator); dpx.tests = (dpx.tests || 0) + (c.n || 0); }
-    for (const [dv, cnt] of Object.entries(c.dv || {})) noteDev(dv, enumerator, schoolId, date, cnt, true);
-    const dm = ((dayMap[enumerator] ||= {})[date] ||= { s: new Set(), n: 0, h0: 99, h1: -1, tn: 0, ts: 0, fast: 0, slow: 0, late: 0, gp: 0, gk: 0, gn: 0, gv: 0 });
+    for (const [dv, cnt] of Object.entries(c.dv || {})) { noteDev(dv, enumerator, schoolId, date, cnt, true); notePersonDev(enumerator, dv, date, schoolId, cnt); }
+    if (c.ex?.ap?.length && enumerator) { const L = (apEx[enumerator] ||= []); for (const e of c.ex.ap) L.push([date, schoolId, +grade, ...e]); }
+    if (c.ex?.mm?.length && enumerator) { const L = (mmEx[enumerator] ||= []); for (const e of c.ex.mm) L.push([date, schoolId, +grade, ...e]); }
+    const dm = ((dayMap[enumerator] ||= {})[date] ||= { s: new Set(), n: 0, h0: 99, h1: -1, tn: 0, ts: 0, fast: 0, slow: 0, late: 0, gp: 0, gk: 0, gn: 0, gv: 0, ar: 0, an: 0 });
     dm.s.add(schoolId); dm.n += c.av; if (c.h0 < dm.h0) dm.h0 = c.h0; if (c.h1 > dm.h1) dm.h1 = c.h1;
-    dm.tn += c.tn; dm.ts += c.ts; dm.fast += fast; dm.slow += slow; dm.late += c.late; dm.gp += c.gp || 0; dm.gk += c.gk || 0; dm.gn += c.gn || 0; dm.gv += c.gv || 0;
+    dm.tn += c.tn; dm.ts += c.ts; dm.fast += fast; dm.slow += slow; dm.late += c.late; dm.gp += c.gp || 0; dm.gk += c.gk || 0; dm.gn += c.gn || 0; dm.gv += c.gv || 0; dm.ar += c.ap ? c.ap[0] : 0; dm.an += c.ap ? c.ap[1] : 0;
     { const sg = schools[schoolId]; sg.gp = (sg.gp || 0) + (c.gp || 0); sg.gk = (sg.gk || 0) + (c.gk || 0); sg.gn = (sg.gn || 0) + (c.gn || 0); sg.gv = (sg.gv || 0) + (c.gv || 0); sg.rec = (sg.rec || 0) + (c.n || 0); }
     for (const [pk, pv] of Object.entries(c.ps)) { const dom = pk[0], gg = pk[1]; const slot = sc.res[gg] && sc.res[gg][dom]; if (slot) { slot[0] += pv[0]; slot[1] += pv[1]; } } // results by grade and subject (HQ only downstream)
     let zero = 0;
@@ -340,6 +354,27 @@ export function summarize(Y, { year, bands, today, owners = {}, practice = false
 
   // admins -> scores
   for (const [nm, n] of Object.entries(Y.tfp || {})) adminOf(canon(nm)).tf = (adminOf(canon(nm)).tf || 0) + n; // teacher and baseline forms sent, by person
+  const ansBy = summarizeAnswers(Y.cells, canon);
+  // what one person's phones look like over the field days: how many, whether two were used at different schools on the same day, whether a phone is shared
+  const phoneProfile = (who) => {
+    const devs = pdev[who]; if (!devs) return null;
+    const list = Object.entries(devs).sort((x, y) => y[1].n - x[1].n); const total = list.reduce((t, [, d]) => t + d.n, 0);
+    let multi = 0, split = 0; const splitDays = []; const prim = [];
+    for (const [date, m] of Object.entries(pdevDay[who] || {}).sort()) {
+      const ds = Object.entries(m); prim.push(ds.sort((x, y) => y[1].n - x[1].n)[0][0]);
+      if (ds.length < 2) continue; multi++;
+      let apart = false; // two phones with no school in common on one day: one person cannot be at both
+      for (let i = 0; i < ds.length && !apart; i++) for (let j = i + 1; j < ds.length; j++) if (![...ds[i][1].s].some((x) => ds[j][1].s.has(x))) { apart = true; break; }
+      if (apart) { split++; if (splitDays.length < 4) splitDays.push(date); }
+    }
+    let changes = 0; for (let i = 1; i < prim.length; i++) if (prim[i] !== prim[i - 1]) changes++;
+    let sharedTests = 0; const withWho = {};
+    for (const [dv, d] of list) {
+      const u = phoneUsers[dv] || {}; const all = Object.values(u).reduce((t, x) => t + x, 0); const others = all - (u[who] || 0);
+      if (others > 0 && others / all >= 0.1) { sharedTests += d.n; for (const [o, n] of Object.entries(u)) if (o !== who && n >= 2) withWho[o] = (withWho[o] || 0) + n; }
+    }
+    return { n: list.length, tests: total, top: list.slice(0, 3).map(([dv, d]) => [devCodeOf(dv), d.n, d.days.size, d.schools.size]), multi, split, split_days: splitDays, changes, shared_pct: total ? r1((100 * sharedTests) / total) : 0, with: Object.entries(withWho).sort((x, y) => y[1] - x[1]).slice(0, 3).map(([o]) => o) };
+  };
   const adminList = Object.values(admins).map((a) => {
     const avgAll = a.tn ? a.ts / a.tn : null;
     const tooFastShare = a.tn ? a.fast / a.tn : 0;
@@ -361,6 +396,17 @@ export function summarize(Y, { year, bands, today, owners = {}, practice = false
       samp: a.samp, tf: a.tf, sub: subStats(a.sb), subs: subStats(a.sbs), sub_all: subStats(sumSb(a.sb, a.sbs)),
     };
   });
+
+  // Behaviour patterns (answers, phones) are kept apart from the admin rows and day rows that field staff can see. Only the HQ Team patterns page reads this.
+  const extra = {};
+  for (const a of adminList) {
+    const A = ansBy[a.name], ph = phoneProfile(a.name); if (!A && !ph) continue;
+    const ad = {}; for (const [d, v] of Object.entries(dayMap[a.name] || {})) if (v.ar) ad[d] = [v.ar, v.an];
+    extra[a.name] = {
+      ans: A ? (({ days: _d, var: _v, ...rest }) => ({ ...rest, exp: r1(rest.exp), ex: (apEx[a.name] || []).sort((x, y) => (x[0] < y[0] ? 1 : -1)).slice(0, 12), mmx: (mmEx[a.name] || []).sort((x, y) => (x[0] < y[0] ? 1 : -1)).slice(0, 8) }))(A) : null,
+      ph, ad,
+    };
+  }
 
   // regions
   const days = Object.keys(daily).sort();
@@ -403,7 +449,7 @@ export function summarize(Y, { year, bands, today, owners = {}, practice = false
     if (['fast', 'slow', 'window', 'gps', 'edited', 'latesub'].includes(f.type)) f.n = cellN[`${f.date}|${f.school}|${f.grade}|${f.admin}`] || 0;
     else if (f.type === 'dup') f.n = (f.recs || []).length || 1; else if (f.type === 'notlist') f.n = parseInt(f.text, 10) || 1; else f.n = 0;
   }
-  return { year, integrity, as_of: new Date().toISOString(), today, bands, devices, tl_dates: tlDates, national: nat, regions, schools, admins: adminList, flags: flags.slice(0, 1500), days: Object.fromEntries(Object.entries(dayMap).map(([who, m]) => [who, Object.entries(m).sort().map(([d, v]) => [d, v.s.size, v.n, v.h0 === 99 ? null : v.h0, v.h1 < 0 ? null : v.h1, v.tn, Math.round(v.ts * 10) / 10, v.fast, v.slow, v.late, v.gp, v.gk, v.gn, v.gv])])), work: Object.fromEntries(Object.entries(work).map(([k, v]) => [k, v.sort((x, y) => (x[0] < y[0] ? 1 : -1)).slice(0, 80)])) };
+  return { year, integrity, as_of: new Date().toISOString(), today, bands, devices, extra, tl_dates: tlDates, national: nat, regions, schools, admins: adminList, flags: flags.slice(0, 1500), days: Object.fromEntries(Object.entries(dayMap).map(([who, m]) => [who, Object.entries(m).sort().map(([d, v]) => [d, v.s.size, v.n, v.h0 === 99 ? null : v.h0, v.h1 < 0 ? null : v.h1, v.tn, Math.round(v.ts * 10) / 10, v.fast, v.slow, v.late, v.gp, v.gk, v.gn, v.gv])])), work: Object.fromEntries(Object.entries(work).map(([k, v]) => [k, v.sort((x, y) => (x[0] < y[0] ? 1 : -1)).slice(0, 80)])) };
 }
 
 export const staffRoster = () => STAFF;
