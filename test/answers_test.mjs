@@ -1,5 +1,6 @@
 // Answer patterns and phones in Team patterns: counts only, fair comparison, support-first wording, safe to read once
-import { ok, done } from './_kit.mjs';
+import { ok, done, env, mem } from './_kit.mjs';
+import { answerScan } from '../src/answerscan.js';
 import { addStudents } from '../src/ingest.js';
 import { recordPattern, summarizeAnswers } from '../src/answers.js';
 import { summarize } from '../src/summary.js';
@@ -108,4 +109,16 @@ const sum3 = summarize(state3.yrs['2026'], { year: '2026', bands: DEFAULT_BANDS,
 const pat3 = computePatterns(sum3, '2026-10-22'); const m3 = pat3.people.find((x) => x.name === 'Tester M');
 ok('many grades that disagree flag the person on their own, with the exact submissions and no pupil ids', m3 && m3.signals.some((s) => s.key === 'answers' && /Grades often disagree/.test(s.label) && /disagree with the typed answer/.test(s.detail)) && m3.ans.mmx.length > 0 && m3.ans.mmx.every((e) => typeof e[3] === 'number') && !/"S\d+"/.test(JSON.stringify(m3.ans)), m3 && JSON.stringify(m3.signals.map((s) => s.label)));
 ok('people with no disagreeing grades are not flagged for it', pat3.people.filter((x) => x.name !== 'Tester M' && x.name.startsWith('Tester')).every((x) => !x.signals.some((s) => /Grades often/.test(s.label))));
+// ---- 6. the read-only scan: same counts as the sync, nothing written, admin only ----
+const page = [...recs, ...mmRecs].slice(0, 400); const urls = [];
+globalThis.fetch = async (u) => { urls.push(String(u)); return new Response(JSON.stringify({ results: page, next: null, count: page.length }), { status: 200 }); };
+const e2 = { ...env, KOBO_ASSET_ID: 'A1', KOBO_TOKEN: 'tok' }; const before = mem.size;
+const sc = await answerScan(e2, { role: 'hq', level: 'admin' }, { year: '2026', after: '12' });
+const direct = { yrs: {} }; addStudents(direct, page);
+const sameAp = Object.entries(direct.yrs['2026'].cells).every(([k, c]) => JSON.stringify(sc.cells[k]?.ap) === JSON.stringify(c.ap));
+ok('the scan reads one page after the given id and says when it is done', sc.records === 400 && sc.done === true && sc.from === 12 && sc.last_id === Math.max(...page.map((r) => r._id)) && /%22%24gt%22%3A12/.test(urls[0]) && /2026-01-01/.test(decodeURIComponent(urls[0])), JSON.stringify([sc.records, sc.done, sc.last_id]));
+ok('the scan gives exactly the counts the sync would keep', sameAp && Object.keys(sc.cells).length === Object.keys(direct.yrs['2026'].cells).length);
+ok('the scan writes nothing to the store', mem.size === before);
+ok('the scan returns no pupil ids or numbers and no answers', !/"S\d{4,}"/.test(JSON.stringify(sc)) && Object.values(sc.cells).some((c) => c.ex.length) && Object.values(sc.cells).every((c) => c.ex.every((e) => e.length === 7 && e[0] === '' && e[1] === '')));
+ok('the scan is for HQ Admin only', (await answerScan(e2, { role: 'hq', level: 'viewer' }, {})).status === 403 && (await answerScan(e2, { role: 'rc' }, {})).status === 403 && (await answerScan(e2, { role: 'volunteer' }, {})).status === 403);
 done();

@@ -5,6 +5,7 @@ import { buildCalendar, markCalendarDirty, syncCalendar, calendarStatus, setCalS
 import { pupilRecords, workFiles, flagRecords } from './pupils.js';
 import { pilotView, pilotSet, PILOT_ALLOC } from './pilot.js';
 import { locationCheck } from './location.js';
+import { answerScan } from './answerscan.js';
 import { computePatterns } from './patterns.js';
 import { boxPublic, setBoxKey, setBoxLive, submitBox, listBox, markBox, deleteBox, boxSummary, markSaved, takePending } from './box.js';
 import { SCHOOL_COORDS, COORD_SOURCE, COORD_WRONG } from './data/school_coords.js';
@@ -966,6 +967,7 @@ export default {
           return json({ ...r, withdrawn_list: method === 'GET' && url.searchParams.get('list') ? await listWithdrawn(env) : undefined });
         } catch (e) { return err(String(e.message || e), 502); }
       }
+      if (path === '/api/admin/answer-scan') { try { const r = await answerScan(env, who, Object.fromEntries(url.searchParams)); if (!r.error && !Number(url.searchParams.get('after'))) await logActivity(env, who, 'Ran the answer scan', r.year || ''); return r.error ? err(r.error, r.status || 422) : json(r); } catch (e) { return err(String(e.message || e), 502); } }
       if (path === '/api/admin/location-check') { try { const r = await locationCheck(env, who, Object.fromEntries(url.searchParams)); await logActivity(env, who, 'Ran the location check', r.year || ''); return r.error ? err(r.error, r.status || 422) : json(r); } catch (e) { return err(String(e.message || e), 502); } }
       if (path === '/api/admin/storage') { try { return json({ ...(await storageView(env)), dash: await kv(env).usage().catch(() => null) }); } catch (e) { return err(String(e.message || e), 502); } }
       if (path === '/api/admin/attach') {
