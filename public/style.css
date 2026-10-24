@@ -515,3 +515,4 @@ ul.help,ul.cost{padding-left:18px;margin:4px 0 0;font-size:13.5px}ul.help li{col
 table.kv{table-layout:fixed;max-width:100%}table.kv td{overflow-wrap:anywhere;word-break:break-word;min-width:0}
 @media(max-width:640px){.aibtn{padding:8px 13px;font-size:13px;right:10px}}
 .pgrings{display:grid;grid-template-columns:1fr 1fr;gap:14px}@media(max-width:640px){.pgrings .ringw{flex-direction:column;text-align:center;gap:6px}.pgrings .ringw svg{width:84px;height:84px}.pgrings .ringw b{font-size:14px}}
+@media(max-width:640px){#nav2{flex-wrap:wrap;overflow-x:visible}}
