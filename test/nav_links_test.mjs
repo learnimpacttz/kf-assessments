@@ -25,4 +25,6 @@ ok('the request card shows which checks the change cleared', app.includes('Check
 ok('the progress board buttons have handlers: filter, show all, and the school drawer loads its own detail', app.includes("a === 'pgFilter'") && app.includes("a === 'pgAll'") && app.includes('data-act="pgFilter"') && app.includes('data-act="pgAll"') && app.includes("if (kind === 'school' && pgSchoolOk()) pgSchoolLoad(id);"));
 ok('the progress folds remember their state and start folded', app.includes("S.pg.fold = { ...(S.pg.fold || {})") && app.includes("pgFold('wait', 'Waiting on'"));
 ok('a preview as someone else keeps its own progress cache', app.includes("if (S.pg.key !== key) S.pg = { f: 'all', key };"));
+ok('the HQ sidebar group class (sg) is not restyled by the progress board: the board uses its own pgseg class', !/(^|[^\w-])\.sg[\s{.:,]/.test(css.replace(/body\.hqdesk #side \.sg/g, '')) && app.includes('class="pgseg') && !app.includes('<button class="sg') && app.includes("<div class=\"sg\"><h4>"));
+ok('every HQ sidebar tab that the top menu has is also in the sidebar groups (All teams included)', app.includes("const DESK_GROUPS = [['Today', ['today', 'together']]"));
 done();
