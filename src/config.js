@@ -81,6 +81,16 @@ export function setRoster(list, aliases = {}) {
   rosterState.version += 1;
   reindex();
 }
+// Lead Coordinators (LC): one RC for each partner organization, who also sees every region of that organization (read only).
+// They keep their position as RC of their own region. Stored by staff id; HQ can change it in Admin. The default is the three leads named on 24 Oct 2026.
+export const leadsState = { map: { GEP: 1, KACODA: 13, FAWOCHIWE: 55 } };
+export function setLeads(m) { leadsState.map = { ...(m || {}) }; }
+// the organization this person leads, only when they are an active RC of a region inside that organization
+export function leadOrgOf(staff) {
+  if (!staff || !staff.active || staff.role !== 'rc') return null;
+  for (const [org, id] of Object.entries(leadsState.map)) if (id === staff.id && (PARTNERS[org] || []).includes(staff.region)) return org;
+  return null;
+}
 export const rosterForSave = () => STAFF.map(({ id, region, position, name, rot, active }) => ({ id, region, position, name, rot, active }));
 export function staffForKoboName(n) {
   const k = norm(n);

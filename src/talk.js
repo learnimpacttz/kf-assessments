@@ -62,7 +62,7 @@ export async function dmSent(env, who, filter = {}) {
 const ASK = 'v2:askq'; export const ASK_CATS = { records: 'My records or a check', plan: 'Plan, schedule or notices', phone: 'Phone, form or the app', pay: 'Days worked or payment', other: 'Something else' };
 const hqTargets = (w) => w && w.role === 'hq' && String(w.level || 'admin') !== 'viewer';
 const handlerOf = (who, q) => hqWriter(who) || (coord(who) && q.owner === 'rc' && who.region === q.by.region);
-const canSee = (who, q) => isHq(who) || String(who.id) === q.by.id || (coord(who) && q.by.region === who.region && q.by.role === 'volunteer');
+const canSee = (who, q) => isHq(who) || String(who.id) === q.by.id || (coord(who) && (q.by.region === who.region || (who.regions || []).includes(q.by.region)) && q.by.role === 'volunteer'); // a Lead Coordinator reads the questions of their organization's regions; only the region's own coordinators answer (handlerOf)
 export async function askCreate(env, who, b) {
   if (!['volunteer', 'rc', 'arc'].includes(who.role)) return { error: 'Questions come from field staff', status: 403 };
   const text = cut(b.text, 600); if (text.length < 10) return { error: 'Write the question in a sentence or two (at least 10 characters)' };

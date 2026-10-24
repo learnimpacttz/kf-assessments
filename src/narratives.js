@@ -21,7 +21,7 @@ const mine = (who) => String(who.id ?? who.hq_id ?? '');
 const regionOf = (id) => SCHOOL_BY_ID[id]?.region;
 const pilotMine = (who, id) => Boolean(PILOT_ALLOC[id] && PILOT_ALLOC[id].includes(who.region)); // the coordinators of the two regions that worked at a pilot school
 const canWrite = (who, id) => (who.role === 'rc' || who.role === 'arc') && (regionOf(id) === who.region || pilotMine(who, id));
-const canRead = (who, region) => who.role === 'hq' || ((who.role === 'rc' || who.role === 'arc') && who.region === region);
+const canRead = (who, region) => who.role === 'hq' || ((who.role === 'rc' || who.role === 'arc') && (who.region === region || (who.regions || []).includes(region))); // a Lead Coordinator also reads the regions of their organization
 
 export async function listNarr(env, who, region, sum) {
   if (!REGIONS.includes(region) || !canRead(who, region)) return { error: 'Not your region', status: 403 };

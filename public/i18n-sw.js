@@ -474,6 +474,7 @@ window.SW_EXACT = {
 "Appears as queries are answered.": "Itaonekana hoja zikijibiwa.",
 "Click a column to sort: most queries, fewest, fastest or slowest to reply. Reply speed counts only queries that have been answered.": "Bofya safu ili kupanga: hoja nyingi zaidi, chache zaidi, kujibu kwa haraka au polepole zaidi. Kasi ya kujibu inahesabu hoja zilizojibiwa tu.",
 "How every region is doing, and how each of us is doing with queries: who has the most, and how fast each person replies. We share it so we can learn from each other: ask the fastest repliers how they work, and offer help to colleagues who have queries waiting.": "Hali ya kila mkoa, na jinsi kila mmoja wetu anavyoshughulikia hoja: nani ana nyingi zaidi, na kila mtu anajibu kwa kasi gani. Tunashirikiana ili tujifunze kutoka kwa wenzetu: waulize wanaojibu haraka wanavyofanya kazi, na toa msaada kwa wenzako wenye hoja zinazosubiri.",
+"Lead Coordinator (LC)": "Mratibu Kiongozi (LC)",
 };
 
 (function () {

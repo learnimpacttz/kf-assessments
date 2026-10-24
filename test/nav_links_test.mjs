@@ -27,4 +27,7 @@ ok('the progress folds remember their state and start folded', app.includes("S.p
 ok('a preview as someone else keeps its own progress cache', app.includes("if (S.pg.key !== key) S.pg = { f: 'all', key };"));
 ok('the HQ sidebar group class (sg) is not restyled by the progress board: the board uses its own pgseg class', !/(^|[^\w-])\.sg[\s{.:,]/.test(css.replace(/body\.hqdesk #side \.sg/g, '')) && app.includes('class="pgseg') && !app.includes('<button class="sg') && app.includes("<div class=\"sg\"><h4>"));
 ok('every HQ sidebar tab that the top menu has is also in the sidebar groups (All teams included)', app.includes("const DESK_GROUPS = [['Today', ['today', 'together']]"));
+ok('a Lead Coordinator switches region from a bar on the region pages, and other regions are read only', app.includes("a === 'lcRegion'") && app.includes('data-act="lcRegion"') && app.includes("const LC_TABS = ['region', 'plan', 'team', 'map', 'allq', 'phones', 'explore', 'narr'];") && app.includes('viewingOther()') && app.includes("if (S.viewAs || !me.role || viewingOther()) return out;") && app.includes("const canEdit = S.who.role !== 'volunteer' && !viewingOther();"));
+ok('requests for another region are only added to read requests', app.includes("viewingOther() && (!opts.method || opts.method === 'GET') && LC_PATHS.test(path)"));
+ok('HQ can set the Lead Coordinators in Admin', app.includes('function leadsCard(a)') && app.includes("a === 'leadSet'") && app.includes("['leads', '/api/admin/leads']"));
 done();

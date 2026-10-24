@@ -1,7 +1,7 @@
 // Per-person access codes, derived from a server-side salt so nothing about a
 // person's code is stored. HQ uses HQ_SECRET directly. Nothing is checked in the
 // browser; every API call sends the code and the Worker decides what it may see.
-import { STAFF, rosterState } from './config.js';
+import { STAFF, rosterState, PARTNERS, REGIONS, leadOrgOf } from './config.js';
 import { loadHq, hqByCode, deskOf } from './hq.js';
 import { guestByCode, PROFILES } from './guests.js';
 
@@ -44,6 +44,11 @@ function safeEqual(a, b) {
 }
 
 // Returns { role, name, region, id } or null. Roles: hq, rc, arc, volunteer.
+// what the app and the API know about a signed-in staff member; a Lead Coordinator also carries the organization and its regions
+export function whoOfStaff(s, extra = {}) {
+  const org = leadOrgOf(s);
+  return { role: s.role, name: s.name, region: s.region, id: s.id, position: s.position, ...(org ? { lead: org, regions: PARTNERS[org].slice(), title: 'Lead Coordinator (LC)' } : {}), ...extra };
+}
 export async function identify(request, env) {
   const code = (request.headers.get('x-access-code') || '').trim();
   if (!code) return null;
@@ -53,7 +58,7 @@ export async function identify(request, env) {
   if (hqWho) {
     // HQ can preview the app as any person (training and support). The preview is read-only: see index.js.
     const as = /^staff:(\d+)$/.exec(request.headers.get('x-view-as') || '');
-    if (as) { const s = STAFF.find((x) => x.id === Number(as[1])); if (s) return { role: s.role, name: s.name, region: s.region, id: s.id, position: s.position, viewAs: true, viewBy: hqWho.hq_id }; }
+    if (as) { const s = STAFF.find((x) => x.id === Number(as[1])); if (s) return whoOfStaff(s, { viewAs: true, viewBy: hqWho.hq_id }); }
     const hv = /^hq:(\w+)$/.exec(request.headers.get('x-view-as') || '');
     if (hv && hqWho.desk === 'systems' && (hqWho.level || 'admin') === 'admin') { const u = (await loadHq(env)).users.find((x) => x.id === hv[1] && x.active !== false); if (u) return { role: 'hq', level: u.level, name: u.name, region: null, id: 'hq:' + u.id, hq_id: u.id, review_level: u.level === 'viewer' ? 0 : (u.review_level || 0), desk: deskOf(u), hide: Array.isArray(u.hide) ? u.hide : [], viewAs: true }; }
     const ga = /^guest:(\w+)$/.exec(request.headers.get('x-view-as') || ''); if (ga && PROFILES[ga[1]]) return { role: 'guest', name: 'Preview: ' + PROFILES[ga[1]], org: '', profile: ga[1], id: 'g:preview', level: 'viewer', can_download: false, logo: '', viewAs: true, region: null };
@@ -61,8 +66,16 @@ export async function identify(request, env) {
   }
   const map = await staffCodes(env);
   const s = map && map[code.toUpperCase()];
-  if (s) return { role: s.role, name: s.name, region: s.region, id: s.id, position: s.position };
+  if (s) return whoOfStaff(s);
   return await guestByCode(env, code);
 }
 
-export const canSeeRegion = (who, region) => who && (who.role === 'hq' || who.region === region);
+// the regions a person may look at: HQ all, a Lead Coordinator the regions of their organization, everyone else their own
+export const regionsOf = (who) => (!who ? [] : who.role === 'hq' ? REGIONS : who.regions && who.regions.length ? who.regions : who.region ? [who.region] : []);
+export const canSeeRegion = (who, region) => Boolean(who) && (who.role === 'hq' || regionsOf(who).includes(region));
+// the region a request is about: the one asked for when this person may see it, otherwise their own (HQ: the one asked for, or none)
+export function pickRegion(who, asked) {
+  const r = String(asked || '').toUpperCase();
+  if (who && who.role === 'hq') return r || null;
+  return r && canSeeRegion(who, r) ? r : (who && who.region) || null;
+}

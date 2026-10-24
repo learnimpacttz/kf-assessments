@@ -2,7 +2,7 @@
 // waiting on, how active and how clean the coordinators are, and who is helping or holding up the team.
 // Built only from what the system already keeps (summary, plan, queries, questions). It changes nothing and returns no pupil details.
 // Volunteers get only their own standing (see standingFor), never a named list of people who are behind.
-import { SCHOOL_BY_ID, SCHOOLS_BY_REGION, STAFF, staffForKoboName, workingDaysBetween, addWorkingDays, addDays, isWorkingDay, FIELD_START, FIELD_END } from './config.js';
+import { leadOrgOf, SCHOOL_BY_ID, SCHOOLS_BY_REGION, STAFF, staffForKoboName, workingDaysBetween, addWorkingDays, addDays, isWorkingDay, FIELD_START, FIELD_END } from './config.js';
 import { withNotices } from './plan.js';
 import { QUERY_REPLY_DAYS, overdueQueries } from './queries.js';
 
@@ -154,7 +154,7 @@ function teamBoard({ region, sum, flags, waits, queries, today }) {
     }
     const tests = a ? a.tested : 0, touched = mine.reduce((t, f) => t + (f.n || 0), 0);
     const reviewWait = s.role === 'volunteer' ? [] : waits.filter((x) => x.w.stage === 'team');
-    return { id: s.id, name: s.name, position: s.position, role: s.role, tested: tests, quality: a ? a.quality : null, days: a ? a.days : 0, same_pct: sub && sub.n >= PROGRESS.minSent ? sub.same_pct : null, sent: sub ? sub.n : 0, late_sent: sub ? sub.d1 + sub.d2 + sub.d3 : 0, avg_delay_h: sub ? sub.avg_h : null,
+    return { id: s.id, name: s.name, position: s.position, role: s.role, lead: leadOrgOf(s), tested: tests, quality: a ? a.quality : null, days: a ? a.days : 0, same_pct: sub && sub.n >= PROGRESS.minSent ? sub.same_pct : null, sent: sub ? sub.n : 0, late_sent: sub ? sub.d1 + sub.d2 + sub.d3 : 0, avg_delay_h: sub ? sub.avg_h : null,
       queries: { answered, owed: owed.length, overdue: owed.filter((x) => x.w.overdue).length, oldest: owed.reduce((m, x) => Math.max(m, x.w.days), 0), sent_back: sentBack, reviewed, review_waiting: reviewWait.length, review_oldest: reviewWait.reduce((m, x) => Math.max(m, x.w.days), 0) },
       checks_open: mine.length, checks_per_100: tests ? Math.round((1000 * mine.length) / tests) / 10 : null, touched };
   });
@@ -196,7 +196,7 @@ function coordinatorBoard({ region, sum, flags, waits, queries, asks, visits, sc
     let replies = 0, reviewed = 0; for (const [key, q] of Object.entries(queries || {})) { if (key.startsWith('withdrawn|') || key.startsWith('closed|') || SCHOOL_BY_ID[key.split('|')[1]]?.region !== region) continue; const w = q.wf; if (w && w.response && w.response.by === c.name) replies += 1; reviewed += ((w && w.history) || []).filter((e) => e.level === 'team' && (e.by === c.name) && (e.action === 'approved' || e.action === 'rejected')).length; }
     let qAnswered = 0; for (const x of asks) if ((x.events || []).some((e) => e.by === c.name && e.kind !== 'asked')) qAnswered += 1;
     const reviewsWaiting = waits.filter((x) => x.w.stage === 'team'), waitingAsks = asks.filter((x) => x.status === 'open' && x.owner === 'rc');
-    return { id: c.id, name: c.name, role: c.role, position: c.position, tested: a ? a.tested : 0, quality: a ? a.quality : null,
+    return { id: c.id, name: c.name, role: c.role, position: c.position, lead: leadOrgOf(c), tested: a ? a.tested : 0, quality: a ? a.quality : null,
       active: { replies, reviewed, avg_review_h: times.length ? Math.round((times.reduce((t, x) => t + x, 0) / times.length) * 10) / 10 : null, review_waiting: reviewsWaiting.length, review_oldest: reviewsWaiting.reduce((m, x) => Math.max(m, x.w.days), 0), questions_answered: qAnswered, questions_waiting: waitingAsks.length },
       clean: { schools: ledRows.length, tests, checks_open: checks, pct: tests ? 100 - pct(Math.min(tests, flags.filter((f) => ledSet.has(f.school) && !(f.q && f.q.status === 'resolved')).reduce((t, f) => t + (f.n || 0), 0)), tests) : null, led: ledRows.sort((x, y) => (x.clean_pct ?? 101) - (y.clean_pct ?? 101)) } };
   });

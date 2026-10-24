@@ -1,7 +1,7 @@
 // The page every team shares: how each region is doing, and for every person how many queries they have and how fast they reply, across all regions.
 // The aim is to learn from each other: ask the fastest repliers how they work, and help the colleagues who have queries waiting.
 // Built from what the system already keeps (summary, queries, plans). Read-only, no pupil details.
-import { SCHOOL_BY_ID, STAFF, REGIONS, PARTNERS, staffForKoboName, workingDaysBetween } from './config.js';
+import { SCHOOL_BY_ID, STAFF, REGIONS, PARTNERS, staffForKoboName, workingDaysBetween, leadOrgOf } from './config.js';
 import { decorate, overdueQueries } from './queries.js';
 import { planCounts } from './progress.js';
 
@@ -33,7 +33,7 @@ export function togetherBoard({ sum, queries, plans, today }) {
   const people = STAFF.filter((s) => s.active && ['volunteer', 'rc', 'arc'].includes(s.role)).map((s) => {
     const a = (sum.admins || []).find((x) => x.staff_id === s.id) || null; const mine = by[s.id] || []; const open = mine.filter(isOpen); const tests = a ? a.tested : 0;
     const days = mine.map(replyDays).filter((x) => x != null);
-    return { id: s.id, name: s.name, region: s.region, role: s.role, position: s.position, tested: tests, quality: a ? a.quality : null, queries: mine.length, open: open.length, overdue: overdueQueries(open, today).length, answered: days.length, reply_days: roll(days), per100: tests >= TOGETHER.minTests ? r1((100 * mine.length) / tests) : null };
+    return { id: s.id, name: s.name, region: s.region, role: s.role, position: s.position, lead: leadOrgOf(s), tested: tests, quality: a ? a.quality : null, queries: mine.length, open: open.length, overdue: overdueQueries(open, today).length, answered: days.length, reply_days: roll(days), per100: tests >= TOGETHER.minTests ? r1((100 * mine.length) / tests) : null };
   }).filter((p) => p.tested > 0 || p.queries > 0);
   const top = (arr, f, n = TOGETHER.top) => arr.slice().sort(f).slice(0, n);
   const ranked = people.filter((p) => p.tested >= TOGETHER.minTests), repliers = people.filter((p) => p.answered >= TOGETHER.minReplies && p.reply_days != null);

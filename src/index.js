@@ -37,9 +37,9 @@ import { TEMPLATES, buildReport, listReports, getReport, saveReport, deleteRepor
 import { loadHq, hqChange, hqList, hqByCode, codeFor, levelGate, applySettings, settingsView, saveSettings, logActivity, readActivity, activityLabel, BRAND, assistantName } from './hq.js';
 import { emailSchedule, hqPersonalCodeEmail, morningDigest, eveningGap, loadRecipients, saveRecipients, runDigests, maybeRunScheduledDigests, sendMail, onboardingEmail, runOnboarding, followupEmail, runFollowup, hqCc, hqOnboardingEmail, reminderEmail, runReminders } from './digest.js';
 import { loadQueries, decorate, postQuery, flagKey, withdrawFalseDuplicates, listWithdrawn } from './queries.js';
-import { identify, staffCodes, canSeeRegion } from './auth.js';
+import { identify, staffCodes, canSeeRegion, regionsOf, pickRegion } from './auth.js';
 import { forecast, atRiskSchools } from './predict.js';
-import { ensureRoster, changeRoster, rosterOptions } from './roster.js';
+import { ensureRoster, changeRoster, rosterOptions, leadsView, changeLeads } from './roster.js';
 import { sealBuf, gzip, runBackup, buildBackup, restoreBackup, maybeRunScheduledBackup, listBackups, readStoredBackup, rawStoredBackup, emailLatestFull } from './backup.js';
 import { setValidation, koboWho, getValidation, clearValidation } from './kobo.js';
 import { fetchKoboPage } from './kobo.js';
@@ -49,6 +49,7 @@ import { getPlan, submitPlan, saveDraft, changeVisit, markNotice, withNotices } 
 import {
   devCode as devCodeOf, REGIONS, PARTNERS, REASONS, DAY_REASONS, PRACTICE_BY_ID, PRACTICE_REGION, PLAN_DEADLINE, FIELD_START, FIELD_END, PILOT_DAY, TRAINING_START, CURRENT_YEAR, STAFF, rosterState, addDays, isWorkingDay, staffForKoboName, SCHOOLS_BY_REGION, SCHOOL_BY_ID, eatToday,
   TARGET_PER_GRADE, DODOMA_TARGET_PER_GRADE, NOTICE_AEK_WORKING_DAYS, NOTICE_HT_WORKING_DAYS,
+  leadOrgOf,
 } from './config.js';
 
 const dayCounts = (p) => { const per = {}; for (const v of p.visits || []) per[v.date] = (per[v.date] || 0) + 1; const n = Object.values(per); return { one: n.filter((x) => x === 1).length, two: n.filter((x) => x === 2).length, three: n.filter((x) => x === 3).length }; };
@@ -111,7 +112,7 @@ function regionBundle(sum, region, who, queries = {}) {
   const schools = (SCHOOLS_BY_REGION[region] || []).map((s) => schoolRow(sum.schools[s.id]));
   const admins = sum.admins.filter((a) => a.region === region);
   const flags = decorate(sum.flags.filter((f) => SCHOOL_BY_ID[f.school]?.region === region).map((f) => ({ ...f, school_name: SCHOOL_BY_ID[f.school]?.name, region, lga: SCHOOL_BY_ID[f.school]?.lga, ward: SCHOOL_BY_ID[f.school]?.ward })), queries);
-  const staff = STAFF.filter((s) => s.active && s.region === region).map((s) => ({ id: s.id, name: s.name, position: s.position, role: s.role }));
+  const staff = STAFF.filter((s) => s.active && s.region === region).map((s) => ({ id: s.id, name: s.name, position: s.position, role: s.role, lead: leadOrgOf(s) }));
   const work = Object.fromEntries(admins.map((a) => [a.name, sum.work[a.name] || []]));
   return { region: sum.regions[region], schools, admins, flags: [...flags, ...pilotFlags(sum, queries, region)], staff, work_all: work };
 }
@@ -273,9 +274,14 @@ export default {
           const plansAll = Object.fromEntries(REGIONS.map((rg, i) => [rg, allPlans[i]]));
           const flagsByRegion = {}; for (const rg of REGIONS) flagsByRegion[rg] = decorate(sum.flags.filter((f) => SCHOOL_BY_ID[f.school]?.region === rg), queries);
           const coord = coordinatorOverview({ sum, queries, today: eatToday(), plans: plansAll, flagsByRegion });
-          return json({ ...base, ...coord, staff: STAFF.filter((s) => s.active).map((s) => ({ id: s.id, name: s.name, position: s.position, region: s.region, role: s.role })), admins: sum.admins, flags: decorate(sum.flags.map((f) => ({ ...f, school_name: SCHOOL_BY_ID[f.school]?.name, region: SCHOOL_BY_ID[f.school]?.region, lga: SCHOOL_BY_ID[f.school]?.lga, ward: SCHOOL_BY_ID[f.school]?.ward })), queries).slice(0, 600), plans, unlisted: sum.admins.filter((a) => a.role === 'unlisted').map((a) => a.name) });
+          return json({ ...base, ...coord, staff: STAFF.filter((s) => s.active).map((s) => ({ id: s.id, name: s.name, position: s.position, region: s.region, role: s.role, lead: leadOrgOf(s) })), admins: sum.admins, flags: decorate(sum.flags.map((f) => ({ ...f, school_name: SCHOOL_BY_ID[f.school]?.name, region: SCHOOL_BY_ID[f.school]?.region, lga: SCHOOL_BY_ID[f.school]?.lga, ward: SCHOOL_BY_ID[f.school]?.ward })), queries).slice(0, 600), plans, unlisted: sum.admins.filter((a) => a.role === 'unlisted').map((a) => a.name) });
         }
         if (who.role === 'rc' || who.role === 'arc') {
+          const rg = pickRegion(who, url.searchParams.get('region'));
+          if (rg !== who.region) { // a Lead Coordinator looking at another region of their organization: the region as its RC sees it, to read and follow, with no own-work blocks
+            const b2 = regionBundle(sum, rg, who, queries); const p2 = await getPlan(env, rg);
+            return json({ ...base, mine: { ...b2, own: null, team_block: teamBlock({ sum, plan: p2, queries, flags: b2.flags, today: eatToday() }, rg), arc_own: null, viewing: rg } });
+          }
           const bundle = regionBundle(sum, who.region, who, queries);
           const plan = await getPlan(env, who.region);
           const ctx = { sum, plan, queries, flags: bundle.flags, today: eatToday() };
@@ -336,7 +342,7 @@ export default {
       }
       if (path === '/api/assign-info') { // for information only: helpers, grade differences, planned people with no records
         if (who.role === 'volunteer') return json({ items: [] });
-        const { sum } = await loadSummary(env, CURRENT_YEAR); return json({ items: ((sum && sum.info) || []).filter((x) => who.role === 'hq' || x.region === who.region) });
+        const { sum } = await loadSummary(env, CURRENT_YEAR); return json({ items: ((sum && sum.info) || []).filter((x) => canSeeRegion(who, x.region)) });
       }
       // ---------- the HQ Bridge ----------
       if (path.startsWith('/api/bridge')) {
@@ -441,7 +447,7 @@ export default {
         const { sum } = await loadSummary(env, CURRENT_YEAR);
         if (!sum) return json({ status: 'waiting' });
         const f = await forecast(env, sum, eatToday());
-        const region = who.role === 'hq' ? (url.searchParams.get('region') || null) : who.region;
+        const region = pickRegion(who, url.searchParams.get('region'));
         const risk = who.role === 'volunteer' ? [] : await atRiskSchools(env, sum, eatToday(), region);
         return json({ ...f, at_risk: risk });
       }
@@ -450,7 +456,7 @@ export default {
         const body = await request.json();
         const school = String(body.key || '').split('|')[1];
         const sch = SCHOOL_BY_ID[school] || PRACTICE_BY_ID[school];
-        if (!sch || (!sch.practice && !canSeeRegion(who, sch.region) && !(PILOT_ALLOC[school] || []).includes(who.region))) return err('Not your region', 403); // practice schools are open to everyone
+        if (!sch || (!sch.practice && !(who.role === 'hq' || who.region === sch.region) && !(PILOT_ALLOC[school] || []).includes(who.region))) return err('Not your region', 403); // acting on a query stays with the region's own coordinators, a Lead Coordinator included // practice schools are open to everyone
         const r = await postQuery(env, who, body);
         if (r.error) return err(r.error, r.status || 400);
         if (r.notify) { const job = notifyQuery(env, r.notify).catch(() => {}); if (ctx && ctx.waitUntil) ctx.waitUntil(job); else await job; }
@@ -458,7 +464,7 @@ export default {
       }
 
       if (path === '/api/brief') {
-        const region = who.role === 'hq' ? (url.searchParams.get('region') || null) : who.region;
+        const region = pickRegion(who, url.searchParams.get('region'));
         const { sum } = await loadSummary(env, null);
         const brief = await buildBrief(env, sum, eatToday(), region);
         const ai = who.role === 'volunteer' ? null : await aiBrief(env, brief, region || 'national', ctx).catch(() => null);
@@ -468,7 +474,7 @@ export default {
       if (path === '/api/schools') {
         const { sum } = await loadSummary(env, url.searchParams.get('year'));
         if (!sum) return json({ schools: [] });
-        const rows = (who.role === 'hq' ? REGIONS : [who.region]).flatMap((r) => (SCHOOLS_BY_REGION[r] || []).map((s) => ({ ...schoolRow(sum.schools[s.id]), region: r })));
+        const rows = regionsOf(who).flatMap((r) => (SCHOOLS_BY_REGION[r] || []).map((s) => ({ ...schoolRow(sum.schools[s.id]), region: r })));
         return json({ schools: rows });
       }
       if (path === '/api/work') {
@@ -477,14 +483,14 @@ export default {
         const a = sum?.admins?.find((x) => x.name === name);
         if (!a) return json({ work: [] });
         if (who.role === 'volunteer' && a.staff_id !== who.id) return err('Not yours', 403);
-        if (who.role !== 'hq' && a.region !== who.region) return err('Not your region', 403);
+        if (!canSeeRegion(who, a.region)) return err('Not your region', 403);
         return json({ work: sum.work[name] || [], days: sum.days?.[name] || [] });
       }
 
       // ---------- teacher data (baseline school visits) and the links between sources ----------
       if (path === '/api/teachers' || path === '/api/linked') {
         if (who.role === 'volunteer') return err('Not available to test admins', 403);
-        const regs = who.role === 'hq' ? REGIONS : [who.region];
+        const regs = regionsOf(who);
         const base = await loadSummary(env, CURRENT_YEAR);               // teacher forms are the 2026 baseline
         const live = await loadSummary(env, url.searchParams.get('year')); // assessments/sampling: selected year (rehearsal until 2026 tests exist)
         if (!base.sum) return json({ status: 'waiting' });
@@ -555,7 +561,7 @@ export default {
         const date = dates.includes(url.searchParams.get('date')) ? url.searchParams.get('date') : dates[dates.length - 1];
         const doc = await env.DASHBOARD_KV.get(`tl:${year}:${date}`, { type: 'json' });
         const sum = await readSummary(env, year);
-        const myRegion = isPr ? null : who.role === 'hq' ? (url.searchParams.get('region') || null) : who.region;
+        const myRegion = isPr ? null : pickRegion(who, url.searchParams.get('region'));
         const inScope = (sc) => isPr || !myRegion || SCHOOL_BY_ID[sc]?.region === myRegion;
         const SI = (id) => SCHOOL_BY_ID[id] || PRACTICE_BY_ID[id];
         const events = (doc?.events || []).filter((e) => inScope(e.sc));
@@ -592,6 +598,7 @@ export default {
         const region = (url.searchParams.get('region') || who.region || '').toUpperCase();
         if (!REGIONS.includes(region)) return err('Unknown region', 404);
         if (!canSeeRegion(who, region)) return err('Not your region', 403);
+        if (method !== 'GET' && who.role !== 'hq' && region !== who.region) return err('Only the coordinators of this region change its plan', 403); // a Lead Coordinator reads the regions of their organization but does not change them
         const today = eatToday();
         const { sum } = await loadSummary(env, CURRENT_YEAR); // the real 2026 visits, never the rehearsal year
         const enrolMap = sum ? Object.fromEntries(Object.values(sum.schools).filter((s) => s.region === region && s.tch?.enrol).map((s) => [s.id, s.tch.enrol])) : {}; // baseline enrollment by grade [girls, boys, total]
@@ -666,13 +673,13 @@ export default {
         const hqFull = who.role === 'hq' && !(Array.isArray(who.hide) && who.hide.length); const sum = await sumNow(env); if (!sum) return json({ status: 'waiting', schools: [] });
         const today = eatToday(); const out = [];
         for (const s of Object.values(sum.schools || {})) {
-          if (who.role !== 'hq' && s.region !== who.region) continue; const c = SCHOOL_COORDS[s.id]; if (!c) continue;
+          if (!canSeeRegion(who, s.region)) continue; const c = SCHOOL_COORDS[s.id]; if (!c) continue;
           const tested = [1, 2, 3].reduce((a, g) => a + (s.g[g].av || 0), 0), target = [1, 2, 3].reduce((a, g) => a + (s.g[g].target || 0), 0);
           const row = { id: s.id, name: s.name, region: s.region, lga: s.lga, lat: c[0], lon: c[1], status: s.done ? 'done' : s.started ? 'started' : 'waiting', tested, target, first: s.first || null, last: s.last || null, today: s.dates ? s.dates.includes(today) : false, approx: COORD_SOURCE[s.id] || null, arm: s.arm || null, mne: s.mne || null };
           if (hqFull) { row.loc = { points: s.gp || 0, measured: s.gk || 0, at_school: s.gn || 0, far: s.gv || 0, records: s.rec || 0 }; row.check = (s.gk || 0) >= 5 && ((s.gn || 0) / s.gk < 0.5 || (s.gv || 0) >= 3); if (s.admins) row.people = s.admins.slice(0, 8); if (COORD_WRONG[s.id]) row.wrong = COORD_WRONG[s.id]; }
           out.push(row);
         }
-        const nocoords = Object.values(sum.schools || {}).filter((s) => !SCHOOL_COORDS[s.id] && (who.role === 'hq' || s.region === who.region)).length;
+        const nocoords = Object.values(sum.schools || {}).filter((s) => !SCHOOL_COORDS[s.id] && canSeeRegion(who, s.region)).length;
         return json({ status: 'ok', as_of: sum.as_of, today, detail: hqFull, schools: out, without_coordinates: nocoords });
       }
       // ---------- team patterns (HQ, not Advisors): who may need support, from the aggregates already kept ----------
@@ -688,7 +695,7 @@ export default {
         if (who.role === 'hq' && Array.isArray(who.hide) && who.hide.length) return err('Region progress is for the HQ team', 403);
         const { sum } = await loadSummary(env, CURRENT_YEAR); if (!sum) return json({ status: 'waiting' });
         const sid = url.searchParams.get('id') || '';
-        const region = who.role === 'hq' ? String(url.searchParams.get('region') || SCHOOL_BY_ID[sid]?.region || '').toUpperCase() : who.region;
+        const region = pickRegion(who, url.searchParams.get('region') || SCHOOL_BY_ID[sid]?.region);
         if (!REGIONS.includes(region)) return err('Choose a region', 422);
         const queries = await loadQueries(env); const plan = await getPlan(env, region); const today = eatToday();
         const flags = regionBundle(sum, region, who, queries).flags;
@@ -845,6 +852,10 @@ export default {
         add(parsed.length === 0 || parsed.every((g) => g.att !== null), 'Sampling attendance is being read', parsed.length ? `${parsed.filter((g) => g.att !== null).length} of ${parsed.length} school-grades with tests have an attendance record` : 'no 2026 tests yet', 'Check that the sampling form was submitted before testing, and that field names match.');
         return json({ today, pilot_day: PILOT_DAY, checks, pilot: { schools: pilot.length, with_tests: pilotData.length, tested: pilotData.reduce((a, s) => a + s.g[1].av + s.g[2].av + s.g[3].av, 0), target: 600 } });
       }
+      if (path === '/api/admin/leads') {
+        if (method === 'POST') { const b = await request.json().catch(() => ({})); const r = await changeLeads(env, b); if (r.error) return err(r.error, 422); await logActivity(env, who, 'Set a Lead Coordinator', String(b.org || '') + ': ' + (b.staff_id || 'none')); return json({ ok: true, ...(await leadsView(env)) }); }
+        return json(await leadsView(env));
+      }
       if (path === '/api/admin/roster') {
         if (method === 'POST') {
           const b = await request.json();
@@ -857,7 +868,7 @@ export default {
         }
         const { sum } = await loadSummary(env, CURRENT_YEAR);
         const names = new Set((await Promise.all(['2026', '2025'].map(async (y) => ((await readSummary(env, y))?.admins || [])))).flat().filter((a) => a.role === 'unlisted').map((a) => a.name));
-        return json({ staff: STAFF.map((s) => ({ id: s.id, name: s.name, region: s.region, position: s.position, role: s.role, active: s.active })), aliases: rosterState.aliases, unlisted: [...names], options: rosterOptions() });
+        return json({ staff: STAFF.map((s) => ({ id: s.id, name: s.name, region: s.region, position: s.position, role: s.role, active: s.active, lead: leadOrgOf(s) })), aliases: rosterState.aliases, unlisted: [...names], options: rosterOptions() });
       }
       if (path === '/api/admin/backup') {
         if (method === 'POST') {

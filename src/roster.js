@@ -1,9 +1,11 @@
 // HQ-editable roster: add or replace people, fix names, re-issue a lost code, and map KoBo names that do not
 // match the roster. Stored in the Durable Object; the file in src/data is only the starting point.
 import { kv } from './store.js';
-import { STAFF, setRoster, rosterForSave, rosterState, norm, REGIONS } from './config.js';
+import { STAFF, setRoster, rosterForSave, rosterState, norm, REGIONS, PARTNERS, setLeads, leadsState, leadOrgOf } from './config.js';
 
 const KEY = 'v2:roster';
+const LEADS_KEY = 'v2:leads';
+let leadsSeen = null;
 let loadedAt = 0;
 let lastSeen = null;
 
@@ -12,6 +14,7 @@ export async function ensureRoster(env, force = false) {
   const saved = await kv(env).get(KEY);
   loadedAt = Date.now();
   if (saved && saved.v !== lastSeen) { setRoster(saved.staff, saved.aliases); lastSeen = saved.v; }
+  const lv = await kv(env).get(LEADS_KEY); if (lv && lv.v !== leadsSeen) { setLeads(lv.map); leadsSeen = lv.v; } // Lead Coordinators, set by HQ
 }
 
 async function save(env) {
@@ -54,5 +57,20 @@ export async function changeRoster(env, body) {
   } else return { error: 'Unknown action' };
   setRoster(list, rosterState.aliases);
   await save(env);
+  return { ok: true };
+}
+
+// Lead Coordinators: for each partner organization, which RC of that organization also sees all its regions
+export async function leadsView(env) {
+  await ensureRoster(env, true);
+  return { orgs: Object.entries(PARTNERS).map(([org, regions]) => { const id = leadsState.map[org]; const st = STAFF.find((s) => s.id === id); return { org, regions, lead: st && leadOrgOf(st) === org ? { id: st.id, name: st.name, region: st.region } : null, options: STAFF.filter((s) => s.active && s.role === 'rc' && regions.includes(s.region)).map((s) => ({ id: s.id, name: s.name, region: s.region })) }; }) };
+}
+export async function changeLeads(env, body) {
+  await ensureRoster(env, true);
+  const org = String(body.org || '').toUpperCase(); if (!PARTNERS[org]) return { error: 'Choose an organization' };
+  const map = { ...leadsState.map };
+  if (body.staff_id === null || body.staff_id === '' || body.staff_id === undefined) delete map[org];
+  else { const st = STAFF.find((s) => s.id === Number(body.staff_id)); if (!st || !st.active || st.role !== 'rc' || !PARTNERS[org].includes(st.region)) return { error: 'The Lead Coordinator must be the active RC of a region of that organization' }; map[org] = st.id; }
+  const v = Date.now(); await kv(env).put(LEADS_KEY, { v, map }); setLeads(map); leadsSeen = v;
   return { ok: true };
 }

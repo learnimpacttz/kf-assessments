@@ -4,7 +4,14 @@ const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '
 const S = { ph: null, phDate: null, phRegion: null, phErr: null, daysCache: {}, koboConfirm: null, restoreData: null, rosterMsg: null, daysRows: null, exTab: 'assess', tch: null, linked: null, exErr: null, real: null, viewAs: null, staffList: [], pred: null, brief: null, qOpen: null, cfg: null, code: null, who: null, tab: null, ov: null, pub: null, cmp: null, plan: null, year: null, explore: { q: '', lga: '', sub: 'schools' }, planRegion: null, selVisit: null, adm: null };
 const store = { get: (k) => { try { return localStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch {} } };
 
+// Lead Coordinator (LC): the RC of one region who can also read every region of their organization. S.lcRegion is the region they are looking at (null = their own).
+const isLead = () => Boolean(S.who && S.who.lead);
+const lcRegions = () => (S.who && S.who.regions) || (isLead() ? ((S.ov && S.ov.regions) || (S.cmp && S.cmp.regions) || []).filter((r) => r.partner === S.who.lead).map((r) => r.region) : []);
+const viewingOther = () => Boolean(isLead() && S.lcRegion && S.who.region && S.lcRegion !== S.who.region);
+const LC_PATHS = /^\/api\/(overview|plan|forecast|brief|schools|phones|map|progress|narratives|teachers|linked|region)\b/;
+const posLabel = (position, lead) => (lead ? `${position} · Lead Coordinator (LC)` : position);
 async function api(path, opts = {}) {
+  if (viewingOther() && (!opts.method || opts.method === 'GET') && LC_PATHS.test(path) && !/[?&]region=/.test(path)) path += (path.includes('?') ? '&' : '?') + 'region=' + encodeURIComponent(S.lcRegion);
   const headers = { ...(opts.headers || {}) };
   if (S.code && S.viewAs !== 'public') headers['x-access-code'] = S.code;
   if (S.viewAs && S.viewAs !== 'public' && !opts.noView) headers['x-view-as'] = /^(guest|hq):/.test(S.viewAs) ? S.viewAs : 'staff:' + S.viewAs;
@@ -71,7 +78,7 @@ const ACT_TXT = { submitted: 'wrote the response', resubmitted: 'sent the respon
 const wfOf = (f) => (f.q && f.q.wf) || { stage: 'open', history: [] };
 function qAbility(f) {
   const w = wfOf(f), me = S.who || {}, st = w.stage || 'open', H = w.history || []; const out = { respond: false, review: false, remind: false };
-  if (S.viewAs || !me.role) return out;
+  if (S.viewAs || !me.role || viewingOther()) return out; // a Lead Coordinator reads other regions; only that region's own coordinators reply and review
   if (st === 'open' || st === 'rework') { out.respond = me.role === 'volunteer' ? Boolean(f.admin) && f.admin === me.name : (me.role === 'rc' || me.role === 'arc') && !f.vol; out.remind = (me.role === 'rc' || me.role === 'arc') && Boolean(f.vol); }
   else if (st === 'team') out.review = (me.role === 'rc' || me.role === 'arc') && !(w.response && w.response.by_id === me.id);
   else if (st === 'hq1') out.review = me.role === 'hq' && (me.review_level || 0) >= 2 && !/mundo/i.test(me.name || '');
@@ -255,7 +262,7 @@ function viewRegion() {
     return `<tr class="click" data-open="school:${esc(s.id)}"><td><b>${esc(s.name)}</b></td><td class="hide-s">${esc(title(s.lga))}</td><td class="hide-s">${esc(armLabel(s))}</td><td class="num hide-s">${s.g[1].av}/${s.g[1].target}</td><td class="num hide-s">${s.g[2].av}/${s.g[2].target}</td><td class="num hide-s">${s.g[3].av}/${s.g[3].target}</td><td>${bar(pc(t, tg))}</td><td>${statusPill(s)}</td></tr>`;
   }).join('');
   const neededPerDay = remaining > 0 ? remaining / Math.max(1, workingLeft(o.today)) : 0;
-  return `${dataBanner()}<div class="pagehead"><div><h2>Habari, ${esc((S.who.name || '').split(' ')[0])}</h2><p>${esc(S.who.role === 'arc' ? 'Assistant Regional Coordinator' : 'Regional Coordinator')} · ${esc(title(r.region))} · ${dayName(o.today)} · ${r.total} schools · target ${tpg} pupils per grade per school</p></div></div>
+  return `${dataBanner()}<div class="pagehead"><div><h2>Habari, ${esc((S.who.name || '').split(' ')[0])}</h2><p>${esc(S.who.role === 'arc' ? 'Assistant Regional Coordinator' : viewingOther() ? 'Lead Coordinator (LC), ' + S.who.lead + ' · reading' : isLead() ? 'Regional Coordinator and Lead Coordinator (LC), ' + S.who.lead : 'Regional Coordinator')} · ${esc(title(r.region))} · ${dayName(o.today)} · ${r.total} schools · target ${tpg} pupils per grade per school</p></div></div>
   <div class="grid kpis">${kpi('Schools complete', `${r.done}<small> / ${r.total}</small>`, pc(r.done, r.total) + '%')}${kpi('Pupils tested', fmt(r.tested), 'of ' + fmt(r.target))}${kpi('Open flags', flags.length, flags.filter((f) => f.sev === 'bad').length + ' need a call', 'allq')}${kpi('Pace', r.pace + ' / day', 'schools per field day, last 5 days')}${(S.who.role === 'rc' || S.who.role === 'arc') && m.sub_rank ? kpi('Your place', m.sub_rank.pos + ' of ' + m.sub_rank.of, 'sending records early, in your region') : ''}${kpi('Projected finish', r.projected === 'done' ? 'Done' : finishOf(r.region, r.projected) ? shortDate(finishOf(r.region, r.projected)) : '–', r.behind ? 'after the 4 Dec close' : 'before the 4 Dec close')}</div>
   ${queryPrompt()}
   ${PG ? '' : `<div class="card" style="margin-top:14px">${ring(r.tested, r.target, { label: `${fmt(r.tested)} of ${fmt(r.target)} pupils tested`, sub: `${r.done} of ${r.total} schools complete` })}</div>`}${PG ? pgTop(PG) : S.pg.err ? `<div class="note" style="margin-top:14px">The progress board could not load (${esc(S.pg.err)}). The rest of this page still works.</div>` : '<div class="card" style="margin-top:14px"><div class="empty">Working out where the region stands…</div></div>'}${weekStrip()}
@@ -318,12 +325,12 @@ function pgStats(r) { return [`${fmt(r.tested)} tested`, r.quality != null ? 'qu
 function pgTeam(P) {
   const give = P.team.filter((r) => r.helps.length >= 2).sort((a, b) => b.helps.length - a.helps.length || b.tested - a.tested);
   const need = P.team.filter((r) => r.costs.length).sort((a, b) => b.queries.overdue - a.queries.overdue || b.costs.length - a.costs.length);
-  const one = (r, k) => `<div class="pgp"><div><b>${lk('person', r.name, r.name)}</b> <span class="m">${esc(r.position || '')}</span></div><div class="m">${esc(pgStats(r))}</div><ul class="${k === 'give' ? 'help' : 'cost'}">${(k === 'give' ? r.helps : r.costs).map((x) => `<li>${esc(x)}</li>`).join('')}</ul></div>`;
+  const one = (r, k) => `<div class="pgp"><div><b>${lk('person', r.name, r.name)}</b> <span class="m">${esc(posLabel(r.position || '', r.lead))}</span></div><div class="m">${esc(pgStats(r))}</div><ul class="${k === 'give' ? 'help' : 'cost'}">${(k === 'give' ? r.helps : r.costs).map((x) => `<li>${esc(x)}</li>`).join('')}</ul></div>`;
   return `<div class="sub">Who is carrying the team and who needs a hand. A person can be in both. These are things to thank and things to help with, not verdicts. People are compared with those in the same region who have tested at least ${PG_MIN} pupils.</div><div class="grid two"><div><h4>Carrying the team (${give.length})</h4>${give.map((r) => one(r, 'give')).join('') || `<div class="empty">Appears once people have tested ${PG_MIN} pupils.</div>`}</div><div><h4>Needs a hand (${need.length})</h4>${need.map((r) => one(r, 'need')).join('') || '<div class="empty">Nobody has anything waiting on them.</div>'}</div></div>`;
 }
 const PG_MIN = 20;
 function pgCoords(P) {
-  const rows = P.coordinators.map((c) => { const a = c.active, k = c.clean; return `<div class="pgp"><div><b>${lk('person', c.name, c.name)}</b> ${chip(esc(c.position), c.role === 'rc' ? 'navy' : 'teal')}</div><div class="grid two" style="margin-top:6px"><div><h4>How active</h4><ul class="plain"><li>Responses written: <b>${a.replies}</b></li><li>Reviews done: <b>${a.reviewed}</b>${a.avg_review_h != null ? ` <span class="m">(usually within ${a.avg_review_h < 24 ? Math.round(a.avg_review_h) + ' hours' : Math.round((a.avg_review_h / 24) * 10) / 10 + ' days'})</span>` : ''}</li><li>Waiting for their review: <b class="${a.review_waiting ? 'bad' : ''}">${a.review_waiting}</b>${a.review_waiting ? ` <span class="m">(oldest ${a.review_oldest} ${a.review_oldest === 1 ? 'day' : 'days'})</span>` : ''}</li><li>Questions answered <b>${a.questions_answered}</b> · waiting <b class="${a.questions_waiting ? 'bad' : ''}">${a.questions_waiting}</b></li></ul></div><div><h4>How clean</h4>${k.schools ? `<ul class="plain"><li>Schools led: <b>${k.schools}</b> · tests <b>${fmt(k.tests)}</b></li><li>Clean: <b class="${k.pct != null && k.pct < 90 ? 'bad' : ''}">${k.pct == null ? '–' : k.pct + '%'}</b> <span class="m">(${k.checks_open} open ${k.checks_open === 1 ? 'check' : 'checks'})</span></li></ul>${k.led.filter((l) => l.clean_pct != null).slice(0, 4).map((l) => `<div class="m">${lk('school', l.id, l.name)}: ${l.clean_pct}% clean</div>`).join('')}` : '<div class="m">No schools led yet.</div>'}</div></div></div>`; }).join('');
+  const rows = P.coordinators.map((c) => { const a = c.active, k = c.clean; return `<div class="pgp"><div><b>${lk('person', c.name, c.name)}</b> ${chip(esc(posLabel(c.position, c.lead)), c.role === 'rc' ? 'navy' : 'teal')}</div><div class="grid two" style="margin-top:6px"><div><h4>How active</h4><ul class="plain"><li>Responses written: <b>${a.replies}</b></li><li>Reviews done: <b>${a.reviewed}</b>${a.avg_review_h != null ? ` <span class="m">(usually within ${a.avg_review_h < 24 ? Math.round(a.avg_review_h) + ' hours' : Math.round((a.avg_review_h / 24) * 10) / 10 + ' days'})</span>` : ''}</li><li>Waiting for their review: <b class="${a.review_waiting ? 'bad' : ''}">${a.review_waiting}</b>${a.review_waiting ? ` <span class="m">(oldest ${a.review_oldest} ${a.review_oldest === 1 ? 'day' : 'days'})</span>` : ''}</li><li>Questions answered <b>${a.questions_answered}</b> · waiting <b class="${a.questions_waiting ? 'bad' : ''}">${a.questions_waiting}</b></li></ul></div><div><h4>How clean</h4>${k.schools ? `<ul class="plain"><li>Schools led: <b>${k.schools}</b> · tests <b>${fmt(k.tests)}</b></li><li>Clean: <b class="${k.pct != null && k.pct < 90 ? 'bad' : ''}">${k.pct == null ? '–' : k.pct + '%'}</b> <span class="m">(${k.checks_open} open ${k.checks_open === 1 ? 'check' : 'checks'})</span></li></ul>${k.led.filter((l) => l.clean_pct != null).slice(0, 4).map((l) => `<div class="m">${lk('school', l.id, l.name)}: ${l.clean_pct}% clean</div>`).join('')}` : '<div class="m">No schools led yet.</div>'}</div></div></div>`; }).join('');
   return `<div class="sub">Responses and reviews, how quickly reviews are done, and how clean the data is in the schools each one leads.</div>${rows}`;
 }
 function pgFold(id, head, note, body, open) { const st = (S.pg.fold || {})[id]; return `<details class="pgfold card" data-pgf="${id}"${(st === undefined ? open : st) ? ' open' : ''} style="margin-top:12px"><summary><b>${head}</b> <span class="m">${note}</span></summary>${body}</details>`; }
@@ -390,7 +397,7 @@ const speedTxt = (d) => (d == null ? '–' : d === 0 ? 'same day' : d + (d === 1
 const speedChipD = (d) => (d == null ? chip('–', 'mute') : chip(esc(speedTxt(d)), d <= 1 ? 'good' : d <= 2 ? 'warn' : 'bad'));
 function tgPerson(p, key) {
   const val = { fastest: speedTxt(p.reply_days) + ` · ${p.answered} replied`, slowest: speedTxt(p.reply_days) + ` · ${p.answered} replied`, fewest: p.per100 + ' per 100 tests', most_open: p.open + ' open' + (p.overdue ? ` · ${p.overdue} overdue` : '') }[key];
-  return `<div class="rank ${S.who && p.id === S.who.id ? 'me' : ''}"><span class="nm"><b>${lk('person', p.name, p.name)}</b> <span class="m">${esc(title(p.region))} · ${esc(p.position || '')}</span></span><span class="num" style="text-align:right">${esc(val)}</span></div>`;
+  return `<div class="rank ${S.who && p.id === S.who.id ? 'me' : ''}"><span class="nm"><b>${lk('person', p.name, p.name)}</b> <span class="m">${esc(title(p.region))} · ${esc(posLabel(p.position || '', p.lead))}</span></span><span class="num" style="text-align:right">${esc(val)}</span></div>`;
 }
 function viewTogether() {
   const t = S.tg || {}; if (!t.busy && (!t.at || Date.now() - t.at > 90e3)) loadTogether();
@@ -405,7 +412,7 @@ function viewTogether() {
   const H = D.highlights; const box = (ttl, sub, key) => `<div class="card"><h3>${ttl}</h3><div class="sub">${sub}</div>${(H[key] || []).map((p) => tgPerson(p, key)).join('') || '<div class="empty">Appears as queries are answered.</div>'}</div>`;
   const hl = `<div class="grid two" style="margin-top:14px">${box('Fastest to reply', 'Working days from the visit to the first response. Ask them how they do it.', 'fastest')}${box('Slowest to reply', 'Offer a hand: often it is a question about what to write.', 'slowest')}${box('Fewest queries', 'Per 100 pupils tested, for people with at least 20 tests.', 'fewest')}${box('Most queries open', 'Queries waiting for a response now.', 'most_open')}</div>`;
   const cols = [
-    { k: 'name', label: 'Name', val: (p) => p.name, search: (p) => p.name + ' ' + p.region, html: (p) => `<b>${lk('person', p.name, p.name)}</b>${S.who && p.id === S.who.id ? ' ' + chip('You', 'gold') : ''}<div class="m">${esc(p.position || '')}</div>` },
+    { k: 'name', label: 'Name', val: (p) => p.name, search: (p) => p.name + ' ' + p.region, html: (p) => `<b>${lk('person', p.name, p.name)}</b>${S.who && p.id === S.who.id ? ' ' + chip('You', 'gold') : ''}<div class="m">${esc(posLabel(p.position || '', p.lead))}</div>` },
     { k: 'region', label: 'Region', val: (p) => p.region, search: (p) => p.region, html: (p) => esc(title(p.region)) },
     { k: 'tested', label: 'Tested', cls: 'r num', small: 1, val: (p) => p.tested, html: (p) => fmt(p.tested) },
     { k: 'queries', label: 'Queries', cls: 'r num', val: (p) => p.queries, html: (p) => p.queries },
@@ -528,8 +535,8 @@ function dayReasonPanel(region, draft) {
 }
 function viewPlan() {
   const P = S.plan; if (!P) return `<div class="banner bad">${S.planErr ? esc(S.planErr) : 'The plan could not be loaded.'} <button class="btn sm sec" data-act="retryPlan">Try again</button></div>`;
-  const plan = P.plan, region = S.planRegion || S.who.region;
-  const canEdit = S.who.role !== 'volunteer';
+  const plan = P.plan, region = S.planRegion || (viewingOther() && S.lcRegion) || S.who.region;
+  const canEdit = S.who.role !== 'volunteer' && !viewingOther();
   const head = `<div class="pagehead"><div><h2>Plan and calendar · ${esc(title(region))}</h2><p>The whole field period is planned up front. After you submit, changes need a reason and the team is told.</p></div>${S.who.role === 'hq' ? `<div class="sel"><select id="planRegion">${S.cfg.regions.map((r) => `<option ${r === region ? 'selected' : ''} value="${r}">${title(r)}</option>`).join('')}</select></div>` : ''}</div>`;
   if (plan.status !== 'locked') return head + planBuilder(P, canEdit, region);
   const today = P.today;
@@ -605,6 +612,10 @@ function readinessCard(a) {
   const bad = R.checks.filter((c) => !c.ok).length;
   const pil = R.pilot;
   return `<div class="card" style="margin-bottom:14px;border-left:4px solid var(${bad ? '--gold' : '--good'})"><h3>Go-live readiness ${bad ? `<span class="chip c-warn">${bad} to fix</span>` : '<span class="chip c-good">all clear</span>'}</h3><div class="sub">Checked live. Pilot day is ${esc(R.pilot_day)}: ${pil.with_tests} of ${pil.schools} pilot schools have tests, ${pil.tested} of ${pil.target} pupils.</div>${R.checks.map((c) => `<div class="flag"><i class="st ${c.ok ? 'good' : 'warn'}"></i><div><b>${esc(c.label)}</b><span>${esc(c.detail)}${c.fix ? ' · <b>' + esc(c.fix) + '</b>' : ''}</span></div></div>`).join('')}</div>`;
+}
+function leadsCard(a) {
+  const L = a.leads; if (!L) return '';
+  return `<div class="card" style="margin-top:14px"><h3>Lead Coordinators (LC)</h3><div class="sub">One RC for each organization who also reads every region of that organization. They stay the RC of their own region. In the other regions they can read everything, but only that region's own coordinators reply, review or change.</div>${L.orgs.map((o) => `<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:8px 0"><b style="min-width:110px">${esc(o.org)}</b><span class="m" style="flex:1 1 200px">${o.regions.map((r) => esc(title(r))).join(', ')}</span><select data-ld="${esc(o.org)}" aria-label="Lead Coordinator for ${esc(o.org)}"><option value="">Nobody</option>${o.options.map((x) => `<option value="${x.id}" ${o.lead && o.lead.id === x.id ? 'selected' : ''}>${esc(x.name)} (RC ${esc(title(x.region))})</option>`).join('')}</select><button class="btn sm" data-act="leadSet" data-org="${esc(o.org)}">Save</button></div>`).join('')}${S.leadMsg ? `<div class="note">${esc(S.leadMsg)}</div>` : ''}</div>`;
 }
 function rosterCard(a) {
   const R = a.roster; if (!R) return '';
@@ -753,7 +764,7 @@ function viewAdmin() {
     health: () => `${readinessCard(a)}<div class="card"><h3>Data connections</h3><div class="sub">Student tests, sampling and teacher forms are read from KoBo every 5 minutes in field hours</div><div class="tbl"><table><thead><tr><th>Form</th><th>Status</th><th class="r">Records read</th><th>State</th><th>Last complete</th></tr></thead><tbody>${sync}</tbody></table></div></div>
   ${S.ov.unlisted?.length ? `<div class="banner" style="margin-top:14px"><b>Names in KoBo that are not in the staff roster:</b> ${S.ov.unlisted.map(esc).join(', ')}. Their tests still count, but they have no region or access code.</div>` : ''}
 ${storageCard()}${activityCard(a)}`,
-    people: () => `${rosterCard(a)}${hqTeamCard(a)}${guestsCard()}${devicesCard(a)}  <div class="card" style="margin-top:14px"><h3>Access codes</h3><div class="sub">One code per person. Send each person their own code; do not share this list. HQ code stays with you.</div><div class="tbl"><table><thead><tr><th>Region</th><th>Role</th><th>Name</th><th>Code</th></tr></thead><tbody>${codes}</tbody></table></div></div>`,
+    people: () => `${rosterCard(a)}${leadsCard(a)}${hqTeamCard(a)}${guestsCard()}${devicesCard(a)}  <div class="card" style="margin-top:14px"><h3>Access codes</h3><div class="sub">One code per person. Send each person their own code; do not share this list. HQ code stays with you.</div><div class="tbl"><table><thead><tr><th>Region</th><th>Role</th><th>Name</th><th>Code</th></tr></thead><tbody>${codes}</tbody></table></div></div>`,
     messages: () => `${emailScheduleCard(a)}  <div class="card" style="margin-top:14px"><h3>Email list</h3><div class="sub">Who is on the lists. Changes apply after you press Save. This does not send anything.</div>
   ${recipientsTable(a)}
   <div style="margin-top:10px"><button class="btn sm" data-act="saveRec">Save the email list</button></div></div>
@@ -798,7 +809,8 @@ function speedChip(v, g) {
   return chip(v, v < b.p3 || v > b.p99 ? 'bad' : v < b.p10 || v > b.p90 ? 'warn' : 'good');
 }
 const partnerOf = (r) => Object.entries(S.cfg.partners).find(([, rs]) => rs.includes(r))?.[0] || '';
-const roleLabel = (a) => (a.position || (a.role === 'unlisted' ? 'Not in roster' : a.role));
+const leadOfStaff = (id) => { const l = [...((S.staffList) || []), ...((S.ov && S.ov.mine && S.ov.mine.staff) || [])].find((x) => x.id === id); return l && l.lead ? l.lead : null; };
+const roleLabel = (a) => (a.position ? posLabel(a.position, a.lead || (a.staff_id != null ? leadOfStaff(a.staff_id) : null)) : (a.role === 'unlisted' ? 'Not in roster' : a.role));
 
 // ---------- links and the detail panel ----------
 const isVol = () => S.who && S.who.role === 'volunteer';
@@ -1016,7 +1028,7 @@ function coordinatorsBlock() {
   const o = S.ov; if (!o.coordinators) return '';
   const val = (x, k) => (x.rows.find((r) => r.key === k) || {});
   const cell = (r) => (r.status ? chip(esc(r.display), r.status) : esc(r.display || '–'));
-  const rowsC = o.coordinators.map((c) => `<tr class="click" data-open="person:${esc(c.person.name)}"><td><b>${esc(c.person.name)}</b></td><td>${esc(title(c.person.region))}</td><td>${chip(esc(c.person.position), c.person.role === 'rc' ? 'navy' : 'teal')}</td><td class="r num">${fmt(c.assessment.tested)}</td><td class="r num">${c.assessment.sampling}</td><td class="r num">${c.led.done}/${c.led.due || 0}</td><td>${cell(val(c, 'notices'))}</td><td>${cell(val(c, 'changes'))}</td><td>${cell(val(c, 'sameday'))}</td><td>${qChip(c.assessment.quality)}</td><td>${cell(val(c, 'queries'))}</td><td class="r num">${c.baseline.forms}</td></tr>`).join('');
+  const rowsC = o.coordinators.map((c) => `<tr class="click" data-open="person:${esc(c.person.name)}"><td><b>${esc(c.person.name)}</b></td><td>${esc(title(c.person.region))}</td><td>${chip(esc(posLabel(c.person.position, c.person.lead)), c.person.role === 'rc' ? 'navy' : 'teal')}</td><td class="r num">${fmt(c.assessment.tested)}</td><td class="r num">${c.assessment.sampling}</td><td class="r num">${c.led.done}/${c.led.due || 0}</td><td>${cell(val(c, 'notices'))}</td><td>${cell(val(c, 'changes'))}</td><td>${cell(val(c, 'sameday'))}</td><td>${qChip(c.assessment.quality)}</td><td>${cell(val(c, 'queries'))}</td><td class="r num">${c.baseline.forms}</td></tr>`).join('');
   const rowsT = Object.values(o.team_blocks).map((t) => `<tr class="click" data-open="region:${esc(t.region)}"><td><b>${esc(title(t.region))}</b></td><td>${esc(t.people.map((p) => p.name.split(' ')[0] + ' (' + p.position + ')').join(', '))}</td><td class="chips">${t.rows.map((r) => chip(esc(SHORT_ROW[r.key] || r.label) + ': ' + esc(r.display), r.status || 'mute')).join(' ')}</td></tr>`).join('');
   return `<div class="card" style="margin-top:14px"><h3>Coordinators' own work</h3><div class="sub">What each RC and ARC did themselves, apart from supervising the team. Chips use the targets in each person's card.</div><div class="tbl"><table><thead><tr><th>Name</th><th>Region</th><th>Role</th><th class="r">Tested</th><th class="r">Sampling</th><th class="r">Led, done</th><th>Notices on time</th><th>Late changes</th><th>Same-day sends</th><th>Quality</th><th>Queries answered in 2 days</th><th class="r">Teacher forms</th></tr></thead><tbody>${rowsC}</tbody></table></div></div>
   <div class="card" style="margin-top:14px"><h3>Regional coordination teams</h3><div class="sub">What each RC and ARC did together for their region</div><div class="tbl"><table class="stk"><thead><tr><th>Region</th><th>Team</th><th>Status</th></tr></thead><tbody>${rowsT}</tbody></table></div></div>`;
@@ -1582,7 +1594,7 @@ function setTheme(v) { try { v ? localStorage.setItem('kf_theme', v) : localStor
 function whoHtml() {
   if (!S.who) return '<button class="ghost" data-act="showLogin">Sign in</button>';
   const w = S.who; const ini = String(w.name || '?').replace(/\(.*?\)/g, '').trim().split(/\s+/).map((x) => x[0]).slice(0, 2).join('').toUpperCase() || '?';
-  const sub = [w.position, w.region ? title(w.region) : '', w.role === 'hq' ? LEVEL_TXT[hqLevel()] : ''].filter(Boolean).join(' · ');
+  const sub = [posLabel(w.position, w.lead), w.lead ? w.lead : '', w.region ? title(w.region) : '', w.role === 'hq' ? LEVEL_TXT[hqLevel()] : ''].filter(Boolean).join(' · ');
   const bell = pushSupported() && !isGuest() ? `<button class="ico ${S.alertsOn ? 'on' : ''}" id="alertsBtn" data-act="alerts" title="${esc(alertsLabel())}" aria-label="${esc(alertsLabel())}">${BELL}</button>` : '';
   const back = S.viewAs ? '<button class="ghost" data-act="exitPreview">Back to HQ</button>' : '';
   const rf = `<button class="ico" id="rfb" data-act="refresh" title="Refresh" aria-label="Refresh">${REFRESH}</button>`;
@@ -1708,7 +1720,7 @@ function render() {
   const un = S.tab !== 'news' && S.who && !S.viewAs ? unreadNews()[0] : null;
   const langBanner = S.who && S.who.role === 'volunteer' && S.tab === 'day' && !S.viewAs && LANG() === 'en' && !store.get('kf_lang_seen') ? '<div class="banner" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span style="flex:1;min-width:180px"><b>Kiswahili?</b> Unaweza kutumia programu hii kwa Kiswahili. · You can use this app in Swahili.</span><button class="btn sm" data-act="langSw">Tumia Kiswahili</button><button class="btn sm ghost" data-act="langKeep">English</button></div>' : '';
   const newsBanner = un ? `<div class="banner" style="background:var(--surface2)"><b>News:</b> ${esc(un.title)} <a href="#news" data-tab="news"><b>Read</b></a></div>` : '';
-  $('#app').innerHTML = previewBanner() + langBanner + dmBanner() + planBanner + (S.tab === 'pilot' ? '' : pilotBanner()) + newsBanner + remBanner() + boxBanner() + backBar() + VIEWS[S.tab]();
+  $('#app').innerHTML = previewBanner() + lcBar() + langBanner + dmBanner() + planBanner + (S.tab === 'pilot' ? '' : pilotBanner()) + newsBanner + remBanner() + boxBanner() + backBar() + VIEWS[S.tab]();
   $('#gswrap').hidden = !S.who;
   applyLayout();
   collapseIntros();
@@ -1974,6 +1986,7 @@ const HELP = {
     ['Plan and calendar', 'Plan the whole field work before 16 Oct: 2 schools a day is the standard. One or three schools in a day needs a reason. After you submit, a change needs a reason and shows in the history.'],
     ['Notices to schools', 'Ward officers get 5 working days notice and head teachers 3. The tracker has ready messages: copy, send by SMS or WhatsApp, then press Mark sent.'],
     ['Queries: reviewing your team', 'Test admin responses reach you first. Read each, check it makes sense, then <b>Approve</b> (goes to HQ), <b>Edit and approve</b>, or <b>Send back</b> with a reason. Your own queries you answer yourself and they go to HQ. A response is overdue after 2 working days; you get a reminder every day.'],
+    ['Lead Coordinator (LC)', 'A Lead Coordinator is the RC of one region who also reads every region of their organization (GEP, KACODA or FAWOCHIWE). A bar at the top of the Region, Plan, My team, Map, Queries, Phones, Data explorer and School reports pages switches between the regions of the organization; your own region comes first. In the other regions you can read everything, including schools, queries with their responses, questions, plans and the team. Only that region\'s own coordinators reply, review, send notices or change the plan. You stay the RC of your own region and work there as before.'],
     ['Your own work', 'Your targets: visits, notices on time, plan changes made early, same-day sending, quality, queries answered. They are the same for RC and ARC.'],
     ['Region progress', 'The top of <b>Region</b> shows pupils tested and schools complete as two counters, how the schools stand (tap a colour to list them), the plan line (schools due by the plan against schools complete) and four tiles: queries open, waiting for review, questions for you and data clean. The <b>School tracker</b> lists the most urgent schools first, with the planned date, who leads, pupils by grade and what is pending (visit, notice, sampling attendance, queries, questions). Tap a school to see its plan and notices, every query with the response, the reviews and the comments, and the questions asked about it. Below it, three folds: <b>Waiting on</b> (everything open, grouped by who has the next step), <b>The team</b> (who is carrying the team and who needs a hand, with the reasons) and <b>RC and ARC: how active and how clean</b> (responses and reviews, how fast, and the clean share in the schools each leads). Use them to thank and to help. Nothing here changes a record.'],
     ['Reports', 'RCs can build, edit and download reports for their region (Excel, Word, PDF, CSV).'],
@@ -2778,7 +2791,7 @@ function dmBanner() {
 // ---- drawer extras: message box and HQ notes ----
 function extrasHtml(kind, id) {
   const w = S.who; if (!w || S.viewAs || isGuest() || !['person', 'school', 'region'].includes(kind)) return '';
-  const canMsg = w.role === 'hq' ? hqLevel() !== 'viewer' : ['rc', 'arc'].includes(w.role); let out = '';
+  const canMsg = w.role === 'hq' ? hqLevel() !== 'viewer' : ['rc', 'arc'].includes(w.role) && !viewingOther(); let out = '';
   if (canMsg) {
     const what = kind === 'person' ? 'this person' : kind === 'school' ? 'the team at this school' : 'this region';
     out += `<div class="card dx" style="margin-top:12px"><h3>Send a message</h3><div class="sub">A short note to ${what}. They get a phone alert and see it under News, and you can see who has read it.</div><textarea id="dmText" maxlength="280" rows="2" placeholder="Write the message (up to 280 characters)" style="width:100%"></textarea>${kind === 'region' ? '<label class="m">To <select id="dmRoles"><option value="">Everyone in the region</option><option value="volunteer">Volunteers</option><option value="rc,arc">Coordinators (RC and ARC)</option></select></label>' : ''}<div style="margin-top:6px"><button class="btn sm" data-act="dmSend" data-kind="${kind}" data-id="${esc(id)}">Send</button> <span id="dmMsg" class="m"></span></div><div id="dmSent"></div></div>`;
@@ -3038,9 +3051,9 @@ async function setViewAs(val) {
     if (val === 'public') { S.viewAs = 'public'; S.who = null; }
     else if (/^hq:/.test(val)) { const u = (S.hqTeam || []).find((x) => 'hq:' + x.id === val); if (!u) return; S.viewAs = val; S.who = { role: 'hq', level: u.level, name: u.name, desk: u.desk, hide: u.hide || [], review_level: u.review_level || 0, hq_id: u.id, id: 'hq:' + u.id, region: null, viewAs: true }; }
     else if (/^guest:/.test(val)) { S.viewAs = val; S.who = { role: 'guest', name: 'Preview: ' + val.slice(6), profile: val.slice(6), org: '', can_download: false, logo: '', viewAs: true }; }
-    else { const p = S.staffList.find((s) => String(s.id) === val); if (!p) return; S.viewAs = val; S.who = { role: p.role, name: p.name, region: p.region, position: p.position, id: p.id, viewAs: true }; }
+    else { const p = S.staffList.find((s) => String(s.id) === val); if (!p) return; S.viewAs = val; S.who = { role: p.role, name: p.name, region: p.region, position: p.position, id: p.id, viewAs: true, ...(p.lead ? { lead: p.lead, title: 'Lead Coordinator (LC)' } : {}) }; }
   }
-  S.ov = null; S.pub = null; S.cmp = null; S.pred = null; S.brief = null; S.plan = null; S.allSchools = null; S.workCache = {}; S.tbl = {}; S.qf = null; S.tch = null; S.linked = null; S.exTab = 'assess'; S.exErr = null; S.tab = null; S.cur = null; closeDetail(); S.stale = null;
+  S.lcRegion = undefined; S.ov = null; S.pub = null; S.cmp = null; S.pred = null; S.brief = null; S.plan = null; S.allSchools = null; S.workCache = {}; S.tbl = {}; S.qf = null; S.tch = null; S.linked = null; S.exTab = 'assess'; S.exErr = null; S.tab = null; S.cur = null; closeDetail(); S.stale = null;
   await go();
 }
 const previewBanner = () => (S.viewAs ? `<div class="banner preview"><b>Preview.</b> You are looking at the app as ${S.viewAs === 'public' ? 'a public visitor' : /^hq:/.test(S.viewAs) ? esc(S.who.name) + ' (HQ, ' + esc(DESKS[S.who.desk] || '') + ' desk, ' + esc(S.who.level) + ')' : esc(S.who.name) + ' (' + esc(S.who.position || S.who.role) + ', ' + esc(title(S.who.region)) + ')'}. Nothing you do here changes anything. <button class="btn sm sec" data-act="exitPreview">Back to HQ</button></div>` : '');
@@ -3051,7 +3064,21 @@ function loginScreen(msg) {
   $('#code')?.focus();
 }
 
+// the switcher: a Lead Coordinator picks which region of their organization to read; their own region first
+const LC_TABS = ['region', 'plan', 'team', 'map', 'allq', 'phones', 'explore', 'narr'];
+function lcBar() {
+  if (!isLead() || S.viewAs === 'public' || !LC_TABS.includes(S.tab)) return '';
+  const regs = lcRegions(); if (regs.length < 2) return '';
+  const cur = S.lcRegion || S.who.region; const other = viewingOther();
+  return `<div class="card lcbar"><div class="lcmsg"><b>Lead Coordinator · ${esc(S.who.lead)}</b><div class="m">${other ? `You are reading <b>${esc(title(cur))}</b>. You can read everything here; only its own coordinators reply, review or change. Pick your own region to work as its RC.` : `You are the RC of ${esc(title(S.who.region))} and you can read every region of ${esc(S.who.lead)}. Pick one to follow it.`}</div></div><div class="lcsw" role="group" aria-label="Region">${regs.map((r) => `<button class="pgseg${r === cur ? ' on' : ''}" data-act="lcRegion" data-r="${esc(r)}" aria-pressed="${r === cur}">${esc(title(r))}${r === S.who.region ? ' (yours)' : ''}</button>`).join('')}</div></div>`;
+}
+async function lcSwitch(r) {
+  S.lcRegion = r === S.who.region ? null : r; try { localStorage.setItem('kf_lc_region', S.lcRegion || ''); } catch { /* ignore */ }
+  S.ov = null; S.plan = null; S.planRegion = null; S.brief = null; S.allSchools = null; S.workCache = {}; S.tbl = {}; S.qf = null; S.tch = null; S.linked = null; S.ph = null; S.mp = null; S.pg = { f: 'all', key: S.pg && S.pg.key }; S.stale = null; closeDetail(); render();
+  await loadData(); if (S.tab === 'plan') await loadPlan(); render(); ensureSchools();
+}
 async function loadData() {
+  if (isLead() && S.lcRegion === undefined) { let v = ''; try { v = localStorage.getItem('kf_lc_region') || ''; } catch { /* ignore */ } S.lcRegion = v && v !== S.who.region && lcRegions().includes(v) ? v : null; }
   const q = S.year ? '?year=' + S.year : '';
   if (!S.who || isGuest()) { S.pub = await api('/api/public' + q); S.cmp = publicCompare(S.pub); loadLayout(); return; }
   loadLayout(); loadTalk();
@@ -3094,7 +3121,7 @@ function publicCompare(pub) {
   return { regions: pub.regions.map((r) => ({ ...r, tested_pct: pc(r.tested, r.target) })).sort((a, b) => b.tested_pct - a.tested_pct), people: [] };
 }
 async function loadPlan(region) {
-  const r = region || S.planRegion || S.who.region || S.cfg.regions[0];
+  const r = region || S.planRegion || (viewingOther() && S.lcRegion) || S.who.region || S.cfg.regions[0];
   S.planRegion = r;
   S.planErr = null;
   try { S.plan = await api('/api/plan?region=' + r); } catch (e) { S.plan = null; S.planErr = e.message; }
@@ -3106,7 +3133,7 @@ async function loadAdmin() {
   const [status, ready] = await Promise.all([api('/api/admin/status'), api('/api/admin/readiness').catch(() => null)]);
   S.recRows = null; S.adm = { status, ready, preview: S.adm?.preview || null };
   const set = (k, path) => api(path).then((v) => { if (!S.adm) return; S.adm[k] = v; if (k === 'rec') S.recRows = null; adminPaint(); }).catch(() => { adminPaint(); });
-  for (const [k, path] of [['hqUsers', '/api/admin/hq-users'], ['settings', '/api/admin/settings'], ['emailSched', '/api/admin/email-schedule'], ['rec', '/api/admin/recipients'], ['push', '/api/admin/push-status'], ['calsync', '/api/admin/calsync'], ['formjob', '/api/admin/formjob'], ['codes', '/api/admin/codes'], ['roster', '/api/admin/roster'], ['devices', '/api/admin/devices'], ['backups', '/api/admin/backup?list=1'], ['activity', '/api/admin/activity']]) set(k, path);
+  for (const [k, path] of [['leads', '/api/admin/leads'], ['hqUsers', '/api/admin/hq-users'], ['settings', '/api/admin/settings'], ['emailSched', '/api/admin/email-schedule'], ['rec', '/api/admin/recipients'], ['push', '/api/admin/push-status'], ['calsync', '/api/admin/calsync'], ['formjob', '/api/admin/formjob'], ['codes', '/api/admin/codes'], ['roster', '/api/admin/roster'], ['devices', '/api/admin/devices'], ['backups', '/api/admin/backup?list=1'], ['activity', '/api/admin/activity']]) set(k, path);
   api('/api/admin/storage').then((r) => { S.storage = r; adminPaint(); }).catch(() => {});
   api('/api/admin/forms').then((r) => { S.forms = r; adminPaint(); }).catch(() => {});
   api('/api/admin/guests').then((r) => { S.guests = r; adminPaint(); }).catch(() => {});
@@ -3172,7 +3199,7 @@ document.addEventListener('click', async (e) => {
   const a = t.dataset.act;
   try {
     if (a === 'login') { const c = $('#code').value.trim().toUpperCase(); if (!c) return; S.code = c; try { const r = await api('/api/login'); S.who = r.who; store.set('kf_code', c); S.tab = null; await go(); } catch { S.code = null; loginScreen('That code was not recognized.'); } }
-    else if (a === 'logout') { S.bx = null; S.bxOpen = undefined; S.bxSum = null; S.code = null; S.who = null; S.ov = null; S.plan = null; S.draft = null; store.set('kf_code', null); try { localStorage.removeItem('kf_snap'); } catch {} S.tab = null; loginScreen(); }
+    else if (a === 'logout') { S.lcRegion = undefined; S.bx = null; S.bxOpen = undefined; S.bxSum = null; S.code = null; S.who = null; S.ov = null; S.plan = null; S.draft = null; store.set('kf_code', null); try { localStorage.removeItem('kf_snap'); } catch {} S.tab = null; loginScreen(); }
     else if (a === 'showLogin') loginScreen();
     else if (a === 'tblReset') { const T = S.tbl[t.dataset.id]; if (T) { T.f = {}; T.q = ''; store.set(memKey('t:' + t.dataset.id), null); } render(); }
     else if (a === 'moreMenu') { const m = document.getElementById('msheet'); if (m) m.hidden = !m.hidden; }
@@ -3223,6 +3250,8 @@ document.addEventListener('click', async (e) => {
     else if (a === 'ntAct') { const box = t.closest('[data-notes]'); const target = box.dataset.notes; if (t.dataset.op === 'delete' && !confirm('Delete this note?')) return; try { await api('/api/hqnotes', { method: 'POST', body: { action: t.dataset.op, id: t.dataset.id } }); await loadNotes(target); loadTalk(); } catch (e) { alert(e.message); } }
     else if (a === 'bxSend') await boxSend();
     else if (/^bx[A-Z]/.test(a)) await boxAction(a, t);
+    else if (a === 'lcRegion') await lcSwitch(t.dataset.r);
+    else if (a === 'leadSet') { const sel = document.querySelector(`[data-ld="${CSS.escape(t.dataset.org)}"]`); try { const r = await api('/api/admin/leads', { method: 'POST', body: { org: t.dataset.org, staff_id: sel && sel.value ? Number(sel.value) : null } }); S.adm.leads = r; S.leadMsg = 'Saved. They see the change the next time they open the app.'; } catch (e) { S.leadMsg = e.message; } render(); }
     else if (a === 'pgAll') { S.pg.all = !S.pg.all; render(); }
     else if (a === 'pgFilter') { S.pg.f = t.dataset.f || 'all'; render(); }
     else if (a === 'ptOpen') { S.pt.open = S.pt.open === t.dataset.n ? null : t.dataset.n; render(); }

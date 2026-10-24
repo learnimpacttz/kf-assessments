@@ -1,6 +1,6 @@
 // What each Regional Coordinator and Assistant Coordinator did themselves, and what the pair did together.
 // Targets are suggestions in one place (TARGETS) so they can be changed without touching the screens.
-import { SCHOOL_BY_ID, STAFF, REGIONS, addDays } from './config.js';
+import { SCHOOL_BY_ID, STAFF, REGIONS, addDays, leadOrgOf } from './config.js';
 import { withNotices, leadOfVisit } from './plan.js';
 import { overdueQueries } from './queries.js';
 
@@ -95,7 +95,7 @@ export function ownWork({ sum, plan, queries, flags, today }, person) {
   ];
   const todays = led.filter((v) => v.date === today).map((v) => ({ school: v.school, name: v.school_name, start: v.start, team: v.team || [], present: sum?.schools?.[v.school]?.dayAdmins?.[today] || [] }));
   return {
-    person: { id: person.id, name: person.name, position: person.position, role: person.role, region },
+    person: { id: person.id, name: person.name, position: person.position, role: person.role, lead: leadOrgOf(person), region },
     reports_to: person.role === 'arc' ? (rc?.name || null) : null,
     responsible_for_arc: person.role === 'rc' ? (coordsOf(region).find((s) => s.role === 'arc')?.name || null) : null,
     assessment: { tested: a?.tested ?? 0, sampling: a?.samp ?? 0, schools: a?.schools ?? 0, days: a?.days ?? 0, avg_min: a?.avg_min ?? null, quality: a?.quality ?? null },
