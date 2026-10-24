@@ -22,4 +22,7 @@ ok('the person who suggested is told when it is passed on and when it is done', 
 ok('the chain: Mundo and Joram suggest, Joram confirms Mundo and the field, Mundo decides, the Executive Director can decide what they started', del.includes('const isEd =') && del.includes("level === 2 || isEd(who) ? 'initiated' : 'suggested'") && del.includes('Joram has to confirm what Mundo suggests') && del.includes('!(isEd(who) && r.by_id === me)') && app.includes('const chainNext'));
 ok('the log is titled for deletions and edits and says what each change was', app.includes('Change log: deletions and edits') && !app.includes('<h3>Deletion log</h3>') && app.includes('Read back, matched'));
 ok('the request card shows which checks the change cleared', app.includes('Checks cleared by this change') && app.includes('No open check was waiting on this change'));
+ok('the progress board buttons have handlers: filter, show all, and the school drawer loads its own detail', app.includes("a === 'pgFilter'") && app.includes("a === 'pgAll'") && app.includes('data-act="pgFilter"') && app.includes('data-act="pgAll"') && app.includes("if (kind === 'school' && pgSchoolOk()) pgSchoolLoad(id);"));
+ok('the progress folds remember their state and start folded', app.includes("S.pg.fold = { ...(S.pg.fold || {})") && app.includes("pgFold('wait', 'Waiting on'"));
+ok('a preview as someone else keeps its own progress cache', app.includes("if (S.pg.key !== key) S.pg = { f: 'all', key };"));
 done();

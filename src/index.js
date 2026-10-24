@@ -6,6 +6,7 @@ import { pupilRecords, workFiles, flagRecords } from './pupils.js';
 import { pilotView, pilotSet, PILOT_ALLOC } from './pilot.js';
 import { locationCheck } from './location.js';
 import { answerScan } from './answerscan.js';
+import { regionProgress, schoolDetail, standingFor } from './progress.js';
 import { computePatterns } from './patterns.js';
 import { boxPublic, setBoxKey, setBoxLive, submitBox, listBox, markBox, deleteBox, boxSummary, markSaved, takePending } from './box.js';
 import { SCHOOL_COORDS, COORD_SOURCE, COORD_WRONG } from './data/school_coords.js';
@@ -22,7 +23,7 @@ import { kv } from './store.js';
 import { buildBrief, aiBrief } from './brief.js';
 import { ask as askAssistant, draftReportText } from './assistant.js';
 import { computeBridge, buildUpdate, saveSnapshot, listSnapshots, getMilestones, saveMilestones, AUDIENCES } from './bridge.js';
-import { sendDm, dmInbox, dmAck, dmSent, askCreate, askList, askAct, askCounts, notesList, notesAct } from './talk.js';
+import { sendDm, dmInbox, dmAck, dmSent, askCreate, askList, askAct, askCounts, askVisible, notesList, notesAct } from './talk.js';
 import { layoutsFor, saveLayout } from './layouts.js';
 const GUEST_REPORTS = ['region_progress']; // aggregate only: no names, no school results
 import { listGuests, guestAction, touchGuest } from './guests.js';
@@ -679,6 +680,22 @@ export default {
         const sum = await sumNow(env); if (!sum) return json({ status: 'waiting' });
         await logActivity(env, who, 'Opened Team patterns', '');
         return json({ status: 'ok', ...computePatterns(sum, eatToday()) });
+      }
+      // ---------- region progress: coordinators see their own region, HQ any region; a volunteer gets only their own standing ----------
+      if (path === '/api/progress' || path === '/api/progress/school') {
+        if (who.role === 'volunteer' && path !== '/api/progress') return err('This page is for coordinators and HQ', 403);
+        if (who.role === 'hq' && Array.isArray(who.hide) && who.hide.length) return err('Region progress is for the HQ team', 403);
+        const { sum } = await loadSummary(env, CURRENT_YEAR); if (!sum) return json({ status: 'waiting' });
+        const sid = url.searchParams.get('id') || '';
+        const region = who.role === 'hq' ? String(url.searchParams.get('region') || SCHOOL_BY_ID[sid]?.region || '').toUpperCase() : who.region;
+        if (!REGIONS.includes(region)) return err('Choose a region', 422);
+        const queries = await loadQueries(env); const plan = await getPlan(env, region); const today = eatToday();
+        const flags = regionBundle(sum, region, who, queries).flags;
+        const asks = (await askVisible(env, who)).filter((a) => a.by.region === region || SCHOOL_BY_ID[a.school]?.region === region);
+        if (path === '/api/progress/school') { if (SCHOOL_BY_ID[sid]?.region !== region) return err('That school is not in your region', 403); return json({ status: 'ok', ...schoolDetail({ id: sid, sum, plan, queries, flags, asks, today }) }); }
+        const prog = regionProgress({ region, sum, plan, queries, flags, asks, today });
+        if (who.role === 'volunteer') return json({ status: 'ok', standing: standingFor(prog, who) });
+        return json({ status: 'ok', as_of: sum.as_of, ...prog });
       }
       // ---------- payments (HQ Admin only): the COD engine on the stored year; no names or bank details ----------
       if (path === '/api/payments') {

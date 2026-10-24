@@ -99,6 +99,8 @@ export async function askAct(env, who, b) {
   await kv(env).put(ASK, all); return { ok: true, status: q.status };
 }
 export async function askCounts(env, who) { const l = await askList(env, who); return l.counts; }
+// every question this person is allowed to see, as plain records (for the region progress board)
+export async function askVisible(env, who) { return (((await kv(env).get(ASK)) || [])).filter((q) => canSee(who, q)); }
 
 // ---------------- HQ-only notes ----------------
 const NOTES = 'v2:hqnotes';

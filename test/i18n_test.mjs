@@ -13,4 +13,7 @@ ok('the flag label after a dot', t('· Test too slow') === '· Kipimo kwa polepo
 ok('help text', t('Still stuck?') === 'Bado umekwama?');
 ok('names and unknown text are left alone', t('Ashura Waziri') === 'Ashura Waziri' && t('Hello team') === 'Hello team');
 ok('leading and trailing spaces are kept', t(' Fix it: ') === ' Rekebisha: ');
+ok('the standing card translates: tags, ranks and the reasons the system writes', t('Needs a hand') === 'Unahitaji msaada' && t('2 of 8') === '2 kati ya 8' && t('Sends records the same day (100%)') === 'Unatuma rekodi siku hiyohiyo (100%)' && t('High test quality (93)') === 'Ubora wa juu wa upimaji (93)', t('2 of 8'));
+ok('the waiting-on-you sentences translate with their numbers', t('1 query waiting for a response beyond 2 working days (oldest 6)') === 'Hoja 1 zinasubiri jibu kwa zaidi ya siku 2 za kazi (ya zamani zaidi: siku 6)' && t('2 responses sent back for rework') === 'Majibu 2 yamerudishwa yarekebishwe' && t('36 open data checks on 131 tests') === 'Ukaguzi 36 wa data uko wazi kwenye vipimo 131');
+ok('the team sentence translates', t('3 of 4 team members have a query waiting for a response. Your RC and ARC will help.').startsWith('3 kati ya wanatimu 4'));
 done();
