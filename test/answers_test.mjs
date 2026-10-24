@@ -1,7 +1,7 @@
 // Answer patterns and phones in Team patterns: counts only, fair comparison, support-first wording, safe to read once
 import { ok, done, env, mem } from './_kit.mjs';
 import { answerScan } from '../src/answerscan.js';
-import { addStudents } from '../src/ingest.js';
+import { addStudents, clearForRebuild } from '../src/ingest.js';
 import { recordPattern, summarizeAnswers } from '../src/answers.js';
 import { summarize } from '../src/summary.js';
 import { computePatterns } from '../src/patterns.js';
@@ -121,4 +121,13 @@ ok('the scan gives exactly the counts the sync would keep', sameAp && Object.key
 ok('the scan writes nothing to the store', mem.size === before);
 ok('the scan returns no pupil ids or numbers and no answers', !/"S\d{4,}"/.test(JSON.stringify(sc)) && Object.values(sc.cells).some((c) => c.ex.length) && Object.values(sc.cells).every((c) => c.ex.every((e) => e.length === 7 && e[0] === '' && e[1] === '')));
 ok('the scan is for HQ Admin only', (await answerScan(e2, { role: 'hq', level: 'viewer' }, {})).status === 403 && (await answerScan(e2, { role: 'rc' }, {})).status === 403 && (await answerScan(e2, { role: 'volunteer' }, {})).status === 403);
+// ---- 7. a rebuild reads the same records again and must give exactly the same counts, with nothing left over ----
+{
+  const st = { yrs: {} }; addStudents(st, recs); const Yr = st.yrs['2026'];
+  const first = JSON.stringify(summarizeAnswers(Yr.cells)); const ex1 = JSON.stringify(Object.values(Yr.cells).map((c) => c.ex.ap));
+  clearForRebuild(Yr, 'students');
+  ok('a rebuild clears the answer counters with the rest of the cells', Object.keys(Yr.cells).length === 0);
+  addStudents(st, recs);
+  ok('reading the records again after a rebuild gives the same answer counts and the same exemplars', JSON.stringify(summarizeAnswers(Yr.cells)) === first && JSON.stringify(Object.values(Yr.cells).map((c) => c.ex.ap)) === ex1);
+}
 done();

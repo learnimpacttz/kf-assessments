@@ -72,22 +72,26 @@ export function addPattern(ap, p) {
 const r1 = (x) => (x === null || x === undefined || !Number.isFinite(x) ? null : Math.round(x * 10) / 10);
 const r2 = (x) => (x === null || x === undefined || !Number.isFinite(x) ? null : Math.round(x * 100) / 100);
 
-// Expected mixed blocks for each person: what the other testers got for the same slots at the same school and grade (so a strong or weak class does not look like a pattern),
-// and where fewer than 20 comparable blocks exist at that school, the national share for that grade and slot.
-// cells: { 'date|school|grade|name': { ap } }.  Returns { name: { recs, nomix, whole, asked, mixed, exp, var, team, days:{date:[recs,nomix,whole,asked,mixed]} } }
+// Expected mixed blocks for each person. The base is the share for all testers on the same grade and question block. Where other testers tested the same
+// grade at the same school, that base is adjusted for how strong that class was: the others' mixed blocks against what the base would give them, taken over
+// all question blocks together (so a few tests are enough), shrunk toward 1 when there is little data and kept within 0.4 to 2.5. A school full of pupils
+// who all fail every block therefore does not look like a pattern. Where nobody else tested that grade there, the base alone is used.
+// cells: { 'date|school|grade|name': { ap } }.  Returns { name: { recs, nomix, whole, asked, mixed, exp, var, team, ... } }
+const K_SHRINK = 10, MIN_OTHERS = 40, F_LO = 0.4, F_HI = 2.5;
 export function summarizeAnswers(cells, canon = (n) => n) {
   const nat = {}, grp = {}, own = {};
   const rows = [];
   for (const [key, c] of Object.entries(cells)) {
     if (!c.ap) continue; const [date, school, grade, raw] = key.split('|'); const name = canon(raw); if (!name) continue;
     rows.push([date, school, grade, name, c.ap]);
+    const g = (grp[school + '|' + grade] ||= Array.from({ length: SLOTS }, () => [0, 0])), mine = (own[name + '|' + school + '|' + grade] ||= Array.from({ length: SLOTS }, () => [0, 0]));
     for (let i = 0; i < SLOTS; i++) {
       const a = c.ap[3 + 2 * i], m = c.ap[4 + 2 * i]; if (!a) continue;
-      const nk = grade + '|' + i; const nt = (nat[nk] ||= [0, 0]); nt[0] += a; nt[1] += m;
-      const gk = school + '|' + grade + '|' + i; const gt = (grp[gk] ||= [0, 0]); gt[0] += a; gt[1] += m;
-      const ok = name + '|' + gk; const ot = (own[ok] ||= [0, 0]); ot[0] += a; ot[1] += m;
+      const nt = (nat[grade + '|' + i] ||= [0, 0]); nt[0] += a; nt[1] += m;
+      g[i][0] += a; g[i][1] += m; mine[i][0] += a; mine[i][1] += m;
     }
   }
+  const pNat = (grade, i) => { const t = nat[grade + '|' + i]; return t && t[0] ? t[1] / t[0] : 0; };
   const out = {};
   for (const [date, , , name, ap] of rows) {
     const o = (out[name] ||= { recs: 0, nomix: 0, whole: 0, asked: 0, mixed: 0, exp: 0, var: 0, team: 0, mchk: 0, mm: 0, days: {} });
@@ -95,14 +99,12 @@ export function summarizeAnswers(cells, canon = (n) => n) {
     const d = (o.days[date] ||= [0, 0, 0, 0, 0]); d[0] += ap[0]; d[1] += ap[1]; d[2] += ap[2];
     for (let i = 0; i < SLOTS; i++) { d[3] += ap[3 + 2 * i]; d[4] += ap[4 + 2 * i]; }
   }
-  // blocks are counted once per person and group, not once per day
-  for (const [ok, [a, m]] of Object.entries(own)) {
-    const [name, school, grade, slot] = ok.split('|'); const o = out[name]; if (!o) continue;
-    const g = grp[school + '|' + grade + '|' + slot], nt = nat[grade + '|' + slot];
-    const oa = g[0] - a, om = g[1] - m;
-    let p, viaTeam = false;
-    if (oa >= 20) { p = om / oa; viaTeam = true; } else p = nt && nt[0] ? nt[1] / nt[0] : 0;
-    o.asked += a; o.mixed += m; o.exp += a * p; o.var += a * p * (1 - p); if (viaTeam) o.team += a;
+  // blocks are counted once per person, school and grade, not once per day
+  for (const [ok, slots] of Object.entries(own)) {
+    const [name, school, grade] = ok.split('|'); const o = out[name]; if (!o) continue; const g = grp[school + '|' + grade];
+    let oa = 0, om = 0, oe = 0; for (let i = 0; i < SLOTS; i++) { const a = g[i][0] - slots[i][0], m = g[i][1] - slots[i][1]; oa += a; om += m; oe += a * pNat(grade, i); }
+    const viaTeam = oa >= MIN_OTHERS; const F = viaTeam ? Math.min(F_HI, Math.max(F_LO, (om + K_SHRINK) / (oe + K_SHRINK))) : 1;
+    for (let i = 0; i < SLOTS; i++) { const [a, m] = slots[i]; if (!a) continue; const p = Math.min(0.97, pNat(grade, i) * F); o.asked += a; o.mixed += m; o.exp += a * p; o.var += a * p * (1 - p); if (viaTeam) o.team += a; }
   }
   for (const o of Object.values(out)) {
     o.nomix_pct = o.recs ? r1((100 * o.nomix) / o.recs) : null; o.whole_pct = o.recs ? r1((100 * o.whole) / o.recs) : null;

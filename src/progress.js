@@ -96,6 +96,13 @@ function reviewTimes(queries, region, names) {
   return times;
 }
 
+// schools due before today by the plan, and how many of them are complete (the same rule everywhere)
+export function planCounts(plan, sum, today) {
+  const locked = Boolean(plan && plan.status === 'locked'); if (!locked) return { submitted: false, due: 0, complete: 0, behind: 0 };
+  const due = new Set((plan.visits || []).filter((v) => v.date < today).map((v) => v.school)); const complete = [...due].filter((id) => (sum.schools[id] || {}).done).length;
+  return { submitted: true, due: due.size, complete, behind: due.size - complete };
+}
+
 // everything for one region
 export function regionProgress({ region, sum, plan, queries, flags, asks, today }) {
   const ids = (SCHOOLS_BY_REGION[region] || []).map((s) => s.id);
@@ -195,12 +202,15 @@ function coordinatorBoard({ region, sum, flags, waits, queries, asks, visits, sc
   });
 }
 
-// one person's own standing for a volunteer's page: their row, their ranks, what waits on them, and who is carrying the team (named); the people behind are only counted
+// a test admin's own standing, with the whole team named on both sides (carrying the team, and needing a hand), so everyone can thank and help
 export function standingFor(prog, who) {
   const me = prog.team.find((r) => r.id === who.id) || null;
-  const carrying = prog.team.filter((r) => r.tag === 'carrying' && r.id !== who.id).slice(0, 4).map((r) => ({ name: r.name, position: r.position, tested: r.tested, helps: r.helps.slice(0, 2) }));
+  const peer = (r) => ({ name: r.name, position: r.position, role: r.role, tested: r.tested, quality: r.quality, same_pct: r.same_pct, tag: r.tag, helps: r.helps, costs: r.costs, queries: { owed: r.queries.owed, overdue: r.queries.overdue, oldest: r.queries.oldest } });
+  const others = prog.team.filter((r) => r.id !== who.id);
+  const carrying = others.filter((r) => r.helps.length >= 2).sort((a, b) => b.helps.length - a.helps.length || b.tested - a.tested).map(peer);
+  const needs = others.filter((r) => r.costs.length).sort((a, b) => b.queries.overdue - a.queries.overdue || b.costs.length - a.costs.length).map(peer);
   const vols = prog.team.filter((r) => r.role === 'volunteer');
-  return { region: prog.region, today: prog.today, me, carrying, team: { members: vols.length, waiting: vols.filter((r) => r.queries.overdue > 0).length, overdue_queries: vols.reduce((t, r) => t + r.queries.overdue, 0), same_day: pct(vols.filter((r) => r.same_pct != null && r.same_pct >= PROGRESS.sameDayGood).length, vols.filter((r) => r.same_pct != null).length) },
+  return { region: prog.region, today: prog.today, me, carrying, needs, team: { members: vols.length, waiting: vols.filter((r) => r.queries.overdue > 0).length, overdue_queries: vols.reduce((t, r) => t + r.queries.overdue, 0), same_day: pct(vols.filter((r) => r.same_pct != null && r.same_pct >= PROGRESS.sameDayGood).length, vols.filter((r) => r.same_pct != null).length) },
     schools: { total: prog.counters.schools.total, done: prog.counters.schools.done }, queries_waiting: me ? me.queries.owed : 0 };
 }
 

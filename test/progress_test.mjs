@@ -89,12 +89,15 @@ ok('resolved and closed queries stay visible, after the open ones', detA.queries
 ok('plan changes at the school are listed with the reason and whether they were late', schoolDetail({ id: C, sum, plan, queries, flags, asks, today: TODAY }).plan_changes[0].late === true);
 ok('a school outside the data gives nothing', schoolDetail({ id: 'nope', sum, plan, queries, flags, asks, today: TODAY }) === null);
 
-// ---- a volunteer sees their own standing and who carries the team, and only counts of the rest ----
+// ---- a volunteer sees their own standing and the whole team, named on both sides ----
 const st = standingFor(P, { id: v2.id });
 ok('the volunteer sees their own row, with what waits on them', st.me && st.me.name === v2.name && st.queries_waiting === 1 && st.me.costs.length >= 1);
-ok('the team behind is only counted, never named', typeof st.team.overdue_queries === 'number' && !JSON.stringify(st).includes(v1.name) === true || st.carrying.every((c) => c.helps.length >= 1));
-ok('nobody sees themselves among those carrying the team', !st.carrying.some((c) => c.name === v2.name));
+ok('colleagues who are carrying the team are named, with the reasons', st.carrying.length >= 1 && st.carrying.every((c) => c.name && c.helps.length >= 2) && st.carrying.some((c) => c.name === v1.name), JSON.stringify(st.carrying.map((c) => c.name)));
+const st1 = standingFor(P, { id: v1.id });
+ok('colleagues who need a hand are named too, with what is waiting', st1.needs.some((c) => c.name === v2.name && c.costs.length >= 1 && c.queries.overdue === 1) && st1.needs.every((c) => c.name && c.costs.length >= 1), JSON.stringify(st1.needs.map((c) => c.name)));
+ok('nobody sees themselves in either list', ![...st.carrying, ...st.needs].some((c) => c.name === v2.name));
+ok('the lists are longer than five when the team is', (() => { const big = { ...P, team: Array.from({ length: 9 }, (_, i) => ({ id: 900 + i, name: 'Colleague ' + i, role: 'volunteer', position: 'Volunteer', tested: 50 + i, quality: 95, same_pct: 95, tag: 'carrying', helps: ['a', 'b'], costs: [], queries: { owed: 0, overdue: 0, oldest: 0 } })) }; return standingFor(big, { id: 1 }).carrying.length === 9; })());
 const flat = JSON.stringify(st);
-ok('the volunteer payload has no other person with a cost, no region waiting board and no pupil details', !/costs/.test(JSON.stringify({ ...st, me: null })) && !('waiting' in st) && !/"S\d{4,}"/.test(flat));
+ok('the volunteer payload has no regional waiting board, no school list and no pupil details', !('waiting' in st) && !('schools_list' in st) && !/"S\d{4,}"/.test(flat));
 ok('no coordinates anywhere', !/-?\d{1,2}\.\d{5,}/.test(JSON.stringify(P)));
 done();

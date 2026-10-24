@@ -7,6 +7,7 @@ import { pilotView, pilotSet, PILOT_ALLOC } from './pilot.js';
 import { locationCheck } from './location.js';
 import { answerScan } from './answerscan.js';
 import { regionProgress, schoolDetail, standingFor } from './progress.js';
+import { togetherBoard } from './together.js';
 import { computePatterns } from './patterns.js';
 import { boxPublic, setBoxKey, setBoxLive, submitBox, listBox, markBox, deleteBox, boxSummary, markSaved, takePending } from './box.js';
 import { SCHOOL_COORDS, COORD_SOURCE, COORD_WRONG } from './data/school_coords.js';
@@ -696,6 +697,12 @@ export default {
         const prog = regionProgress({ region, sum, plan, queries, flags, asks, today });
         if (who.role === 'volunteer') return json({ status: 'ok', standing: standingFor(prog, who) });
         return json({ status: 'ok', as_of: sum.as_of, ...prog });
+      }
+      // ---------- the page every team shares: all regions, and everyone's queries and reply speed ----------
+      if (path === '/api/together') {
+        const { sum } = await loadSummary(env, CURRENT_YEAR); if (!sum) return json({ status: 'waiting' });
+        const plans = Object.fromEntries(await Promise.all(REGIONS.map(async (r) => [r, await getPlan(env, r)])));
+        return json({ status: 'ok', as_of: sum.as_of, ...togetherBoard({ sum, queries: await loadQueries(env), plans, today: eatToday() }) });
       }
       // ---------- payments (HQ Admin only): the COD engine on the stored year; no names or bank details ----------
       if (path === '/api/payments') {
