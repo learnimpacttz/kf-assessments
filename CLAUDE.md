@@ -13,11 +13,12 @@ A Cloudflare Worker (`src/index.js`) that serves a single-page app (`public/app.
 5. **Keep changes small** and explain each one in plain words in the commit message.
 6. **Update the documents** (user guide, manual, quick start, in-app Help) when users can see the change, and keep the change log.
 
+7. **American spelling** in everything users see and in documents.
+8. **Review the diff yourself** before accepting any AI-written change. Read what changed, not only the summary.
+
 ## Major changes: update the manuals and the architecture, and the owner confirms
 A change is **major** if it adds or removes a page, a role or a kind of check; changes who can see or do something; changes what data is kept or where; changes a store, a scheduled job, the release path, a secret or an account; touches sign-in, the review chain, deletion and correction, payments, backups, alerts or emails; or is a step of the Part 7 plan (one Command Center for both programs).
 For a major change, in the same release: (1) update the **architecture set** (the part and its diagram; see Part 11, "What to update when something changes"), the user guide, field manual, quick start and in-app Help; (2) write a 3 to 5 line "what changed" note in plain words; (3) **show the note and the changed documents to the person running the Command Center (the Systems Owner) and wait for their confirmation**. Until then mark the documents "draft for confirmation" and do not publish them as final to Help or to the shared SharePoint folder; (4) after confirmation, publish, update the shared folder, raise the version and date, add a line to the decisions log (Part 12) if a decision was made, and record who confirmed and when in the release note. The architecture set lives in `LearnImpact_ED/LearnImpact_Systems_Architecture_2026-10/` (source in `_source/`, rebuild with `python3 build.py all`) and is copied to SharePoint under Command Center, `04_Systems Architecture`.
-7. **American spelling** in everything users see and in documents.
-8. **Review the diff yourself** before accepting any AI-written change. Read what changed, not only the summary.
 
 ## Data that is built up from KoBo must be safe to read twice
 Anything added to the stored aggregates (`src/ingest.js`, `src/sync.js`, `src/summary.js`) has to give the same answer after a rebuild, and must not invent a repeat when a record is read more than once. Counts are reset by a rebuild (`clearForRebuild`) and normal syncs read each record once (watermark); lists are written once per record id. On 20 Oct 2026 a Students rebuild left the pupil-number list in place and re-added to it, which produced about 200 false "pupil tested twice" queries. So: add to a list only once per KoBo record id (`addRn`), clear only what a form wrote (`clearForRebuild`), read lists through `uniqueRn`, and keep `test/rebuild_integrity_test.mjs` passing. If the Bridge warns "Repeated records were ignored", tell the systems owner.
