@@ -11,7 +11,7 @@ const KEY = 'v2:queries';
 export const QUERY_REPLY_DAYS = 2;
 export function overdueQueries(flags, today) {
   // overdue = nobody has submitted a response (or written a comment) and the 2 working days have passed
-  return (flags || []).filter((f) => f.date && !(f.q && f.q.status === 'resolved') && !(f.q && f.q.wf && f.q.wf.response) && !(f.q && f.q.thread && f.q.thread.length) && workingDaysBetween(f.date, today) > QUERY_REPLY_DAYS);
+  return (flags || []).filter((f) => f.date && !(f.q && f.q.status === 'resolved') && !(f.q && f.q.wf && f.q.wf.response) && !(f.q && f.q.thread && f.q.thread.length) && workingDaysBetween(f.since || f.date, today) > QUERY_REPLY_DAYS);
 }
 export const loadQueries = async (env) => (await kv(env).get(KEY)) || {};
 
@@ -33,7 +33,7 @@ export function decorate(flags, queries) {
     const k = flagKey(f);
     const q = queries[k];
     const vst = f.admin ? staffForKoboName(f.admin) : null;
-    return { ...f, qk: k, vol: Boolean(vst && vst.role === 'volunteer'), vol_name: vst && vst.role === 'volunteer' ? vst.name : null, q: q ? { status: q.status, thread: q.thread, wf: q.wf ? { stage: q.wf.stage, response: q.wf.response, responder: q.wf.responder, history: q.wf.history, rework_note: q.wf.rework_note } : null } : null };
+    return { ...f, qk: k, vol: Boolean(vst && vst.role === 'volunteer'), vol_name: vst && vst.role === 'volunteer' ? vst.name : null, q: q ? { status: q.status, thread: q.thread, wf: q.wf ? { stage: q.wf.stage, response: q.wf.response, responder: q.wf.responder, history: q.wf.history, rework_note: q.wf.rework_note, approved_at: q.wf.approved_at } : null } : null };
   });
 }
 

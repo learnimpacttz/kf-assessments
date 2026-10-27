@@ -3,7 +3,7 @@
 import { computePatterns } from './patterns.js';
 import { kv } from './store.js';
 import { SCHOOL_BY_ID, REGIONS, STAFF, FIELD_START, FIELD_END, isWorkingDay, addDays, workingDaysBetween } from './config.js';
-import { decorate, overdueQueries } from './queries.js';
+import { decorate, overdueQueries, QUERY_REPLY_DAYS } from './queries.js';
 import { getPlan, withNotices } from './plan.js';
 
 const MSKEY = 'v2:bridge:ms', SNAPS = 'v2:bridge:snaps';
@@ -45,6 +45,9 @@ export async function computeBridge(env, who, { sum, queries, today, quota, pred
   const stages = { waiting: 0, team: 0, hq1: 0, final: 0 }; let oldest = 0; const ages = [0, 0, 0, 0];
   for (const f of open) { const st = stage(f); if (st === 'team') stages.team++; else if (st === 'hq1') stages.hq1++; else if (st === 'final') stages.final++; else stages.waiting++; const age = f.date ? Math.max(0, dayDiff(f.date, today)) : 0; oldest = Math.max(oldest, age); ages[age <= 1 ? 0 : age === 2 ? 1 : age <= 5 ? 2 : 3]++; }
   const overdue = overdueQueries(flags, today); for (const f of overdue) reg(regionOf(f)).overdue++;
+  // waiting at HQ: the field has replied and the query is with the first HQ review or final approval. Its clock runs from the day it reached that step, so it is not mixed up with the field's overdue.
+  const hqWait = open.filter((f) => stage(f) === 'hq1' || stage(f) === 'final').map((f) => { const h = (f.q && f.q.wf && f.q.wf.history) || []; const at = h.length ? String(h[h.length - 1].at).slice(0, 10) : today; return { st: stage(f), d: workingDaysBetween(at, today) }; });
+  const hqLate = hqWait.filter((x) => x.d > QUERY_REPLY_DAYS);
   const med = (a) => { const v = a.filter((x) => Number.isFinite(x)).sort((x, y) => x - y); return v.length ? Math.round(v[Math.floor(v.length / 2)] * 10) / 10 : null; };
   const firstReply = [], toApprove = []; let closed7 = 0; const cut = addDays(today, -7);
   for (const f of flags) { const w = f.q && f.q.wf; if (!w) continue; if (w.response && f.date) firstReply.push(dayDiff(f.date, String(w.response.at).slice(0, 10))); if (w.approved_at && f.date) { toApprove.push(dayDiff(f.date, String(w.approved_at).slice(0, 10))); if (String(w.approved_at).slice(0, 10) > cut) closed7++; } }
@@ -65,7 +68,8 @@ export async function computeBridge(env, who, { sum, queries, today, quota, pred
   // ---- needs you now (ranked; each has the place to act)
   const needs = []; const mine = open.filter((f) => (stage(f) === 'hq1' && lvl >= 2 && !/mundo/i.test(who.name || '')) || (stage(f) === 'final' && lvl >= 3)).length;
   if (mine) needs.push({ sev: 'bad', title: `${mine} quer${mine === 1 ? 'y waits' : 'ies wait'} for your review`, text: 'Approve, edit and approve, or send back, in order: team, first HQ review, final approval.', act: { tab: 'allq', filter: 'mine', label: 'Open reviews' } });
-  if (overdue.length) needs.push({ sev: 'bad', title: `${overdue.length} quer${overdue.length === 1 ? 'y has' : 'ies have'} no reply after 2 working days`, text: 'Remind the person, or ask the coordinator to chase.', act: { tab: 'allq', filter: 'overdue', label: 'Open overdue' } });
+  if (hqLate.length) needs.push({ sev: 'warn', title: `${hqLate.length} quer${hqLate.length === 1 ? 'y has' : 'ies have'} waited more than 2 working days at HQ`, text: `The field has replied. ${hqLate.filter((x) => x.st === 'hq1').length} wait for the first HQ review and ${hqLate.filter((x) => x.st === 'final').length} for final approval. These are not overdue from the teams.`, act: { tab: 'allq', label: 'Open queries' } });
+  if (overdue.length) needs.push({ sev: 'bad', title: `${overdue.length} quer${overdue.length === 1 ? 'y has' : 'ies have'} no reply from the field after 2 working days`, text: 'Remind the person, or ask the coordinator to chase.', act: { tab: 'allq', filter: 'overdue', label: 'Open overdue' } });
   if (askHq) needs.push({ sev: askUrgent ? 'bad' : 'warn', title: `${askHq} question${askHq === 1 ? '' : 's'} from the field${askUrgent ? ', ' + askUrgent + ' urgent' : ''}`, text: 'The person gets an alert when you answer.', act: { tab: 'questions', label: 'Answer' } });
   if (lvl >= 2 && waitJoram) needs.push({ sev: 'warn', title: `${waitJoram} edit or delete request${waitJoram === 1 ? '' : 's'} waiting for the first HQ review`, text: 'Data cleaning > requests.', act: { tab: 'clean', label: 'Open requests' } });
   if (lvl >= 3 && waitMundo) needs.push({ sev: 'warn', title: `${waitMundo} request${waitMundo === 1 ? '' : 's'} waiting for the final decision`, text: 'The originals are saved before anything is changed.', act: { tab: 'clean', label: 'Open requests' } });
@@ -87,7 +91,7 @@ export async function computeBridge(env, who, { sum, queries, today, quota, pred
   return {
     as_of: new Date().toISOString(), today, field: F, milestones: ms.map((m) => ({ ...m, days_left: dayDiff(today, m.date) })),
     clean: { records, not_clean: notClean, flagged, pending_records: pendRecords, rate: records ? Math.round(1000 * (1 - notClean / records)) / 10 : 100, edited: edited.length, by_type: Object.values(byType).sort((a, b) => b.records - a.records || b.checks - a.checks), by_region: byRegion, payment_ready: ready.length, complete: complete.length, schools: Object.values(sum.schools || {}).filter((s) => real(s.id)).length },
-    queries: { open: open.length, ...stages, overdue: overdue.length, oldest, ages, funnel, median_first_reply: med(firstReply), median_to_approve: med(toApprove), closed_per_day: Math.round(perDay * 10) / 10, clean_by: cleanBy, requests: { joram: waitJoram, mundo: waitMundo } },
+    queries: { open: open.length, ...stages, overdue: overdue.length, hq_wait: { hq1: hqWait.filter((x) => x.st === 'hq1').length, final: hqWait.filter((x) => x.st === 'final').length, late: hqLate.length, oldest_days: Math.max(0, ...hqWait.map((x) => x.d)) }, oldest, ages, funnel, median_first_reply: med(firstReply), median_to_approve: med(toApprove), closed_per_day: Math.round(perDay * 10) / 10, clean_by: cleanBy, requests: { joram: waitJoram, mundo: waitMundo } },
     notices_late: late, questions: { hq: askHq, urgent: askUrgent }, people: { active_today: usedToday, total: field.length, alerts_on: alertsOn }, quota: quota || null, nat: nat || null, needs, warnings,
   };
 }

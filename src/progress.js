@@ -33,7 +33,7 @@ export function waitingOn(f, region, today) {
   const last = hist.length ? hist[hist.length - 1].at : null;
   if (st === 'open' || st === 'rework') {
     const person = f.admin ? staffForKoboName(f.admin) : null;
-    const since = st === 'rework' ? last : f.date;
+    const since = st === 'rework' ? last : (f.since || f.date);
     const who = person ? person.name : 'RC or ARC';
     return { stage: st, who, role: person ? person.role : 'coordinators', days: wdSince(since, today), overdue: st === 'open' && overdueQueries([f], today).length > 0 };
   }

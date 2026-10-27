@@ -14,6 +14,8 @@ import { recordPattern, addPattern, emptyAp } from './answers.js';
 
 // How late a record was sent: whole days after the visit date (0 = the same day) and hours from finishing the form to sending it
 const parseUtc = (s) => Date.parse(/[zZ]$|[+-]\d\d:?\d\d$/.test(s) ? s : s + 'Z');
+// the later of two sending times (records are read in any order, and a check on late sending must see the last one)
+const laterOf = (a, b) => { if (!b) return a || ''; if (!a) return b; const x = parseUtc(String(a)), y = parseUtc(String(b)); return Number.isNaN(y) ? a : Number.isNaN(x) || y > x ? b : a; };
 function lateness(r, visitDate) {
   const sub = parseUtc(String(r._submission_time || '')); if (Number.isNaN(sub) || !visitDate) return null;
   const sd = new Date(sub + 3 * 3600e3).toISOString().slice(0, 10);
@@ -125,7 +127,7 @@ export function addStudents(state, records, opts = {}) {
     const c = (Y.cells[key] ||= { n: 0, av: 0, ts: 0, tn: 0, h: new Array(HIST_BUCKETS).fill(0), late: 0, far: 0, st: {}, ps: {}, h0: 99, h1: -1, sub: '', ex: { lo: [], hi: [], late: [], far: [] } });
     Y.n += 1;
     c.n += 1;
-    c.sub = r._submission_time || c.sub;
+    c.sub = laterOf(c.sub, r._submission_time);
     c.sb = addLate(c.sb, lateness(r, date));
     if (editedAfterSent(r, opts.approved)) { c.ed = (c.ed || 0) + 1; const ed = ((c.ex ||= {}).ed ||= []); if (ed.length < 4) ed.push([r.stuid || '', r['stu_info/rand_nr'] ?? '', null, (r.start || '').slice(11, 16), '', r._id]); }
     // availability: 1 = pupil present and tested, 2 = absent (emergence)
@@ -234,7 +236,7 @@ export function addSampling(state, records, opts = {}) {
       }
     }
     if (editedAfterSent(r, opts.approved)) { sg.ed = (sg.ed || 0) + 1; (sg.edr ||= []).length < 4 && sg.edr.push(r._id); }
-    sg.sub = r._submission_time || '';
+    sg.sub = laterOf(sg.sub, r._submission_time);
     sg.sb = addLate(sg.sb, lateness(r, sg.date));
     Y.nsamp = (Y.nsamp || 0) + 1;
   }
