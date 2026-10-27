@@ -66,6 +66,12 @@ const above = (h, minutes) => {
   return s;
 };
 
+const DAYN = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'], MONN = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const dayWords = (iso) => { const d = new Date(iso + 'T00:00:00Z'); return `${DAYN[d.getUTCDay()]} ${d.getUTCDate()} ${MONN[d.getUTCMonth()]}`; };
+const utcMs = (s) => Date.parse(/[zZ]$|[+-]\d\d:?\d\d$/.test(s) ? s : s + 'Z');
+const spanWords = (min) => { const m = Math.max(0, Math.round(min)); const h = Math.floor(m / 60); return h >= 1 ? `${h} hour${h > 1 ? 's' : ''}${m % 60 ? ` ${m % 60} min` : ''}` : `${m} minute${m === 1 ? '' : 's'}`; };
+// The words that explain every time shown on a query (the phone clock and the server clock are different things)
+export const TIME_NOTE = 'Started and finished are the times on the phone when the test was done. Sent is the time the record reached KoBo (East Africa Time). After the test is the wait between finishing and sending.';
 const hms = (t) => `${String(Math.floor(t / 3600)).padStart(2, '0')}:${String(Math.floor((t % 3600) / 60)).padStart(2, '0')}`;
 const sname = (id) => (SCHOOL_BY_ID[id]?.name || PRACTICE_BY_ID[id]?.name || id).trim();
 
@@ -83,22 +89,22 @@ export function analyseDay(date, events) {
     // 1. overlapping tests on one phone: a phone can only run one test at a time
     const over = [];
     for (let i = 0; i < list.length; i++) for (let j = i + 1; j < list.length && list[j][1] < list[i][2]; j++) if (list[i][2] - list[j][1] > 30 && !(list[i][6] === 's' && list[j][6] === 's') && !(list[i][5] && list[i][5] === list[j][5])) over.push([list[i], list[j]]); // the same person overlapping is caught per person below
-    if (over.length) add('devoverlap', 'warn', dev, over.slice(0, 4).flat(), `Phone ${code} recorded ${over.length} pair(s) of tests that overlap in time, for example ${hms(over[0][0][1])}-${hms(over[0][0][2])} and ${hms(over[0][1][1])}-${hms(over[0][1][2])}`, 'One phone cannot run two tests at once. Check whether records were edited or entered twice.', 'one test at a time');
+    if (over.length) add('devoverlap', 'warn', dev, over.slice(0, 4).flat(), `Phone ${code} has ${over.length} pair${over.length > 1 ? 's' : ''} of tests that ran at the same time. For example one test ran from ${hms(over[0][0][1])} to ${hms(over[0][0][2])} and another from ${hms(over[0][1][1])} to ${hms(over[0][1][2])}`, `One phone cannot run two tests at once. Check whether records were edited or entered twice. ${TIME_NOTE}`, 'one test at a time');
     // 2. the phone appears at different schools within a short time
     const trav = [];
     for (let i = 1; i < list.length; i++) if (list[i][3] !== list[i - 1][3]) { const gap = list[i][1] - list[i - 1][2]; if (gap < 30 * 60) trav.push({ a: list[i - 1], b: list[i], gap }); }
-    if (trav.length) { const worst = Math.min(...trav.map((t) => t.gap)); add('devtravel', worst < 10 * 60 ? 'bad' : 'warn', dev, trav.slice(0, 3).flatMap((t) => [t.a, t.b]), `Phone ${code} sent tests from ${sname(trav[0].a[3])} at ${hms(trav[0].a[2])} and from ${sname(trav[0].b[3])} at ${hms(trav[0].b[1])}, ${Math.max(0, Math.round(trav[0].gap / 60))} minute(s) apart${trav.length > 1 ? ` (${trav.length} such moves that day)` : ''}`, 'Schools are rarely this close. Check whether the phone was passed between teams or the school was chosen wrongly.', 'at least 30 min between schools'); }
+    if (trav.length) { const worst = Math.min(...trav.map((t) => t.gap)); add('devtravel', worst < 10 * 60 ? 'bad' : 'warn', dev, trav.slice(0, 3).flatMap((t) => [t.a, t.b]), `Phone ${code} was used at two different schools very close in time. The last test at ${sname(trav[0].a[3])} finished at ${hms(trav[0].a[2])} and the next test, at ${sname(trav[0].b[3])}, started at ${hms(trav[0].b[1])}, which is ${trav[0].gap >= 0 ? `${spanWords(trav[0].gap / 60)} later` : `${spanWords(-trav[0].gap / 60)} before the first one finished`}${trav.length > 1 ? ` (${trav.length} such moves that day)` : ''}. These are the start and finish times on the phone, not the time of sending`, `Schools are rarely this close. Check whether the phone was passed between teams or the school was chosen wrongly. ${TIME_NOTE}`, 'at least 30 min between schools'); }
     // 3. jumping back and forth between grades in the same school
     const sw = {};
     for (let i = 2; i < list.length; i++) { const [p2, p1, c] = [list[i - 2], list[i - 1], list[i]]; if (c[3] === p1[3] && p1[3] === p2[3] && c[4] === p2[4] && c[4] !== p1[4] && c[1] - p2[2] < 30 * 60) (sw[c[3]] ||= []).push([p2, p1, c]); }
-    for (const [school, runs] of Object.entries(sw)) if (runs.length >= 2) add('devswitch', 'warn', dev, runs.slice(0, 2).flat(), `Phone ${code} went back and forth between grades ${runs.length} times at ${sname(school)}`, 'Each person usually works one class. Ask who was testing which class.', 'one class at a time');
+    for (const [school, runs] of Object.entries(sw)) if (runs.length >= 2) add('devswitch', 'warn', dev, runs.slice(0, 2).flat(), `Phone ${code} went back and forth between grades ${runs.length} times at ${sname(school)}`, `Each person usually works one class. Ask who was testing which class. ${TIME_NOTE}`, 'one class at a time');
     // 4. one phone used under more than one name on the same day, at any time and at any school (people swapping, even hours apart)
     const named = list.filter((e) => e[5]); const who = [...new Set(named.map((e) => e[5]))];
     if (who.length >= 2) {
       const seq = []; for (const e of named) if (seq[seq.length - 1] !== e[5]) seq.push(e[5]);
       const back = seq.length > who.length; // A, then B, then A again: the phone keeps changing hands
       const span = who.map((n) => { const m = named.filter((e) => e[5] === n); return `${n} ${hms(Math.min(...m.map((e) => e[1])))}-${hms(Math.max(...m.map((e) => e[2])))}`; }).join('; ');
-      add('devpeople', back ? 'bad' : 'warn', dev, who.flatMap((n) => { const m = named.filter((e) => e[5] === n); return m.length > 1 ? [m[0], m[m.length - 1]] : m; }), `Phone ${code} was used under ${who.length} names on the same day: ${span}${back ? ', switching back and forth' : ''}`, 'Each person should use their own phone and their own name. When two people share a phone we cannot tell who tested which child.', 'one name per phone');
+      add('devpeople', back ? 'bad' : 'warn', dev, who.flatMap((n) => { const m = named.filter((e) => e[5] === n); return m.length > 1 ? [m[0], m[m.length - 1]] : m; }), `Phone ${code} was used under ${who.length} names on the same day: ${span}${back ? ', switching back and forth' : ''}`, `Each person should use their own phone and their own name. When two people share a phone we cannot tell who tested which child. ${TIME_NOTE}`, 'one name per phone');
     }
   }
   // 5a. one person with two tests running at the same time (same phone or different phones, same school or not)
@@ -106,7 +112,7 @@ export function analyseDay(date, events) {
   for (const [who, list] of Object.entries(byName)) {
     const t = list.filter((e) => e[6] === 't').sort((a, b) => a[1] - b[1]); const pairs = [];
     for (let i = 0; i < t.length; i++) for (let j = i + 1; j < t.length && t[j][1] < t[i][2]; j++) if (t[i][2] - t[j][1] > 30) pairs.push([t[i], t[j]]);
-    if (pairs.length) { overlapped.add(who); const ph = new Set(pairs.flat().map((e) => e[0])); add('nameoverlap', pairs.length >= 3 ? 'bad' : 'warn', who, pairs.slice(0, 4).flat(), `${who} has ${pairs.length} pair(s) of tests that overlap in time, for example ${hms(pairs[0][0][1])}-${hms(pairs[0][0][2])} and ${hms(pairs[0][1][1])}-${hms(pairs[0][1][2])}${ph.size > 1 ? ', on ' + ph.size + ' different phones' : ' on one phone'}`, 'One person can test only one child at a time. Overlapping times can mean records were typed in afterwards, copied, or another person used this name.', 'one test at a time'); }
+    if (pairs.length) { overlapped.add(who); const ph = new Set(pairs.flat().map((e) => e[0])); add('nameoverlap', pairs.length >= 3 ? 'bad' : 'warn', who, pairs.slice(0, 4).flat(), `${who} has ${pairs.length} pair${pairs.length > 1 ? 's' : ''} of tests that ran at the same time. For example one test ran from ${hms(pairs[0][0][1])} to ${hms(pairs[0][0][2])} and another from ${hms(pairs[0][1][1])} to ${hms(pairs[0][1][2])}${ph.size > 1 ? ', on ' + ph.size + ' different phones' : ' on one phone'}`, `One person can test only one child at a time. Overlapping times can mean records were typed in afterwards, copied, or another person used this name. ${TIME_NOTE}`, 'one test at a time'); }
   }
   // 5b. one person on two phones at the same time
   for (const [who, list] of Object.entries(byName)) {
@@ -115,7 +121,7 @@ export function analyseDay(date, events) {
     list.sort((a, b) => a[1] - b[1]);
     const clash = [];
     for (let i = 0; i < list.length; i++) for (let j = i + 1; j < list.length && list[j][1] < list[i][2] + 120; j++) if (list[i][0] !== list[j][0] && list[i][3] !== undefined) clash.push([list[i], list[j]]);
-    if (clash.length) add('namedevs', 'warn', who, clash.slice(0, 3).flat(), `${who} sent tests from ${devs.length} different phones (${devs.map(devCodeOf).join(', ')}) with times that run together`, 'A person normally works with one phone. Check whether someone else used this name.', 'one phone per person');
+    if (clash.length) add('namedevs', 'warn', who, clash.slice(0, 3).flat(), `${who} has tests on ${devs.length} different phones (${devs.map(devCodeOf).join(', ')}) that ran at the same time`, `A person normally works with one phone. Check whether someone else used this name. ${TIME_NOTE}`, 'one phone per person');
   }
   return flags;
 }
@@ -132,6 +138,25 @@ const sumSb = (a, b) => { const o = [0, 0, 0, 0, 0, 0, 0]; mergeSb(o, a); mergeS
 function subStats(s) {
   const n = s[0] + s[1] + s[2] + s[3]; if (!n) return null;
   return { n, same: s[0], d1: s[1], d2: s[2], d3: s[3], same_pct: Math.round((100 * s[0]) / n), avg_h: s[6] ? Math.round((s[4] / s[6]) * 10) / 10 : null, max_h: s[6] ? Math.round(s[5] * 10) / 10 : null };
+}
+// Records sent on a later day than the test. The wait is described in clock times, and compared with the person's next school that day, because holding
+// finished work until the next school is the pattern to explain (poor signal happens, but it is not a reason to leave data on the phone).
+function sentLater(Y, canonFn, { c, n, date, schoolId, grade, who, kind }) {
+  const later = c.sb[1] + c.sb[2] + c.sb[3]; if (!later || !c.sub) return null;
+  const subMs = utcMs(c.sub); if (Number.isNaN(subMs)) return null;
+  const sent = new Date(subMs + 3 * 3600e3).toISOString(); const sentDay = sent.slice(0, 10), sentHm = sent.slice(11, 16);
+  const mine = (e) => canonFn(e[5]) === canonFn(who);
+  const fin = Math.max(0, ...((Y.tl && Y.tl[date]) || []).filter((e) => e[6] === (kind === 'form' ? 's' : 't') && e[3] === schoolId && +e[4] === +grade && mine(e)).map((e) => e[2]));
+  const finHm = fin ? hms(fin) : '';
+  const waitMin = finHm && sentDay ? (Date.parse(sentDay + 'T' + sentHm + ':00Z') - Date.parse(date + 'T' + finHm + ':00Z')) / 60000 : (c.sb[5] ? c.sb[5] * 60 : null);
+  const next = ((Y.tl && Y.tl[sentDay]) || []).filter((e) => mine(e) && e[3] !== schoolId).sort((a, b) => a[1] - b[1])[0];
+  const sentSec = +sentHm.slice(0, 2) * 3600 + +sentHm.slice(3) * 60; const gap = next ? Math.round((next[1] - sentSec) / 60) : null;
+  const nextName = next ? sname(next[3]) : '';
+  const what = kind === 'form' ? `The sampling form for ${sname(schoolId)} Grade ${grade}` : `${later} of ${n} test record${n > 1 ? 's' : ''} at ${sname(schoolId)} Grade ${grade}`;
+  const text = `${what} ${later > 1 || kind === 'form' ? 'were' : 'was'} sent on ${dayWords(sentDay)}, not on the test day ${dayWords(date)}. ${finHm ? `Testing finished at ${finHm} on the phone and the` : 'The'} last record was sent at ${sentHm}${waitMin != null ? `, ${spanWords(waitMin)} later` : ''}.${next ? ` The first test that day, at ${nextName}, started at ${hms(next[1])} on the phone, ${gap >= 0 ? `${spanWords(gap)} after the records were sent` : `${spanWords(-gap)} before the records were sent`}.` : ''}`;
+  const timing = [['Tested', `${dayWords(date)} at ${sname(schoolId)}, Grade ${grade}`], ...(finHm ? [['Testing finished (phone clock)', `${dayWords(date)}, ${finHm}`]] : []), ['Last record sent to KoBo', `${dayWords(sentDay)}, ${sentHm}`], ...(waitMin != null ? [['Wait between finishing and sending', spanWords(waitMin)]] : []), ...(next ? [[`Next school that day`, `${nextName}: first test started ${hms(next[1])} (phone clock), ${gap >= 0 ? spanWords(gap) + ' after sending' : spanWords(-gap) + ' before sending'}`]] : [])];
+  const held = next && gap >= -10 && gap <= 60; // sent at about the time the next school began: the records waited until the team was elsewhere
+  return { text, timing, held, hint: `${held ? 'The records were sent only when the next school was starting. ' : ''}Please explain: why were they not sent on ${dayWords(date)}, before leaving the school, and where were they sent from on ${dayWords(sentDay)}? Poor signal is a real problem, so say what was tried (moving to a place with signal, a hotspot) and what will be done so it does not repeat. Records should be sent the same day; turn on auto send in KoBo Collect so nothing waits on the phone.`, normal: 'sent the same day as the test' };
 }
 export function summarize(Y, { year, bands, today, owners = {}, practice = false }) {
   const UNI = practice ? PRACTICE_BY_ID : SCHOOL_BY_ID; // the schools and regions this run covers
@@ -209,7 +234,7 @@ export function summarize(Y, { year, bands, today, owners = {}, practice = false
     a.byGrade[grade].tn += c.tn; a.byGrade[grade].ts += c.ts;
     if (c.sb) mergeSb(a.sb, c.sb);
     if (c.ed) flags.push({ sev: 'warn', type: 'edited', school: schoolId, grade: +grade, admin: enumerator, date, recs: c.ex?.ed || [], text: `${c.ed} test record(s) were opened and changed after they were finished and sent`, hint: 'Finish each assessment on the phone before moving on and do not reopen a finished record. If something needs correcting, tell your RC. HQ makes the change in KoBo and it is logged.', normal: 'finish it once, never reopen it' });
-    if (c.sb && c.sb[2] + c.sb[3] > 0) flags.push({ sev: 'warn', type: 'latesub', school: schoolId, grade: +grade, admin: enumerator, date, text: `${c.sb[2] + c.sb[3]} test record(s) sent 2 or more days after the visit`, hint: 'Send records the same day. Turn on auto send in KoBo Collect so nothing waits on the phone.' });
+    if (c.sb && c.sb[1] + c.sb[2] + c.sb[3] > 0) { const L = sentLater(Y, canon, { c, n: c.n, date, schoolId, grade, who: enumerator, kind: 'tests' }); flags.push(L ? { sev: 'warn', type: 'latesub', school: schoolId, grade: +grade, admin: enumerator, date, text: L.text, hint: L.hint, normal: L.normal, timing: L.timing } : { sev: 'warn', type: 'latesub', school: schoolId, grade: +grade, admin: enumerator, date, text: `${c.sb[1] + c.sb[2] + c.sb[3]} test record(s) were sent on a later day than the test`, hint: 'Send records the same day. Turn on auto send in KoBo Collect so nothing waits on the phone.' }); }
     (work[enumerator] ||= []).push([date, schoolId, +grade, c.av, c.tn ? r1(c.ts / c.tn) : null]);
     { const dpx = (dayPeople[schoolId + '|' + date] ||= { names: new Set(), devs: new Set(), tdevs: new Set(), per: {} }); dpx.names.add(enumerator); dpx.tests = (dpx.tests || 0) + (c.n || 0); }
     for (const [dv, cnt] of Object.entries(c.dv || {})) { noteDev(dv, enumerator, schoolId, date, cnt, true); notePersonDev(enumerator, dv, date, schoolId, cnt); }
@@ -242,7 +267,7 @@ export function summarize(Y, { year, bands, today, owners = {}, practice = false
     if (sg.dev && sg.date) noteDev(sg.dev, sg.devWho || sg.enum || '', schoolId, sg.date, 1);
     if (sg.enum) { adminOf(sg.enum).samp += 1; if (sg.date) { const da = (sc.dayAdmins[sg.date] ||= []); if (!da.includes(sg.enum)) da.push(sg.enum); } }
     if (sg.sb && sg.enum) mergeSb(adminOf(sg.enum).sbs, sg.sb);
-    if (sg.sb && sg.enum && sg.sb[2] + sg.sb[3] > 0) flags.push({ sev: 'warn', type: 'latesub', school: schoolId, grade: +grade, admin: sg.enum, date: sg.date || '', text: `Sampling form sent 2 or more days after the visit`, hint: 'Send records the same day. Turn on auto send in KoBo Collect so nothing waits on the phone.' });
+    if (sg.sb && sg.enum && sg.sb[1] + sg.sb[2] + sg.sb[3] > 0) { const L = sg.date && sg.sub ? sentLater(Y, canon, { c: { sb: sg.sb, sub: sg.sub }, n: 1, date: sg.date, schoolId, grade, who: sg.enum, kind: 'form' }) : null; flags.push(L ? { sev: 'warn', type: 'latesub', school: schoolId, grade: +grade, admin: sg.enum, date: sg.date || '', text: L.text, hint: L.hint, normal: L.normal, timing: L.timing } : { sev: 'warn', type: 'latesub', school: schoolId, grade: +grade, admin: sg.enum, date: sg.date || '', text: 'The sampling form was sent on a later day than the visit', hint: 'Send records the same day. Turn on auto send in KoBo Collect so nothing waits on the phone.' }); }
     const seen = new Map();
     let notList = 0;
     const byAdmin = {};

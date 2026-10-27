@@ -314,7 +314,14 @@ window.SW_EXACT = {
 "For everyone": "Kwa kila mtu",
 "Shows the school you are at today, the sampling status and your own test times. Check it in the morning.": "Inaonyesha shule uliyopo leo, hali ya sampuli na muda wa vipimo vyako. Ikague asubuhi.",
 "Sending your records": "Kutuma rekodi zako",
-"Turn on auto send in KoBo Collect so records go out the same day. Sent late (2 or more days after the visit) is a check.": "Washa utumaji wa kiotomatiki kwenye KoBo Collect ili rekodi zitoke siku hiyohiyo. Kutuma kuchelewa (siku 2 au zaidi baada ya ziara) ni jambo linalokaguliwa.",
+"Turn on auto send in KoBo Collect so records go out the same day, before you leave the school. A record sent on a later day than the test is a check: it asks why it waited.": "Washa utumaji wa kiotomatiki kwenye KoBo Collect ili rekodi zitoke siku hiyohiyo, kabla ya kuondoka shuleni. Rekodi iliyotumwa siku ya baadaye kuliko mtihani ni jambo linalokaguliwa: linauliza kwa nini ilichelewa.",
+"When things happened": "Mambo yalivyotokea kwa wakati",
+"Tested": "Ilipimwa",
+"Testing finished (phone clock)": "Upimaji uliisha (saa ya simu)",
+"Last record sent to KoBo": "Rekodi ya mwisho ilitumwa KoBo",
+"Wait between finishing and sending": "Muda kati ya kumaliza na kutuma",
+"Next school that day": "Shule iliyofuata siku hiyo",
+"Sent after the test day": "Ilitumwa baada ya siku ya mtihani",
 "My queries: how to respond": "Hoja zangu: jinsi ya kujibu",
 "When a check is raised on your records, press": "Ukaguzi unapotolewa kwenye rekodi zako, bonyeza",
 "and say in a sentence or two what happened and what was done. Your RC or ARC reviews it, then HQ reviews and approves it. You can see every step and the history. If it is sent back, read the reason and write it again.": "na useme kwa sentensi moja au mbili nini kilitokea na nini kilifanyika. RC au ARC wako analikagua, kisha HQ analikagua na kuliidhinisha. Unaweza kuona kila hatua na historia. Likirudishwa, soma sababu kisha liandike tena.",
@@ -483,6 +490,7 @@ window.SW_EXACT = {
   const nm = (s) => s.replace(/ and /g, ' na ');
   const pl = (n, one, many) => (Number(n) === 1 ? one : many);
   // sentences with numbers and names (the checks are written by the server in English)
+  const spanSw = (t) => String(t).replace(/(\d+) hours?/g, '$1 saa').replace(/(\d+) min(?:utes?)?/g, '$1 dakika');
   const RULES = [
     [/(\d+) tests over (\d+) min in Grade (\d)/g, (m, a, b, g) => `Vipimo ${a} vilivyozidi dakika ${b} katika Darasa la ${g}`],
     [/(\d+) tests under ([\d.]+) min in Grade (\d)/g, (m, a, b, g) => `Vipimo ${a} chini ya dakika ${b} katika Darasa la ${g}`],
@@ -491,6 +499,14 @@ window.SW_EXACT = {
     [/(\d+) pupil number\(s\) tested twice in Grade (\d)(?: \(the same pupil number was also tested by ([^)]*)\))?/g, (m, a, g, who) => `Namba ${a} za wanafunzi zimepimwa mara mbili katika Darasa la ${g}${who ? ` (namba hiyohiyo ilipimwa pia na ${nm(who)})` : ''}`],
     [/(\d+) pupil\(s\) not on the sampling list in Grade (\d)/g, (m, a, g) => `Wanafunzi ${a} hawamo kwenye orodha ya sampuli katika Darasa la ${g}`],
     [/(\d+) test record\(s\) sent 2 or more days after the visit/g, (m, a) => `Rekodi ${a} za vipimo zilitumwa siku 2 au zaidi baada ya ziara`],
+    [/(\d+) of (\d+) test records? at (.+?) Grade (\d) (?:was|were) sent on ([A-Za-z]{3} \d+ [A-Za-z]{3}), not on the test day ([A-Za-z]{3} \d+ [A-Za-z]{3})\./g, (m, a, n, sc, g, d1, d2) => `Rekodi ${a} kati ya ${n} za vipimo katika ${sc} Darasa la ${g} zilitumwa ${d1}, si siku ya mtihani ${d2}.`],
+    [/(\d+) test records? at (.+?) Grade (\d) (?:was|were) sent on ([A-Za-z]{3} \d+ [A-Za-z]{3}), not on the test day ([A-Za-z]{3} \d+ [A-Za-z]{3})\./g, (m, a, sc, g, d1, d2) => `Rekodi ${a} za vipimo katika ${sc} Darasa la ${g} zilitumwa ${d1}, si siku ya mtihani ${d2}.`],
+    [/The sampling form for (.+?) Grade (\d) were sent on ([A-Za-z]{3} \d+ [A-Za-z]{3}), not on the test day ([A-Za-z]{3} \d+ [A-Za-z]{3})\./g, (m, sc, g, d1, d2) => `Fomu ya sampuli ya ${sc} Darasa la ${g} ilitumwa ${d1}, si siku ya ziara ${d2}.`],
+    [/Testing finished at (\d\d:\d\d) on the phone and the last record was sent at (\d\d:\d\d)(?:, (.+?) later)?\./g, (m, a, b, w) => `Upimaji uliisha saa ${a} kwenye simu na rekodi ya mwisho ilitumwa saa ${b}${w ? `, ${spanSw(w)} baadaye` : ''}.`],
+    [/The last record was sent at (\d\d:\d\d)(?:, (.+?) later)?\./g, (m, b, w) => `Rekodi ya mwisho ilitumwa saa ${b}${w ? `, ${spanSw(w)} baadaye` : ''}.`],
+    [/The first test that day, at (.+?), started at (\d\d:\d\d) on the phone, (.+?) (after|before) the records were sent\./g, (m, sc, t, w, ab) => `Mtihani wa kwanza siku hiyo, katika ${sc}, ulianza saa ${t} kwenye simu, ${spanSw(w)} ${ab === 'after' ? 'baada ya' : 'kabla ya'} rekodi kutumwa.`],
+    [/The records were sent only when the next school was starting\. /g, () => 'Rekodi zilitumwa tu wakati shule iliyofuata ilipokuwa inaanza. '],
+    [/Please explain: why were they not sent on ([A-Za-z]{3} \d+ [A-Za-z]{3}), before leaving the school, and where were they sent from on ([A-Za-z]{3} \d+ [A-Za-z]{3})\? Poor signal is a real problem, so say what was tried \(moving to a place with signal, a hotspot\) and what will be done so it does not repeat\. Records should be sent the same day; turn on auto send in KoBo Collect so nothing waits on the phone\./g, (m, d1, d2) => `Tafadhali eleza: kwa nini hazikutumwa ${d1}, kabla ya kuondoka shuleni, na zilitumwa kutoka wapi ${d2}? Mtandao hafifu ni tatizo halisi, kwa hiyo eleza ni nini kilijaribiwa (kwenda mahali penye mtandao, hotspot) na nini kitafanyika ili isijirudie. Rekodi zitumwe siku hiyohiyo; washa utumaji wa kiotomatiki kwenye KoBo Collect ili kisibaki kwenye simu.`],
     [/Sampling form sent 2 or more days after the visit/g, () => 'Fomu ya sampuli ilitumwa siku 2 au zaidi baada ya ziara'],
     [/(\d+) test record\(s\) were opened and changed after they were finished and sent/g, (m, a) => `Rekodi ${a} za vipimo zilifunguliwa na kubadilishwa baada ya kukamilika na kutumwa`],
     [/The sampling form \((\d+) records?\) was opened and changed after it was finished and sent/g, (m, a) => `Fomu ya sampuli (rekodi ${a}) ilifunguliwa na kubadilishwa baada ya kukamilika na kutumwa`],
