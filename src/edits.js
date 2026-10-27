@@ -55,8 +55,8 @@ export function checkEdit(b, kind, who) {
     if (who.role !== 'hq' && s.region !== who.region) return { error: 'You can move records only to a school in your region', status: 403 };
     return { edit: { field, value: s.id } };
   }
-  const vals = {}; for (const [id, v] of Object.entries(b.values || {})) { const n = Number(v); if (!Number.isInteger(n) || n < 1 || n > 400) return { error: 'Pupil numbers must be whole numbers from 1 to 400' }; vals[id] = n; }
-  if (!Object.keys(vals).length) return { error: 'Type the new pupil number for each record' };
+  const vals = {}; for (const [id, v] of Object.entries(b.values || {})) { const n = Number(v); if (!String(v).trim() || !Number.isInteger(n) || n < 1 || n > 400) return { error: `Record ${id}: "${String(v).slice(0, 20)}" is not a pupil number. Type only the pupil number, from 1 to 400, which is the last digits of the pupil ID (for 2026PS21030253006 type 6), not the whole ID.` }; vals[id] = n; }
+  if (!Object.keys(vals).length) return { error: 'No pupil numbers arrived. Type the new number in the box beside each ticked record, then press Suggest again.' };
   return { edit: { field, values: vals } };
 }
 // Attendance can be corrected only where it cannot change the pupils drawn: when 20 or fewer were present the form draws nobody (every present pupil is

@@ -24,6 +24,19 @@ const srv = (env) => `https://${env.KOBO_SERVER || 'kf.kobotoolbox.org'}`;
 const H = (env) => ({ Authorization: `Token ${env.KOBO_TOKEN}` });
 const load = async (env) => (await kv(env).get(KEY)) || [];
 const save = (env, d) => kv(env).put(KEY, d);
+// Saves one request into the CURRENT list. A step that waits for KoBo (a lookup can take a minute) must not write back the list it read at the start,
+// or it would erase whatever others saved meanwhile (a request vanished this way on 26 Oct 2026). If someone else changed this same request meanwhile,
+// stamp tells us: a short step stops and says so; a step that already changed KoBo (force) keeps its result and adds what the other person wrote.
+async function commit(env, r, stamp, force) {
+  const d = await load(env); const i = d.findIndex((x) => x.id === r.id);
+  if (i >= 0 && stamp && d[i].updated_at !== stamp) {
+    if (!force) return { error: 'Someone changed this request a moment ago. Open it again to see the latest, then repeat your step.', status: 409 };
+    const seen = new Set(r.history.map((h) => h.at + h.by + h.action)); r.history.push(...(d[i].history || []).filter((h) => !seen.has(h.at + h.by + h.action)));
+    r.history.sort((a, b) => (a.at < b.at ? -1 : 1));
+  }
+  if (i >= 0) d[i] = r; else d.unshift(r);
+  await save(env, d); return null;
+}
 
 function summ(kind, r) {
   const school = sfx(r, 'school') || ''; const date = String(sfx(r, 'date') || r.today || '').slice(0, 10);
@@ -57,9 +70,10 @@ export async function findRecords(env, who, p) {
     const g = {}; for (const r of recs) (g[kind === 'students' ? `${r.grade}|${r.stuid || 'x' + r.id}` : r.grade] ||= []).push(r);
     recs = Object.values(g).filter((x) => x.length > 1).flat();
   }
-  const pend = new Set((await load(env)).filter((r) => ['suggested', 'initiated', 'rework'].includes(r.stage)).flatMap((r) => r.ids));
+  const pend = new Map(); for (const q of (await load(env)).filter((x) => ['suggested', 'initiated', 'rework'].includes(x.stage))) for (const i of q.ids) if (!pend.has(i)) pend.set(i, q);
   recs.sort((a, b) => (a.grade + a.stuid + a.date).localeCompare(b.grade + b.stuid + b.date) || a.sub.localeCompare(b.sub));
-  return { kind, records: recs.slice(0, 500).map((r) => ({ ...r, pending: pend.has(r.id) })), total: recs.length };
+  // a record in an open request cannot be put in another one: say whose request holds it and where it waits, so the right person can act on it
+  return { kind, records: recs.slice(0, 500).map((r) => { const q = pend.get(r.id); return { ...r, pending: Boolean(q), ...(q && visible(q, who) ? { pending_in: { id: q.id, by: q.by, type: q.type, stage_label: STAGE_LABEL[q.stage] } } : {}) }; }), total: recs.length };
 }
 
 // ---- requests ----
@@ -99,26 +113,30 @@ async function actInner(env, who, b) {
     if (!want.length) return { error: 'Choose at least one record.' }; if (want.length > CAP) return { error: `One request can hold at most ${CAP} records.` };
     if (String(b.reason || '').trim().length < 15) return { error: 'Write the reason clearly (at least a sentence).' };
     const pend = new Set(d.filter((r) => ['suggested', 'initiated', 'rework'].includes(r.stage)).flatMap((r) => r.ids));
-    if (want.some((i) => pend.has(i))) return { error: 'Some of these records are already in an open request.' };
+    if (want.some((i) => pend.has(i))) return { error: 'Some of these records are already in an open request. The list of records shows whose request holds each one and where it waits.' };
     const rawRecs = await koboData(env, kind, { _id: { $in: want } }); const recs = rawRecs.map((r) => summ(kind, r));
     let edit = null;
     if (b.type === 'edit') {
       const c = checkEdit(b, kind, who); if (c.error) return { error: c.error, status: c.status };
-      edit = c.edit; if (edit.field === 'pupil' && want.some((i) => !edit.values[i])) return { error: 'Type a new pupil number for every ticked record.' };
+      edit = c.edit; if (edit.field === 'pupil' && want.some((i) => !edit.values[i])) return { error: `Type a new pupil number for every ticked record (missing for ${want.filter((i) => !edit.values[i]).join(', ')}).` };
       if (edit.field === 'grade' && recs.some((x) => x.grade === edit.value)) return { error: 'Some of these records are already in that grade.' };
       if (edit.field === 'att') for (const raw of rawRecs) { const why = attGuard(raw, edit.value); if (why) return { error: `Record ${raw._id}: ${why}` }; }
       if (edit.field === 'school' && recs.some((x) => x.school === edit.value)) return { error: 'Some of these records are already at that school.' };
+      if (edit.field !== 'att' && edit.field !== 'school' && rawRecs.length && rawRecs.every((raw) => !Object.keys(patchFor(kind, edit.field, raw, edit.field === 'pupil' ? edit.values[raw._id] : edit.value)).length)) return { error: edit.field === 'pupil' ? 'Nothing would change: the new pupil number is the same as the current one on every ticked record. Tick the record that has the wrong number and type the right one.' : 'Nothing would change: the records already have this value.' };
       if (edit.field === 'pupil' || edit.field === 'grade') for (const raw of rawRecs) { const ns = patchFor(kind, edit.field, raw, edit.field === 'pupil' ? edit.values[raw._id] : edit.value).stuid; if (ns) { const clash = await koboData(env, kind, { stuid: ns }, 5); if (clash.length) return { error: `Pupil ID ${ns} already exists in KoBo (record ${clash[0]._id}). That change would create a duplicate.` }; } }
     }
     if (recs.length !== want.length) return { error: 'Some records no longer exist in KoBo. Search again.' };
     if (recs.some((r) => !regionOk(who, r.school))) return { error: 'Some records are not in your region.', status: 403 };
     const level = lvl(who); const r = { id: uid(), type: edit ? 'edit' : 'delete', edit, kind, ids: want, items: recs, regions: [...new Set(recs.map((x) => x.region).filter(Boolean))], reason: String(b.reason).trim().slice(0, 1500), link: String(b.link || '').slice(0, 200), by: who.name, by_id: String(who.id ?? who.hq_id ?? ''), by_role: who.role === 'hq' ? 'HQ' : who.position || who.role, by_level: level, created_at: now, updated_at: now, stage: level === 2 || isEd(who) ? 'initiated' : 'suggested', history: [hist(who, 'suggested', b.reason)] };
     if (level === 2 || isEd(who)) { r.initiated_by = r.by_id; r.history.push(hist(who, 'initiated', level === 2 ? 'Suggested and initiated by the same person; it goes straight to Mundo.' : 'Started by the Executive Director; it goes straight to Mundo for the final decision.')); }
-    d.unshift(r); await save(env, d);
+    const fresh = await load(env); // read again now: the lookups above can take a minute, and the list may have changed (or this same suggestion arrived twice)
+    if (want.some((i) => fresh.some((x) => ['suggested', 'initiated', 'rework'].includes(x.stage) && x.ids.includes(i)))) return { error: 'Some of these records are already in an open request. If you just pressed Suggest, it may have gone through: look in the list below.' };
+    fresh.unshift(r); await save(env, fresh);
     await notify(env, r, `${who.name}: ${want.length} record(s) to ${edit ? 'edit' : 'delete'}`, r.stage === 'initiated' ? hqLvl(3) : (w) => Boolean(w && w.role === 'hq' && (w.review_level || 0) === 2)); // the next person: Mundo for the final decision, Joram to confirm
     return { ok: true, id: r.id, stage: r.stage };
   }
   const r = d.find((x) => x.id === b.id); if (!r) return { error: 'Not found', status: 404 };
+  const stamp = r.updated_at; // commit() uses it to notice that someone else changed this request meanwhile
   if (!visible(r, who)) return { error: 'Not allowed', status: 403 };
   const me = String(who.id ?? who.hq_id ?? '');
   const open = ['suggested', 'initiated', 'rework'].includes(r.stage); if (!open) return { error: 'This request is closed.' };
@@ -143,18 +161,18 @@ async function actInner(env, who, b) {
   else if (a === 'delete' && r.type !== 'edit') return effect(env, who, r, d, b);
   else if (a === 'apply' && r.type === 'edit') return effectEdit(env, who, r, d, b);
   else return { error: 'Unknown action' };
-  r.updated_at = now; await save(env, d); return { ok: true, stage: r.stage };
+  r.updated_at = now; const clash = await commit(env, r, stamp); if (clash) return clash; return { ok: true, stage: r.stage };
 }
 
 async function effect(env, who, r, d, b) {
-  const me = String(who.id ?? who.hq_id ?? '');
+  const me = String(who.id ?? who.hq_id ?? ''); const stamp = r.updated_at;
   if (r.stage !== 'initiated') return { error: 'The request is not waiting for the final decision.' };
   if (lvl(who) < 3) return { error: 'Only Mundo (final approval) can delete.', status: 403 };
   if (r.initiated_by === me && !(isEd(who) && r.by_id === me)) return { error: 'The person who initiated it cannot also delete it.', status: 403 };
   if (Number(b.confirm) !== r.ids.length) return { error: `Type the number of records (${r.ids.length}) to confirm.` };
   const kind = r.kind;
   const recs = await koboData(env, kind, { _id: { $in: r.ids } });
-  if (!recs.length) { r.stage = 'rejected'; r.history.push(hist(who, 'closed', 'The records no longer exist in KoBo.')); await save(env, d); return { error: 'The records no longer exist in KoBo. The request was closed.' }; }
+  if (!recs.length) { r.stage = 'rejected'; r.history.push(hist(who, 'closed', 'The records no longer exist in KoBo.')); await commit(env, r, stamp, true); return { error: 'The records no longer exist in KoBo. The request was closed.' }; }
   // 1. copy first
   const json = JSON.stringify(recs); const gz = await new Response(new Blob([json]).stream().pipeThrough(new CompressionStream('gzip'))).arrayBuffer();
   let bin = ''; const u = new Uint8Array(gz); for (let i = 0; i < u.length; i += 0x8000) bin += String.fromCharCode(...u.subarray(i, i + 0x8000));
@@ -168,7 +186,7 @@ async function effect(env, who, r, d, b) {
   const entry = { at: new Date().toISOString(), request: r.id, kind: KINDS[kind].label, suggested_by: r.by, initiated_by: r.history.find((h) => h.action === 'initiated')?.by || r.by, approved_by: who.name, reason: r.reason, ids: done, regions: r.regions, count_before: before, count_after: after, copy: `v2:delcopy:${r.id}`, ok, failed };
   const lg = (await kv(env).get(LOG)) || []; lg.unshift(entry); await kv(env).put(LOG, lg.slice(0, 500));
   r.stage = 'deleted'; r.deleted = { at: entry.at, n: done.length, before, after, ok, failed }; r.history.push(hist(who, 'deleted', `${done.length} record(s) deleted. KoBo count ${before} to ${after}.${failed.length ? ' Problems: ' + failed.join('; ') : ''}`)); r.updated_at = entry.at;
-  await save(env, d);
+  await commit(env, r, stamp, true);
   // 3. the dashboard keeps totals, so rebuild the affected years from KoBo
   const years = [...new Set(r.items.map((i) => (i.school && /^TRAIN/i.test(i.school) ? 'practice' : (i.date || '').slice(0, 4))).filter(Boolean))];
   const rb = (await kv(env).get('v2:rebuild')) || []; for (const y of years) if (!rb.find((x) => x.kind === kind && x.year === y)) rb.push({ kind, year: y }); await kv(env).put('v2:rebuild', rb);
@@ -179,7 +197,7 @@ async function effect(env, who, r, d, b) {
 export async function copyOf(env, id) { return kv(env).get(`v2:delcopy:${id}`); }
 
 async function effectEdit(env, who, r, d, b) {
-  const me = String(who.id ?? who.hq_id ?? '');
+  const me = String(who.id ?? who.hq_id ?? ''); const stamp = r.updated_at;
   if (r.stage !== 'initiated') return { error: 'The request is not waiting for the final decision.' };
   if (lvl(who) < 3) return { error: 'Only Mundo (final approval) can apply an edit.', status: 403 };
   if (r.initiated_by === me && !(isEd(who) && r.by_id === me)) return { error: 'The person who initiated it cannot also apply it.', status: 403 };
@@ -195,7 +213,7 @@ async function effectEdit(env, who, r, d, b) {
   const entry = { at, request: r.id, kind: KINDS[r.kind].label, type: 'edit', change: FIELDS[r.edit.field], suggested_by: r.by, initiated_by: r.history.find((h) => h.action === 'initiated')?.by || r.by, approved_by: who.name, reason: r.reason, ids: res.done || [], regions: r.regions, count_before: recs.length, count_after: recs.length, copy: `v2:delcopy:${r.id}`, ok: res.ok, failed: res.failed || [] };
   const lg = (await kv(env).get(LOG)) || []; lg.unshift(entry); await kv(env).put(LOG, lg.slice(0, 500));
   if (res.ok) { r.stage = 'done'; r.applied = { at, n: res.done.length }; }
-  r.history.push(hist(who, res.ok ? 'applied' : 'tried', res.ok ? `${res.done.length} record(s) changed and checked in KoBo.` : `Stopped. ${(res.failed || []).join('; ')}`)); r.updated_at = at; await save(env, d);
+  r.history.push(hist(who, res.ok ? 'applied' : 'tried', res.ok ? `${res.done.length} record(s) changed and checked in KoBo.` : `Stopped. ${(res.failed || []).join('; ')}`)); r.updated_at = at; await commit(env, r, stamp, true);
   if ((res.done || []).length) {
     const years = [...new Set(r.items.map((i) => (i.school && /^TRAIN/i.test(i.school) ? 'practice' : (i.date || '').slice(0, 4))).filter(Boolean))];
     const rb = (await kv(env).get('v2:rebuild')) || []; for (const y of years) if (!rb.find((x) => x.kind === r.kind && x.year === y)) rb.push({ kind: r.kind, year: y }); await kv(env).put('v2:rebuild', rb);

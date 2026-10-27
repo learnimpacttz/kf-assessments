@@ -31,7 +31,7 @@ for p in g.paragraphs:
         if 'Version 1.4' in r.text: r.text=r.text.replace('Version 1.4','Version 1.4 · Field edition')
 g.save(O+'KF4_Field_Command_Centre_User_Guide_FIELD.docx')
 # ---- manual
-m=docx.Document(B+'KF4_Field_Operations_Manual_INTERIM_v1.0.docx')
+m=docx.Document(B+'KF4_Field_Operations_Manual_INTERIM_v1.1.docx')
 print('C5',remove(m,H1('5. For HQ'),{1},keep_heading=True,replace=PLACE))
 print('F backup',remove(m,H2('Where the data is, and how it is backed up'),{1,2}))
 print('G',remove(m,H1('Part G'),{1}))
@@ -51,7 +51,7 @@ for p in m.paragraphs:
 for t in m.tables:
     for row in list(t.rows):
         if 'payment' in ' '.join(c.text for c in row.cells).lower(): row._tr.getparent().remove(row._tr)
-m.save(O+'KF4_Field_Operations_Manual_FIELD_v1.0.docx')
+m.save(O+'KF4_Field_Operations_Manual_FIELD_v1.1.docx')
 # ---- quick start: pages 1 to 3 only
 q=docx.Document(B+'KF4_LI-CC_Quick_Start.docx'); els=list(q.element.body.iterchildren()); cut=None
 for i,el in enumerate(els):
