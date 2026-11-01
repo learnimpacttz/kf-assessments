@@ -34,6 +34,12 @@
 | The dashboard looks wrong after a correction | Corrections rebuild only the affected forms and years: wait a few minutes. Admin > Health shows it syncing. |
 | An alert or email was sent by mistake | Say so in News straight away. Alerts cannot be recalled. |
 
+## QA visits (HQ observers' Quality Assurance form)
+- The page is Checks, QA visits. The Command Center reads the form every minute (Admin, Health does not list it; the page shows "Last read" and any error). If new visits do not appear, press Read new visits now. An error such as "KoBo 401" means the token needs replacing (see ACCESS_AND_SECRETS, "The KoBo token").
+- Practice visits: a comment that starts with TEST is shown as Practice and never counted or sent.
+- A finding reaches a team only when an HQ Editor or Admin presses Send to team as query. It then follows the normal query chain.
+- If the form changes (new questions), the page picks up the new wording within 6 hours, or at once after Read new visits now. Questions named `rand_p1` to `rand_p4` (pupil numbers) and `follow_up` are read by name; do not rename them.
+
 ## Rules
 - Real data is never deleted outside the chain. Originals are saved before any change.
 - Do not share the shared HQ code or the access-code list.
