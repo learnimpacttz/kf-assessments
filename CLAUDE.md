@@ -7,7 +7,7 @@ A Cloudflare Worker (`src/index.js`) that serves a single-page app (`public/app.
 
 ## Always
 1. **Run the tests before any change is released:** `npm test`. All suites must pass.
-2. **Check the account before any deploy:** `npx wrangler whoami` must show the LearnImpact account. Never deploy under a personal account.
+2. **Check the account before any deploy:** `npx wrangler whoami` must show the LearnImpact account (`mkamukulu@learnimpact.org`). Never deploy under a personal account. The machine-wide wrangler login drifts to the personal account without warning, so deploy with `npm run deploy` (it refuses the wrong account, runs the tests, and blocks field hours); if it stops, run `npx wrangler logout`, then `npx wrangler login --browser=false` and open the link in a private window.
 3. **No deploys during field hours** (07:00 to 17:00 East Africa Time) unless the change fixes a live problem. Prefer early morning or evening.
 4. **After a deploy:** run `npm run check:live` (needs `KF_HQ_CODE` set; it must report 0 open gates), open the app as an HQ user and as a field user, and look at Admin, Health.
 5. **Keep changes small** and explain each one in plain words in the commit message.

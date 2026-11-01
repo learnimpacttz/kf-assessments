@@ -34,6 +34,9 @@
 | The dashboard looks wrong after a correction | Corrections rebuild only the affected forms and years: wait a few minutes. Admin > Health shows it syncing. |
 | An alert or email was sent by mistake | Say so in News straight away. Alerts cannot be recalled. |
 
+## Deploying
+Use `npm run deploy`. It checks that wrangler is logged in as the LearnImpact account (the login can drift to a personal account), runs all tests, refuses field hours (07:00 to 17:00 EAT, unless `sh tools/deploy.sh --live-fix`), then deploys. After it: `npm run check:live`, open Admin, Health, look at the logs. If it says the account is wrong: `npx wrangler logout`, `npx wrangler login --browser=false`, open the link in a private window and sign in as the LearnImpact account.
+
 ## QA visits (HQ observers' Quality Assurance form)
 - The page is Checks, QA visits. The Command Center reads the form every minute (Admin, Health does not list it; the page shows "Last read" and any error). If new visits do not appear, press Read new visits now. An error such as "KoBo 401" means the token needs replacing (see ACCESS_AND_SECRETS, "The KoBo token").
 - Phone alert: when a new QA visit has a serious item answered No, the HQ team (not Advisors) with alerts on get one alert, sent once per visit. The first run after a release only notes the visits already there. Practice visits never alert.

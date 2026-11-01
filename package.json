@@ -7,7 +7,7 @@
   "scripts": {
     "test": "node test/run_all.mjs",
     "check:live": "node test/live_access_check.mjs",
-    "deploy": "wrangler deploy",
+    "deploy": "sh tools/deploy.sh",
     "whoami": "wrangler whoami",
     "logs": "wrangler tail"
   },
