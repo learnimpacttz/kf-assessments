@@ -9,7 +9,7 @@ import { answerScan } from './answerscan.js';
 import { regionProgress, schoolDetail, standingFor } from './progress.js';
 import { togetherBoard } from './together.js';
 import { computePatterns } from './patterns.js';
-import { syncQa, qaView, raiseQa, qaRaisedFlags } from './qa.js';
+import { syncQa, qaView, raiseQa, qaRaisedFlags, alertQa } from './qa.js';
 import { boxPublic, setBoxKey, setBoxLive, submitBox, listBox, markBox, deleteBox, boxSummary, markSaved, takePending } from './box.js';
 import { SCHOOL_COORDS, COORD_SOURCE, COORD_WRONG } from './data/school_coords.js';
 import { findRecords as findToMove, previewMove, applyMove, correctionsView, correctionCopy } from './corrections.js';
@@ -1137,7 +1137,7 @@ export default {
       try { if (new Date().getUTCMinutes() % 3 === 0) { const s = await sumNow(env); const n = await reconcileClosedChecks(env, (s && s.flags) || []); if (n) console.log('closed checks archived: ' + n); } } catch (e) { console.error('closed-check reconcile failed: ' + (e && e.message)); }
       try { if (hhmm === '14:30') { const n = await takePending(env); if (n > 0) await pushTo(env, (w) => Boolean(w && w.role === 'hq' && String(w.id) === 'hq:' + (env.BOX_READER || 'h3')), { title: 'Suggestion box', body: `${n} new message${n > 1 ? 's' : ''} in the suggestion box`, url: '/#boxed' }); } } catch (e) { console.error('box alert failed'); }
       try { const cs = await syncCalendar(env); if (cs) console.log('calendar ' + JSON.stringify(cs).slice(0, 400)); } catch (e) { console.error('calendar sync failed: ' + (e && e.message)); }
-      try { const qs = await syncQa(env, { minAge: 50e3 }); if (qs) console.log('qa ' + JSON.stringify(qs).slice(0, 200)); } catch (e) { console.error('qa sync failed: ' + (e && e.message)); }
+      try { const qs = await syncQa(env, { minAge: 50e3 }); if (qs) console.log('qa ' + JSON.stringify(qs).slice(0, 200)); const qal = await alertQa(env); if (qal.sent || qal.baseline) console.log('qa alert ' + JSON.stringify(qal)); } catch (e) { console.error('qa sync failed: ' + (e && e.message)); }
       try { const fj = await maybeRunFormJob(env); if (fj) console.log('formjob ' + JSON.stringify(fj).slice(0, 600)); } catch (e) { console.error('form job failed: ' + (e && e.message)); }
       try { const nw = await runDueNews(env); if (nw.length) console.log('news ' + JSON.stringify(nw)); if (new Date().getUTCMinutes() % 15 === 0) { const ms = await checkMilestones(env); if (ms && ms.length) console.log('milestones ' + JSON.stringify(ms)); } } catch (e) { console.error('news failed: ' + (e && e.message)); }
       try { const mj = await runDueMessages(env); if (mj) console.log('messages ' + JSON.stringify(mj).slice(0, 500)); } catch (e) { console.error('messages failed: ' + (e && e.message)); }

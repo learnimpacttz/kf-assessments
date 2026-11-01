@@ -1,6 +1,6 @@
 // QA visits: scoring, the cross-checks against plan, location and records, and that no coordinates are kept
 import { ok, done, env, mem } from './_kit.mjs';
-import { visitOf, score, qaView, qaAttention, raiseQa, qaRaisedFlags, CRITICAL } from '../src/qa.js';
+import { visitOf, score, qaView, qaAttention, raiseQa, qaRaisedFlags, alertQa, CRITICAL } from '../src/qa.js';
 import { STAFF } from '../src/config.js';
 import { decorate, flagKey } from '../src/queries.js';
 import { SCHOOL_BY_ID, eatToday } from '../src/config.js';
@@ -71,4 +71,14 @@ ok('sending the same finding twice is refused', (await raiseQa(env, who, { id: 4
 ok('a visit about someone not in the people list cannot be sent', /people list/.test((await raiseQa(env, who, { id: 42 })).error || ''));
 ok('a practice visit cannot be sent', (await raiseQa(env, who, { id: 43 })).status === 422);
 ok('the visit shows who sent it', (await qaView(env, sum)).visits.find((x) => x.id === 41).raised.by === 'HQ Tester');
+
+// phone alert: first run only notes what exists; later a new visit with a serious No sends one alert to HQ (not Advisors), a clean or practice visit sends none
+mem.delete('v2:qa:alerted'); const calls = []; const spy = async (e, pred, a) => { calls.push({ pred, a }); };
+put('v2:qa:visits', [visitOf(raw({ _id: 51 }), FF)]);
+ok('the first run sends nothing, it only notes what is there', (await alertQa(env, spy)).baseline === 1 && calls.length === 0);
+put('v2:qa:visits', [visitOf(raw({ _id: 52 }), FF), visitOf(raw({ _id: 53, 'grp_c/c2': '1', 'grp_i/i3_p1': '1', 'grp_i/i3_p2': '1', 'grp_b/b1': '1' }), FF), visitOf(raw({ _id: 54, 'grp_a/obs_comment': 'TEST' }), FF), visitOf(raw({ _id: 51 }), FF)]);
+const r5 = await alertQa(env, spy); ok('only the new visit with a serious No sends an alert', r5.sent === 1 && calls.length === 1 && /serious item/.test(calls[0].a.body) && calls[0].a.url === '/#qa', JSON.stringify(r5));
+ok('it goes to HQ, not to Advisors or the field', calls[0].pred({ role: 'hq' }) && !calls[0].pred({ role: 'hq', hide: ['messages'] }) && !calls[0].pred({ role: 'volunteer' }) && !calls[0].pred({ role: 'rc' }));
+ok('the same visit is never alerted twice', (await alertQa(env, spy)).sent === 0 && calls.length === 1);
+ok('the alert carries no assessor name or score', !/%|Tester|Someone/.test(calls[0].a.body + calls[0].a.title));
 done();

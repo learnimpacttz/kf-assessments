@@ -10,9 +10,10 @@ import { metres } from './location.js';
 import { getPlan } from './plan.js';
 import { loadYear } from './sync.js';
 import { flagKey } from './queries.js';
+import { pushTo } from './push.js';
 import { CURRENT_YEAR } from './config.js';
 
-const K_VISITS = 'v2:qa:visits', K_FORM = 'v2:qa:form', K_SYNC = 'v2:qa:sync', K_RAISED = 'v2:qa:raised';
+const K_VISITS = 'v2:qa:visits', K_FORM = 'v2:qa:form', K_SYNC = 'v2:qa:sync', K_RAISED = 'v2:qa:raised', K_ALERTED = 'v2:qa:alerted';
 export const SECTIONS = { b: 'Pre-visit compliance', c: 'Arrival and opening meeting', d: 'School readiness', e: 'Assessor and field plan', f: 'Materials', g: 'Attendance check and random selection', h: 'Room setup', i: 'Test administration' };
 // Items where a "No" is a serious lapse in the protocol (proposed definition: consent, attendance integrity, random selection, grading accuracy, the app's rules)
 export const CRITICAL = new Set(['c2', 'g1', 'g2', 'g3', 'g5', 'g6', 'i3', 'i4']);
@@ -71,6 +72,20 @@ export function score(v, F) {
   }
   for (const S of Object.values(secs)) S.pct = S.n ? Math.round((100 * S.yes) / S.n) : null;
   return { pct: tot ? Math.round((100 * yes) / tot) : null, answered: tot, secs, fails, critical: crit };
+}
+
+// ---- phone alert to the HQ team (not Advisors) when a new visit has a serious item answered No. One alert per visit; the first run only notes what is already there.
+export async function alertQa(env, send = pushTo) {
+  const raw = (await kv(env).get(K_VISITS)) || []; const seen = await kv(env).get(K_ALERTED);
+  if (!seen) { await kv(env).put(K_ALERTED, raw.map((v) => v.id)); return { baseline: raw.length }; }
+  const F = (await kv(env).get(K_FORM)) || { items: {} }; const done = new Set(seen); const fresh = raw.filter((v) => !done.has(v.id));
+  if (!fresh.length) return { sent: 0 };
+  let sent = 0;
+  for (const v of fresh) {
+    done.add(v.id); if (/^\s*test\b/i.test(v.comment || '')) continue; const n = score(v, F).critical; if (!n) continue;
+    await send(env, (w) => Boolean(w && w.role === 'hq' && !(Array.isArray(w.hide) && w.hide.length)), { title: 'QA visit: serious item answered No', body: `${(SCHOOL_BY_ID[v.school] || {}).name || 'A school'}: ${n} serious item${n === 1 ? '' : 's'}. Open QA visits.`, url: '/#qa' }); sent++;
+  }
+  await kv(env).put(K_ALERTED, [...done]); return { sent };
 }
 
 // ---- visits from the last few days with a serious item answered No (for the Bridge)
