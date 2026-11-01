@@ -1,6 +1,6 @@
 // QA visits: scoring, the cross-checks against plan, location and records, and that no coordinates are kept
 import { ok, done, env, mem } from './_kit.mjs';
-import { visitOf, score, qaView, CRITICAL } from '../src/qa.js';
+import { visitOf, score, qaView, qaAttention, CRITICAL } from '../src/qa.js';
 import { SCHOOL_BY_ID, eatToday } from '../src/config.js';
 import { SCHOOL_COORDS } from '../src/data/school_coords.js';
 
@@ -40,4 +40,18 @@ ok('a role in brackets is dropped from any name label', visitOf(raw({ 'grp_a/ass
 ok('roll-ups add up', view.summary.visits === 3 && view.summary.schools === 1 && view.summary.sections.c.pct === 0 && view.summary.top_fails[0].fails >= 1);
 ok('the output carries no coordinates', !/"gps":|_geolocation/.test(JSON.stringify(view)) && !/-?\d{1,2}\.\d{5,}/.test(JSON.stringify(view)));
 ok('wording is support-first, not accusing', !/cheat|fraud|lying|suspicious/i.test(JSON.stringify(view.visits.map((x) => x.flags))));
+
+// pupil numbers: the number the observer saw is looked up in the tests for that school and grade
+put('v2:state:2026', { sg: { [sid + '|2']: { rn: ['7~Tester One~s1~501', '9~Someone Else~s2~502'] } } });
+put('v2:qa:visits', [visitOf(raw({ _id: 21, 'grp_a/visit_date': '2026-10-31', rand_p1: '7', rand_p2: '9', rand_p3: '15' }), F)]);
+const v2 = (await qaView(env, sum)).visits[0]; const pf = v2.flags.filter((f) => f.t === 'pupil').map((f) => f.text);
+ok('a pupil number with a test by the same assessor is fine', !pf.some((t) => /Pupil 1 /.test(t)), pf.join(' | '));
+ok('a pupil number tested by someone else is flagged', pf.some((t) => /Pupil 2 .*tested by Someone Else/.test(t)));
+ok('a pupil number with no test yet is flagged, gently', pf.some((t) => /Pupil 3 .*no test record/.test(t)) && v2.rands.join() === '7,9,15,');
+// the Bridge: recent visits with a serious No
+const at = await qaAttention(env, '2026-11-01'); ok('the Bridge hears of a recent visit with a serious item', at.n === 1 && at.list[0].serious === 2, JSON.stringify(at));
+put('v2:qa:visits', [visitOf(raw({ _id: 22, 'grp_a/visit_date': '2026-10-10', _submission_time: '2026-10-10T09:00:00' }), F)]); ok('an old visit is not repeated on the Bridge', (await qaAttention(env, '2026-11-01')).n === 0);
+put('v2:qa:visits', [visitOf(raw({ _id: 31, 'grp_a/obs_comment': 'TEST please ignore' }), F), visitOf(raw({ _id: 32 }), F)]);
+const vt = await qaView(env, sum); ok('a practice submission is shown but not counted', vt.visits.length === 2 && vt.visits.find((x) => x.id === 31).test === true && vt.summary.visits === 1);
+ok('a practice submission never reaches the Bridge', (await qaAttention(env, '2026-11-01')).list.every((x) => x.id !== 31));
 done();
