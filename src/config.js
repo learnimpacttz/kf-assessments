@@ -52,6 +52,8 @@ export const NAME_ALIASES = {
   salimurajabu: 'salimurajabunyaki',
   zainabumussa: 'zainabumussahassani',
   upendobcorneil: 'upendocorneil',
+  mikaelcostantino: 'mikaelconstantine', // as spelled in the QA form's name list
+  mohamednjuga: 'mohamedinjuga',
 };
 
 export const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z]/g, '');

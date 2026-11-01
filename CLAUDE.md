@@ -33,7 +33,7 @@ Anything added to the stored aggregates (`src/ingest.js`, `src/sync.js`, `src/su
 - Never add a dependency without a reason and without running the tests.
 
 ## Where things are
-- `src/index.js` routes and scheduled jobs · `src/auth.js` sign-in · `src/hq.js` HQ people, levels, desks, Advisor access · `src/queries.js` the review chain · `src/summary.js` and `src/ingest.js` checks and aggregates · `src/predict.js` forecast · `src/bridge.js` HQ Bridge.
+- `src/index.js` routes and scheduled jobs · `src/auth.js` sign-in · `src/hq.js` HQ people, levels, desks, Advisor access · `src/queries.js` the review chain · `src/summary.js` and `src/ingest.js` checks and aggregates · `src/predict.js` forecast · `src/bridge.js` HQ Bridge · `src/qa.js` the HQ observers' QA visits.
 - `public/app.js` the whole app (one large file) · `public/style.css` · `public/sw.js` service worker.
 - `test/` one file per area; `test/run_all.mjs` runs them all.
 - `tools/` backup decryption and document publishing helpers.
