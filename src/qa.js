@@ -9,9 +9,10 @@ import { SCHOOL_COORDS } from './data/school_coords.js';
 import { metres } from './location.js';
 import { getPlan } from './plan.js';
 import { loadYear } from './sync.js';
+import { flagKey } from './queries.js';
 import { CURRENT_YEAR } from './config.js';
 
-const K_VISITS = 'v2:qa:visits', K_FORM = 'v2:qa:form', K_SYNC = 'v2:qa:sync';
+const K_VISITS = 'v2:qa:visits', K_FORM = 'v2:qa:form', K_SYNC = 'v2:qa:sync', K_RAISED = 'v2:qa:raised';
 export const SECTIONS = { b: 'Pre-visit compliance', c: 'Arrival and opening meeting', d: 'School readiness', e: 'Assessor and field plan', f: 'Materials', g: 'Attendance check and random selection', h: 'Room setup', i: 'Test administration' };
 // Items where a "No" is a serious lapse in the protocol (proposed definition: consent, attendance integrity, random selection, grading accuracy, the app's rules)
 export const CRITICAL = new Set(['c2', 'g1', 'g2', 'g3', 'g5', 'g6', 'i3', 'i4']);
@@ -80,12 +81,41 @@ export async function qaAttention(env, today, days = 3) {
   return { n: list.length, list };
 }
 
+// ---- HQ decides to send a finding to the team as a query: it becomes an ordinary check ("qa") that follows the normal review chain.
+// Nothing is sent by this step itself; the person the visit was about finds it under their queries, like any other check.
+const qaFlagOf = (v, F, note, by, at) => {
+  const sc = score(v, F); const st = staffForKoboName(v.ass); const name = st ? st.name : v.ass; const sch = SCHOOL_BY_ID[v.school];
+  const items = [...new Set(sc.fails.map((f) => f.label))].slice(0, 8);
+  return { sev: 'warn', type: 'qa', school: v.school, grade: v.grade || 0, admin: name, date: v.date, region: sch ? sch.region : '', recs: [], qa_id: v.id, raised_by: by, raised_at: at,
+    text: `A quality-assurance visit on ${v.date} noted ${items.length} item${items.length === 1 ? '' : 's'} to follow up: ${items.join('; ')}.${note ? ' Note from HQ: ' + note : ''}`,
+    hint: 'Write what happened and what was done, or what will change next time. This comes from an HQ observer who watched the visit, and it is for support.', normal: 'every checklist item answered Yes' };
+};
+export async function raiseQa(env, who, { id, note }) {
+  const raw = (await kv(env).get(K_VISITS)) || []; const v = raw.find((x) => String(x.id) === String(id)); if (!v) return { error: 'That QA visit was not found. Read the new visits and try again.', status: 404 };
+  const F = (await kv(env).get(K_FORM)) || { items: {} }; const sc = score(v, F);
+  if (/^\s*test\b/i.test(v.comment || '')) return { error: 'This is a practice visit.', status: 422 };
+  if (!SCHOOL_BY_ID[v.school]) return { error: 'The school code is not in the school list.', status: 422 };
+  if (!staffForKoboName(v.ass)) return { error: `"${v.ass}" is not in the people list, so the query has nobody to go to. Ask the Systems Owner to fix the name first.`, status: 422 };
+  if (!sc.fails.length) return { error: 'No item was answered No, so there is nothing to send.', status: 422 };
+  const n = String(note || '').trim().slice(0, 300); const f = qaFlagOf(v, F, n, who.name, new Date().toISOString()); const key = flagKey(f);
+  const raised = (await kv(env).get(K_RAISED)) || {}; if (raised[key]) return { error: 'This finding was already sent to the team as a query.', status: 409, key };
+  raised[key] = { visit: v.id, note: n, by: who.name, at: f.raised_at }; await kv(env).put(K_RAISED, raised); return { ok: true, key };
+}
+// the checks for the findings HQ sent on (rebuilt from the stored visit each time, so the wording follows the form)
+export async function qaRaisedFlags(env) {
+  const raised = (await kv(env).get(K_RAISED)) || {}; const keys = Object.keys(raised); if (!keys.length) return [];
+  const raw = (await kv(env).get(K_VISITS)) || []; const F = (await kv(env).get(K_FORM)) || { items: {} }; const out = [];
+  for (const [k, r] of Object.entries(raised)) { const v = raw.find((x) => String(x.id) === String(r.visit)); if (v) out.push({ ...qaFlagOf(v, F, r.note, r.by, r.at), qa_key: k }); }
+  return out;
+}
+
 // ---- the view: every visit with its score and the cross-checks, and the roll-ups
 export async function qaView(env, sum) {
   const F = (await kv(env).get(K_FORM)) || { items: {}, lists: {} }; const sync = (await kv(env).get(K_SYNC)) || null; const raw = (await kv(env).get(K_VISITS)) || [];
   const today = eatToday(); const plans = {}; const regions = [...new Set(raw.map((v) => String(v.region || '').toUpperCase()).filter(Boolean))];
   for (const r of regions) { try { plans[r] = await getPlan(env, r); } catch { plans[r] = { visits: [] }; } }
   let SG = null; if (raw.some((v) => (v.rands || []).some((n) => n != null))) { try { SG = ((await loadYear(env, CURRENT_YEAR)) || {}).sg || null; } catch { SG = null; } }
+  const raisedMap = (await kv(env).get(K_RAISED)) || {}; const raisedBy = (v) => { const r = Object.values(raisedMap).find((x) => String(x.visit) === String(v.id)); return r ? { at: r.at, by: r.by } : null; };
   const first = new Map(); const kOf = (v) => [v.school, v.date, norm(v.ass), v.grade, v.observer].join('|'); for (const v of raw) { const k = kOf(v); if (!first.has(k) || v.id < first.get(k)) first.set(k, v.id); }
   let visits = raw.map((v) => {
     const sc = score(v, F); const flags = []; const R = String(v.region).toUpperCase(); const S = SCHOOL_BY_ID[v.school]; const canon = (staffForKoboName(v.ass) || {}).name || v.ass;
@@ -103,7 +133,7 @@ export async function qaView(env, sum) {
     if (SG && v.grade) { const rn = (SG[`${v.school}|${v.grade}`] || {}).rn || []; (v.rands || []).forEach((n, i) => { if (n == null) return; const hit = rn.map((e) => e.split('~')).find((e) => parseInt(e[0], 10) === n); if (!hit) flags.push({ t: 'pupil', text: `Pupil ${i + 1} (number ${n}) has no test record for this school and grade yet.` }); else if (v.ass && norm(hit[1]) !== norm(canon)) flags.push({ t: 'pupil', text: `Pupil ${i + 1} (number ${n}) was tested by ${hit[1]}, not by ${canon}.` }); }); }
     const f0 = first.get(kOf(v)); if (f0 !== v.id) flags.push({ t: 'dup', text: `Looks like a repeat of QA record ${f0}.` });
     const test = /^\s*test\b/i.test(v.comment); // a practice submission (comment starts with TEST) is shown but never counted
-    return { ...v, test, school_name: S ? S.name : v.school_name, region_name: R, lga_name: S ? S.lga : v.lga, pct: sc.pct, answered: sc.answered, secs: sc.secs, fails: sc.fails, critical: sc.critical, flags };
+    return { ...v, test, raised: raisedBy(v), school_name: S ? S.name : v.school_name, region_name: R, lga_name: S ? S.lga : v.lga, pct: sc.pct, answered: sc.answered, secs: sc.secs, fails: sc.fails, critical: sc.critical, flags };
   });
   // roll-ups (practice submissions are left out)
   const all = visits; visits = all.filter((v) => !v.test);

@@ -9,7 +9,7 @@ import { answerScan } from './answerscan.js';
 import { regionProgress, schoolDetail, standingFor } from './progress.js';
 import { togetherBoard } from './together.js';
 import { computePatterns } from './patterns.js';
-import { syncQa, qaView } from './qa.js';
+import { syncQa, qaView, raiseQa, qaRaisedFlags } from './qa.js';
 import { boxPublic, setBoxKey, setBoxLive, submitBox, listBox, markBox, deleteBox, boxSummary, markSaved, takePending } from './box.js';
 import { SCHOOL_COORDS, COORD_SOURCE, COORD_WRONG } from './data/school_coords.js';
 import { findRecords as findToMove, previewMove, applyMove, correctionsView, correctionCopy } from './corrections.js';
@@ -86,6 +86,7 @@ async function loadSummary(env, wanted) {
     if (earlier) { year = earlier; sum = await readSummary(env, year); }
   }
   if (sum && year === CURRENT_YEAR) { try { const ck = String(sum.as_of) + eatToday(); const as = (AS_CACHE.k === ck && Date.now() - AS_CACHE.t < 60e3) ? AS_CACHE.v : await assignFlags(env, sum, eatToday()); AS_CACHE = { k: ck, t: Date.now(), v: as }; sum = { ...sum, flags: [...(sum.flags || []), ...as.flags], info: as.info }; } catch { /* the other checks still show */ } }
+  if (sum && year === CURRENT_YEAR) { try { const qf = await qaRaisedFlags(env); if (qf.length) sum = { ...sum, flags: [...qf, ...(sum.flags || [])] }; /* first, so the 600-flag cap on the HQ list can never cut a QA finding off */ } catch (e) { console.error('qa flags failed: ' + (e && e.message)); } }
   return { years, sum, year, rehearsal: year !== CURRENT_YEAR };
 }
 
@@ -696,6 +697,12 @@ export default {
         if (path === '/api/qa/refresh') { if (method !== "POST") return err('Use POST', 405); await syncQa(env, { force: true }); } else await syncQa(env, { minAge: 15e3 });
         await logActivity(env, who, 'Opened QA visits', '');
         return json(await qaView(env, await sumNow(env)));
+      }
+      if (path === '/api/qa/raise') {
+        if (who.role !== 'hq' || (Array.isArray(who.hide) && who.hide.length) || (who.level || 'admin') === 'viewer') return err('Sending a QA finding to a team is for HQ editors and admins', 403);
+        if (method !== 'POST') return err('Use POST', 405); const b = await request.json().catch(() => ({})); const r = await raiseQa(env, who, b);
+        if (r.error) return err(r.error, r.status || 422);
+        await logActivity(env, who, 'Sent a QA finding to the team as a query', String(b.id || '')); return json({ status: 'ok', key: r.key });
       }
       // ---------- region progress: coordinators see their own region, HQ any region; a volunteer gets only their own standing ----------
       if (path === '/api/progress' || path === '/api/progress/school') {

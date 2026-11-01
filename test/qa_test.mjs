@@ -1,6 +1,8 @@
 // QA visits: scoring, the cross-checks against plan, location and records, and that no coordinates are kept
 import { ok, done, env, mem } from './_kit.mjs';
-import { visitOf, score, qaView, qaAttention, CRITICAL } from '../src/qa.js';
+import { visitOf, score, qaView, qaAttention, raiseQa, qaRaisedFlags, CRITICAL } from '../src/qa.js';
+import { STAFF } from '../src/config.js';
+import { decorate, flagKey } from '../src/queries.js';
 import { SCHOOL_BY_ID, eatToday } from '../src/config.js';
 import { SCHOOL_COORDS } from '../src/data/school_coords.js';
 
@@ -54,4 +56,19 @@ put('v2:qa:visits', [visitOf(raw({ _id: 22, 'grp_a/visit_date': '2026-10-10', _s
 put('v2:qa:visits', [visitOf(raw({ _id: 31, 'grp_a/obs_comment': 'TEST please ignore' }), F), visitOf(raw({ _id: 32 }), F)]);
 const vt = await qaView(env, sum); ok('a practice submission is shown but not counted', vt.visits.length === 2 && vt.visits.find((x) => x.id === 31).test === true && vt.summary.visits === 1);
 ok('a practice submission never reaches the Bridge', (await qaAttention(env, '2026-11-01')).list.every((x) => x.id !== 31));
+
+// HQ sends a finding to the team as a query: it becomes an ordinary "qa" check for the person the visit was about
+const who = { role: 'hq', name: 'HQ Tester', level: 'admin' }; const me = STAFF.find((s) => s.active && s.role === 'volunteer');
+const FF = { ...F, lists: { ...F.lists, enumerator: { r__x: me.name } } };
+put('v2:qa:form', { ...FF, at: new Date().toISOString() });
+put('v2:qa:visits', [visitOf(raw({ _id: 41, 'grp_a/obs_comment': '' }), FF), visitOf(raw({ _id: 42, 'grp_a/ass_name': 'r__zz', 'grp_c/c2': '1', 'grp_b/b1': '1', 'grp_g/g3': '1', 'grp_i/i3_p1': '1' }), FF), visitOf(raw({ _id: 43, 'grp_a/obs_comment': 'TEST' }), FF)]);
+const r1 = await raiseQa(env, who, { id: 41, note: 'Please explain what happened with consent' });
+ok('a finding can be sent to the team as a query', r1.ok === true && /^qa\|/.test(r1.key), JSON.stringify(r1));
+const fl = await qaRaisedFlags(env); ok('it becomes a check for the person the visit was about', fl.length === 1 && fl[0].type === 'qa' && fl[0].admin === me.name && fl[0].school === sid && /Please explain/.test(fl[0].text));
+ok('the wording is for support, with no score or accusation', !/%|cheat|fraud|fail/i.test(fl[0].text + fl[0].hint), fl[0].text);
+const dq = decorate(fl, {}); ok('the normal query chain recognizes it (same key, volunteer is the responder)', dq[0].qk === r1.key && dq[0].vol === true && dq[0].qk === flagKey(fl[0]));
+ok('sending the same finding twice is refused', (await raiseQa(env, who, { id: 41 })).status === 409);
+ok('a visit about someone not in the people list cannot be sent', /people list/.test((await raiseQa(env, who, { id: 42 })).error || ''));
+ok('a practice visit cannot be sent', (await raiseQa(env, who, { id: 43 })).status === 422);
+ok('the visit shows who sent it', (await qaView(env, sum)).visits.find((x) => x.id === 41).raised.by === 'HQ Tester');
 done();
