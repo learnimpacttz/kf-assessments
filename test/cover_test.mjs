@@ -1,11 +1,11 @@
 // Coordinator coverage: every school visit has an RC or ARC (or a named acting coordinator), the RC leads when both are present, leave, confirmations, past days, alerts and the plan guard
 import { ok, done, env, mem } from './_kit.mjs';
 import { STAFF, SCHOOLS_BY_REGION, REASONS, eatToday, addWorkingDays, isWorkingDay } from '../src/config.js';
-import { coverView, setAssign, setConfirm, leaveAction, rowAction, runCover, coverAttention, loadCtx, regionDay, pastRows } from '../src/cover.js';
+import { coverView, setAssign, setConfirm, leaveAction, rowAction, runCover, coverAttention, loadCtx, regionDay, pastRows, autoCloses, sweepRows } from '../src/cover.js';
 import { changeVisit } from '../src/plan.js';
 
 const good3 = [...new Set(STAFF.map((s) => s.region))].filter((r) => STAFF.filter((s) => s.active && s.region === r && s.role === 'volunteer').length >= 3 && STAFF.some((s) => s.active && s.region === r && s.role === 'rc') && STAFF.some((s) => s.active && s.region === r && s.role === 'arc') && (SCHOOLS_BY_REGION[r] || []).length >= 4);
-const region = good3[0], regionB = good3[1], regionC = good3[2], regionD = good3[3], regionE = good3[4], regionF = good3[5], regionG = good3[6]; // the plan is cached for a few seconds per region, so each phase uses its own
+const region = good3[0], regionB = good3[1], regionC = good3[2], regionD = good3[3], regionE = good3[4], regionF = good3[5], regionG = good3[6], regionH = good3[7]; // the plan is cached for a few seconds per region, so each phase uses its own
 const who3 = (r) => { const q = STAFF.filter((s) => s.active && s.region === r); return { rc: q.find((s) => s.role === 'rc'), arc: q.find((s) => s.role === 'arc'), vols: q.filter((s) => s.role === 'volunteer'), schools: SCHOOLS_BY_REGION[r] }; };
 const st = STAFF.filter((s) => s.active && s.region === region); const rc = st.find((s) => s.role === 'rc'), arc = st.find((s) => s.role === 'arc'); const [v1, v2, v3] = st.filter((s) => s.role === 'volunteer'); const [A, B, C, D] = SCHOOLS_BY_REGION[region];
 const put = (k, x) => mem.set(k, JSON.stringify(x));
@@ -17,6 +17,7 @@ put('v2:plan:' + region, { region, status: 'locked', version: 1, day_notes: {}, 
   visit('c', C, past, [rc.name, v2.name], rc.name), visit('d', D, past, [arc.name, v3.name], arc.name) ] });
 const sum = { schools: { [C.id]: { dayAdmins: { [past]: [v2.name] } }, [D.id]: { dayAdmins: { [past]: [arc.name, v3.name] } } } };
 if (regionG) sum.schools[SCHOOLS_BY_REGION[regionG][0].id] = { dayAdmins: { '2026-10-23': [STAFF.filter((s) => s.active && s.region === regionG && s.role === 'arc')[0].name, STAFF.filter((s) => s.active && s.region === regionG && s.role === 'volunteer')[0].name] } };
+if (regionH) sum.schools[SCHOOLS_BY_REGION[regionH][0].id] = { dayAdmins: { '2026-10-26': [STAFF.filter((s) => s.active && s.region === regionH && s.role === 'volunteer')[0].name] } };
 if (regionF) sum.schools[SCHOOLS_BY_REGION[regionF][0].id] = { dayAdmins: { '2026-10-22': [STAFF.filter((s) => s.active && s.region === regionF && s.role === 'volunteer')[0].name] } }; // the RC planned at C was not recorded anywhere that day
 const hq = { role: 'hq', name: 'HQ Tester', level: 'admin', id: 'hq:t' }; const rcW = { role: 'rc', name: rc.name, id: rc.id, region }; const arcW = { role: 'arc', name: arc.name, id: arc.id, region };
 
@@ -28,6 +29,7 @@ const nd = addWorkingDays(today, 1);
 const Dd = who3(regionD); put('v2:plan:' + regionD, { region: regionD, status: 'locked', version: 1, day_notes: {}, changes: [], visits: [visit('c1', Dd.schools[0], nd, [Dd.rc.name, Dd.vols[0].name], Dd.rc.name), visit('c2', Dd.schools[1], nd, [Dd.arc.name, Dd.vols[1].name], Dd.arc.name)] }); // clear: both coordinators placed, own team each
 const past2 = '2026-10-22'; const Fz = regionF ? who3(regionF) : null; if (regionF) put('v2:plan:' + regionF, { region: regionF, status: 'locked', version: 1, day_notes: {}, changes: [], visits: [visit('f1', Fz.schools[0], past2, [Fz.rc.name, Fz.vols[0].name], Fz.rc.name)] });
 const past3 = '2026-10-23'; const Gz = regionG ? who3(regionG) : null; if (regionG) put('v2:plan:' + regionG, { region: regionG, status: 'locked', version: 1, day_notes: {}, changes: [], visits: [visit('g1', Gz.schools[0], past3, [Gz.rc.name, Gz.vols[0].name], Gz.rc.name)] }); // plan says the RC, the records show the ARC: only the plan was out of date
+const past4 = '2026-10-26'; const Hz = regionH ? who3(regionH) : null; if (regionH) put('v2:plan:' + regionH, { region: regionH, status: 'locked', version: 1, day_notes: {}, changes: [], visits: [visit('h1', Hz.schools[0], past4, [Hz.rc.name, Hz.vols[0].name], Hz.rc.name)] });
 const Ee = who3(regionE); put('v2:plan:' + regionE, { region: regionE, status: 'locked', version: 1, day_notes: {}, changes: [], visits: [{ ...visit('o1', Ee.schools[0], nd, [Ee.rc.name, Ee.vols[0].name], Ee.rc.name), start: '08:00' }, { ...visit('o2', Ee.schools[1], nd, [Ee.arc.name, Ee.vols[0].name], Ee.arc.name), start: '10:00' }, { ...visit('o3', Ee.schools[2], nd, [Ee.rc.name, Ee.vols[0].name], Ee.rc.name), start: '12:00' }] }); // one volunteer at three schools
 let ctx = await loadCtx(env, sum, [region]); let day = regionDay(ctx, region, future);
 ok('the same team at two schools on one day is flagged', day.schools.every((s) => s.issues.some((i) => i.t === 'shared_team')));
@@ -88,6 +90,20 @@ if (regionG) { const pr = pastRows(await loadCtx(env, sum, [regionG]), regionG).
 // the banner and the HQ box must always agree on how many regions are unclear
 { const bb = await coverView(env, sum, hq, { brief: '1' }); const oo = await coverView(env, sum, hq, {}); const n = oo.regions.filter((r) => r.next && r.next.state === 'open' && r.next.date >= oo.live_from).length;
   ok('the banner and the HQ box count the same unclear regions', bb.unclear === n, `${bb.unclear} vs ${n}`); }
+// the rule for "closes by itself", whichever option the region picked
+{ const cx = { leaves: [{ staff_id: rc.id, approved: true, from: '2026-10-20', to: '2026-10-23' }] }; const row = { date: '2026-10-21', needs_acting: [{ school: 'S1' }] };
+  ok('records right and every school had a coordinator: closes', autoCloses({ leaves: [] }, region, { date: past, needs_acting: [] }, { choice: 'records_right' }) === 'plan only');
+  ok('approved leave plus a named acting coordinator closes, even if the region picked "the records are right"', autoCloses(cx, region, row, { choice: 'records_right', acting: { S1: 'A Volunteer' } }) === 'leave');
+  ok('"something else" always goes to HQ', autoCloses(cx, region, row, { choice: 'other', acting: { S1: 'A Volunteer' } }) === null);
+  ok('no leave on record: goes to HQ', autoCloses({ leaves: [] }, region, row, { choice: 'records_right', acting: { S1: 'A Volunteer' } }) === null);
+  ok('"nobody led" goes to HQ', autoCloses(cx, region, row, { choice: 'leave', acting: { S1: 'nobody' } }) === null); }
+if (regionH) { // an answer waiting at HQ closes by itself once approved leave is recorded afterwards
+  await rowAction(env, { role: 'rc', name: Hz.arc.name, id: Hz.arc.id, region: regionH }, { region: regionH, date: past4, choice: 'records_right', acting: { [Hz.schools[0].id]: Hz.vols[0].name } }, sum, spy);
+  const waiting = pastRows(await loadCtx(env, sum, [regionH]), regionH).find((x) => x.date === past4);
+  ok('with no leave on record the answer waits for Joram', waiting.stage === 'hq1');
+  await leaveAction(env, hq, { action: 'add', staff_id: Hz.rc.id, from: past4, to: past4, kind: 'sick', approved_by: 'Joram T, email' }, sum);
+  const after = pastRows(await loadCtx(env, sum, [regionH]), regionH).find((x) => x.date === past4);
+  ok('once the approved leave is recorded, the waiting answer closes by itself', after.stage === 'closed' && after.auto === true); }
 // privacy: health details are refused everywhere a note can be written
 ok('a leave note with health words is refused', (await leaveAction(env, hq, { action: 'add', staff_id: arc.id, from: future, to: future, kind: 'sick', note: 'she has malaria and went to hospital' })).status === 422 && (await setConfirm(env, rcW, { region, date: future, staff_id: rc.id, status: 'absent', reason: 'sick', note: 'stomach pain' })).status === 422);
 ok('a plain note is accepted', (await leaveAction(env, hq, { action: 'add', staff_id: arc.id, from: addWorkingDays(future, 3), to: addWorkingDays(future, 3), kind: 'sick', note: 'away' })).ok === true);

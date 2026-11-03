@@ -145,7 +145,7 @@ export async function setConfirm(env, who, { region, date, staff_id, status, rea
 }
 
 // ---- leave: coordinators report their own, HQ records or approves anyone's (no medical detail is kept)
-export async function leaveAction(env, who, b) {
+export async function leaveAction(env, who, b, sum = null) {
   const ls = await get(env, K_LEAVE, []); const now = new Date().toISOString();
   if (b.action === 'add') {
     const st = STAFF.find((s) => s.active && String(s.id) === String(b.staff_id)); if (!st || !['rc', 'arc'].includes(st.role)) return { error: 'Leave can only be saved for an RC or an ARC.', status: 422 };
@@ -156,10 +156,19 @@ export async function leaveAction(env, who, b) {
   } else if (b.action === 'approve') { if (!isEditor(who)) return { error: 'Only HQ staff who can edit can approve leave.', status: 403 }; const l = ls.find((x) => x.id === b.id); if (!l) return { error: 'Not found', status: 404 }; l.approved = true; l.approved_by = clip(b.approved_by, 80) || who.name; l.approved_at = now; }
   else if (b.action === 'remove') { const i = ls.findIndex((x) => x.id === b.id); if (i < 0) return { error: 'Not found', status: 404 }; const l = ls[i]; if (!(isEditor(who) || (!l.approved && String(who.id) === String(l.staff_id)))) return { error: 'You cannot remove this', status: 403 }; ls.splice(i, 1); }
   else return { error: 'Unknown action', status: 422 };
-  await kv(env).put(K_LEAVE, ls); return { ok: true };
+  await kv(env).put(K_LEAVE, ls); if (sum) { try { await sweepRows(env, sum); } catch { /* the afternoon check will try again */ } } return { ok: true };
 }
 
 // ---- days gone: the region answers once for the whole item, HQ acknowledges
+// An item closes by itself when nothing is left to judge: only the plan was out of date (every school had a coordinator in the records),
+// or approved leave covers that day and an acting coordinator is named at every school that had none. "Something else" always goes to HQ.
+export const autoCloses = (ctx, region, row, resp) => {
+  if (!row || !resp || resp.choice === 'other') return null;
+  const noCoord = row.needs_acting || []; if (!noCoord.length && resp.choice === 'records_right') return 'plan only';
+  const cs = coordsOf(region); const leave = [cs.rc, cs.arc].filter(Boolean).some((c) => ctx.leaves.some((l) => String(l.staff_id) === String(c.id) && l.approved && l.from <= row.date && row.date <= l.to));
+  const named = noCoord.every((x) => resp.acting && resp.acting[x.school] && String(resp.acting[x.school]).toLowerCase() !== 'nobody');
+  return leave && named ? 'leave' : null;
+};
 const isMundo = (w) => Boolean(w && w.role === 'hq' && (w.hq_id === 'h1' || /mundo/i.test(w.name || '')));
 const hist = (r, who, level, action, note) => { (r.history ||= []).push({ at: new Date().toISOString(), by: who.name, by_id: who.hq_id || who.id, level, action, note: clip(note, 300) }); };
 const alertHq = async (env, send, title, body, pred) => { try { await send(env, (w) => Boolean(w) && w.role === 'hq' && pred(w), { title, body, url: '/#cover' }); } catch { /* the page still shows it */ } };
@@ -191,19 +200,26 @@ export async function rowAction(env, who, b, sum = null, send = pushTo) {
   let ls = await get(env, K_LEAVE, []);
   if (leaveStaff && !ls.some((l) => String(l.staff_id) === String(leaveStaff.id) && l.from <= b.date && b.date <= l.to)) { ls.push({ id: Math.random().toString(36).slice(2, 9), staff_id: leaveStaff.id, name: leaveStaff.name, region, from: b.date, to: b.date, kind: 'other', approved: false, approved_by: null, note: clip(b.note, 120), by: who.name, at: new Date().toISOString(), source: 'coordinator' }); await kv(env).put(K_LEAVE, ls); }
   hist(r, who, 'region', re ? 'answered again' : 'answered', `${choice}${b.note ? ': ' + b.note : ''}`);
-  const approvedLeave = leaveStaff && ls.some((l) => String(l.staff_id) === String(leaveStaff.id) && l.from <= b.date && b.date <= l.to && l.approved);
-  const actedFine = Object.values(acting).every((n) => n.toLowerCase() !== 'nobody');
-  const planOnly = choice === 'records_right' && !((row && row.needs_acting) || []).length; // every school that day had a coordinator in the records: only the plan was out of date, nothing to judge
-  if ((choice === 'leave' && approvedLeave && actedFine) || planOnly) { r.stage = 'closed'; r.auto = true; r.closed_at = new Date().toISOString(); (r.history ||= []).push({ at: r.closed_at, by: 'Command Center', by_id: 'system', level: 'auto', action: 'closed by itself', note: planOnly ? 'The region said the records are right. Every school had a coordinator in the records, so only the plan was out of date.' : 'Approved leave is on record and an acting coordinator is named where needed.' }); await kv(env).put(K_ROWS, rows); return { ok: true, closed: true }; }
+  ctx.leaves = ls; const why = autoCloses(ctx, region, row, r.response);
+  if (why) { r.stage = 'closed'; r.auto = true; r.closed_at = new Date().toISOString(); (r.history ||= []).push({ at: r.closed_at, by: 'Command Center', by_id: 'system', level: 'auto', action: 'closed by itself', note: why === 'plan only' ? 'The region said the records are right. Every school had a coordinator in the records, so only the plan was out of date.' : 'Approved leave is on record and an acting coordinator is named where needed.' }); await kv(env).put(K_ROWS, rows); return { ok: true, closed: true }; }
   r.stage = 'hq1'; await kv(env).put(K_ROWS, rows);
   await alertHq(env, send, 'A day is waiting for your check', `${region.charAt(0) + region.slice(1).toLowerCase()}, ${b.date}. The region has answered. Please check it.`, (w) => (w.review_level || 0) >= 2 && !isMundo(w));
   return { ok: true };
+}
+
+// Items waiting for the first HQ check that nobody at HQ has touched are re-checked: if approved leave was recorded after the answer, or the rule now fits, they close by themselves.
+export async function sweepRows(env, sum) {
+  const ctx = await loadCtx(env, sum); const rows = ctx.rows; let n = 0;
+  for (const region of REGIONS) for (const x of pastRows(ctx, region)) { const r = rows[`${region}|${x.date}`]; if (!r || stageOf(r) !== 'hq1' || (r.history || []).some((h) => ['hq1', 'final'].includes(h.level))) continue;
+    if (autoCloses(ctx, region, x, r.response)) { r.stage = 'closed'; r.auto = true; r.closed_at = new Date().toISOString(); (r.history ||= []).push({ at: r.closed_at, by: 'Command Center', by_id: 'system', level: 'auto', action: 'closed by itself', note: 'On a second look: nothing was left to judge (approved leave is on record and an acting coordinator is named, or only the plan was out of date).' }); n++; } }
+  if (n) await kv(env).put(K_ROWS, rows); return n;
 }
 
 // ---- scheduled: alerts to the individual, and what the Bridge shows
 const seen = async (env, key, set) => { const l = await get(env, K_ALERTED, {}); if (l[key]) return true; if (set) { l[key] = Date.now(); await kv(env).put(K_ALERTED, l); } return false; };
 export async function runCover(env, hhmm, sum, send = pushTo, liveFrom = COVER_LIVE_FROM) {
   const today = eatToday(); const slot = { '11:30': 'ask', '13:30': 'remind', '04:05': 'morning' }[hhmm]; if (!slot || !isWorkingDay(today)) return { skipped: true };
+  try { await sweepRows(env, sum); } catch { /* try again next time */ }
   const ctx = await loadCtx(env, sum); const next = slot === 'morning' ? today : addWorkingDays(today, 1); if (next > FIELD_END || next < liveFrom) return { skipped: true }; const out = { sent: 0 };
   const to = async (c, title, body, url) => { await send(env, (w) => Boolean(w) && String(w.id) === String(c.id), { title, body, url }); out.sent++; };
   for (const region of REGIONS) {

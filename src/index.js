@@ -10,7 +10,7 @@ import { regionProgress, schoolDetail, standingFor } from './progress.js';
 import { togetherBoard } from './together.js';
 import { computePatterns } from './patterns.js';
 import { syncQa, qaView, raiseQa, qaRaisedFlags, alertQa } from './qa.js';
-import { coverView, setAssign, setConfirm, leaveAction, rowAction, runCover } from './cover.js';
+import { coverView, setAssign, setConfirm, leaveAction, rowAction, runCover, sweepRows } from './cover.js';
 import { boxPublic, setBoxKey, setBoxLive, submitBox, listBox, markBox, deleteBox, boxSummary, markSaved, takePending } from './box.js';
 import { SCHOOL_COORDS, COORD_SOURCE, COORD_WRONG } from './data/school_coords.js';
 import { findRecords as findToMove, previewMove, applyMove, correctionsView, correctionCopy } from './corrections.js';
@@ -704,7 +704,7 @@ export default {
         const sum = await sumNow(env);
         if (path === '/api/cover') { const r = await coverView(env, sum, who, Object.fromEntries(url.searchParams)); return r.error ? err(r.error, r.status || 403) : json(r); }
         if (method !== 'POST') return err('Use POST', 405); const b = await request.json().catch(() => ({}));
-        const act = path.slice('/api/cover/'.length); const fn = { assign: () => setAssign(env, who, b), confirm: () => setConfirm(env, who, b), leave: () => leaveAction(env, who, b), row: () => rowAction(env, who, b, sum) }[act];
+        const act = path.slice('/api/cover/'.length); const fn = { assign: () => setAssign(env, who, b), confirm: () => setConfirm(env, who, b), leave: () => leaveAction(env, who, b, sum), sweep: async () => (who.role === 'hq' && (who.level || 'admin') !== 'viewer' ? { ok: true, closed: await sweepRows(env, sum) } : { error: 'Only HQ editors can do this', status: 403 }), row: () => rowAction(env, who, b, sum) }[act];
         if (!fn) return err('Not found', 404); const r = await fn(); if (r.error) return err(r.error, r.status || 422);
         await logActivity(env, who, `Coverage: ${act}${b.action ? ' ' + b.action : ''}`, [b.region, b.date].filter(Boolean).join(' ')); return json({ status: 'ok' });
       }
