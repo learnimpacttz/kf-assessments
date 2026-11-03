@@ -91,11 +91,11 @@ export function pastRows(ctx, region) {
 // ---- the views people get
 export async function coverView(env, sum, who, q = {}) {
   const ctx = await loadCtx(env, sum); const today = ctx.today;
-  if (q.brief) { const regs = who.role === 'hq' ? REGIONS : ['rc', 'arc'].includes(who.role) ? [who.region] : []; let open = 0, overdue = 0, h1 = 0, fin = 0, unclear = 0; const win = nextDays(today, 2).filter((d) => d >= COVER_LIVE_FROM);
-    for (const r of regs) { for (const x of pastRows(ctx, r)) { if (['open', 'rework'].includes(x.stage)) open++; if (x.overdue) overdue++; if (x.stage === 'hq1') h1++; if (x.stage === 'final') fin++; }
-      if (who.role === 'hq') { const nd = focusDay(today); if (nd) { const dd = regionDay(ctx, r, nd); if (dd.schools.length && !dd.clear && !dd.complete) unclear++; } } else for (const d of win) { const dd = regionDay(ctx, r, d); const me = dd.coordinators.find((c) => String(c.id) === String(who.id)); if (dd.schools.length && !dd.clear && !dd.complete && me && me.state === 'open') unclear++; } }
+  if (q.brief) { const regs = who.role === 'hq' ? REGIONS : ['rc', 'arc'].includes(who.role) ? [who.region] : []; let open = 0, overdue = 0, h1 = 0, fin = 0, unclear = 0; const dues = []; const win = nextDays(today, 2).filter((d) => d >= COVER_LIVE_FROM);
+    for (const r of regs) { for (const x of pastRows(ctx, r)) { if (['open', 'rework'].includes(x.stage)) { open++; if (who.role !== 'hq') dues.push(x.due); } if (x.overdue) overdue++; if (x.stage === 'hq1') h1++; if (x.stage === 'final') fin++; }
+      if (who.role === 'hq') { const nd = focusDay(today); if (nd) { const dd = regionDay(ctx, r, nd); if (dd.schools.length && !dd.clear && !dd.complete) unclear++; } } else for (const d of win) { const dd = regionDay(ctx, r, d); const me = dd.coordinators.find((c) => String(c.id) === String(who.id)); if (dd.schools.length && !dd.clear && !dd.complete && me && me.state === 'open') { unclear++; dues.push(deadlineOf(d)); } } }
     const lvl = who.review_level || 0; const for_me = who.role === 'hq' ? (isEditor(who) && lvl >= 2 && !isMundo(who) ? h1 : 0) + (isEditor(who) && lvl >= 3 ? fin : 0) : 0;
-    return { status: 'ok', brief: true, role: who.role, open, overdue, for_me, unclear, act: who.role === 'hq' ? for_me + unclear : open + unclear }; }
+    return { status: 'ok', brief: true, role: who.role, open, overdue, for_me, unclear, due: dues.sort()[0] || null, act: who.role === 'hq' ? for_me + unclear : open + unclear }; }
   if (who.role === 'volunteer') return { status: 'ok', role: 'volunteer', today, acting: actingFor(ctx, who) };
   const hq = who.role === 'hq'; const own = ['rc', 'arc'].includes(who.role) ? who.region : null; if (!hq && !own) return { error: 'This page is for coordinators and HQ', status: 403 };
   if (hq && !q.region) { // HQ overview: every region, the next working day and the days waiting for an answer

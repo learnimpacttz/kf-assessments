@@ -548,3 +548,24 @@ table.kv{table-layout:fixed;max-width:100%}table.kv td{overflow-wrap:anywhere;wo
 .act-board ol{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 0}
 .act-board li{flex:0 1 auto}
 .act-board li .btn{width:auto;font-size:13px;padding:6px 10px;border-radius:8px}
+
+/* the action box: one look for everything that needs the person */
+.act-box{border:2px solid var(--bad);border-radius:10px;background:var(--bad-bg);padding:6px 10px;margin:8px 0}
+.act-box.amber{border-color:var(--warn);background:var(--warn-bg)}
+.act-box.plain{border-color:var(--line);background:var(--surface2)}
+.act-head{font-weight:800;font-size:14px;color:var(--bad);margin-bottom:2px}
+.act-box.amber .act-head{color:var(--warn-ink)}.act-box.plain .act-head{color:var(--ink)}
+.act-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:5px 0;border-top:1px solid var(--line)}
+.act-row:first-of-type{border-top:0}
+.act-row .tx{flex:1;min-width:180px;font-size:13.5px}
+.act-pill.plain{background:var(--surface);color:var(--ink);border:1px solid var(--line)}
+.act-more>summary{cursor:pointer;font-weight:700;font-size:13px;padding:4px 0}
+
+.act-row .btn .sh{display:none}
+@media (max-width:560px){
+  .act-row{flex-wrap:nowrap;gap:6px;align-items:flex-start}
+  .act-row .tx{min-width:0;font-size:13px}
+  .act-row .act-pill{font-size:10.5px;padding:2px 7px;flex:0 0 auto;white-space:nowrap}
+  .act-row .btn{flex:0 0 auto;padding:4px 9px;font-size:12px}
+  .act-row .btn .lg{display:none}.act-row .btn .sh{display:inline}
+}
