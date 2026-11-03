@@ -63,7 +63,7 @@ ok('a past day with no coordinator in the records becomes one item for the regio
 ok('the item asks who acted, and a name is required', (await rowAction(env, rcW, { region, date: past, choice: 'records_right' }, sum, spy)).status === 422);
 ok('"something else" needs a note', (await rowAction(env, rcW, { region, date: past, choice: 'other', acting: { [C.id]: v2.name } }, sum, spy)).status === 422);
 ok('the region answers: the answer goes to the first HQ review', (await rowAction(env, rcW, { region, date: past, choice: 'records_right', acting: { [C.id]: v2.name } }, sum, spy)).ok === true && pastRows(await loadCtx(env, sum, [region]), region)[0].stage === 'hq1');
-ok('Joram is alerted, not the coordinator', calls.some((c) => /First HQ review/.test(c.a.title) && c.pred({ role: 'hq', review_level: 2, name: 'Joram T' }) && !c.pred({ role: 'hq', review_level: 3, hq_id: 'h1', name: 'Mundo T' }) && !c.pred({ role: 'rc', id: rc.id })));
+ok('Joram is alerted, not the coordinator', calls.some((c) => /waiting for your check/.test(c.a.title) && c.pred({ role: 'hq', review_level: 2, name: 'Joram T' }) && !c.pred({ role: 'hq', review_level: 3, hq_id: 'h1', name: 'Mundo T' }) && !c.pred({ role: 'rc', id: rc.id })));
 ok('an answer already with HQ cannot be changed', (await rowAction(env, rcW, { region, date: past, choice: 'other', note: 'a different story here' }, sum, spy)).status === 409);
 const joram = { role: 'hq', name: 'Joram T', level: 'editor', review_level: 2, hq_id: 'h2', id: 'hq:2' }, mundo = { role: 'hq', name: 'Mundo T', level: 'admin', review_level: 3, hq_id: 'h1', id: 'hq:1' };
 ok('a coordinator cannot review', (await rowAction(env, rcW, { action: 'review', decision: 'approve', region, date: past }, sum, spy)).status === 403);
@@ -85,8 +85,11 @@ if (regionG) { const pr = pastRows(await loadCtx(env, sum, [regionG]), regionG).
   const r3 = await rowAction(env, { role: 'rc', name: Gz.rc.name, id: Gz.rc.id, region: regionG }, { region: regionG, date: past3, choice: 'records_right' }, sum, spy);
   const after = pastRows(await loadCtx(env, sum, [regionG]), regionG).find((x) => x.date === past3);
   ok('confirming the records are right closes a plan-only day by itself', r3.closed === true && after.stage === 'closed' && after.auto === true); }
+// privacy: health details are refused everywhere a note can be written
+ok('a leave note with health words is refused', (await leaveAction(env, hq, { action: 'add', staff_id: arc.id, from: future, to: future, kind: 'sick', note: 'she has malaria and went to hospital' })).status === 422 && (await setConfirm(env, rcW, { region, date: future, staff_id: rc.id, status: 'absent', reason: 'sick', note: 'stomach pain' })).status === 422);
+ok('a plain note is accepted', (await leaveAction(env, hq, { action: 'add', staff_id: arc.id, from: addWorkingDays(future, 3), to: addWorkingDays(future, 3), kind: 'sick', note: 'away' })).ok === true);
 // views
-const cv = await coverView(env, sum, rcW, {}); ok('a coordinator sees their region: days to come and the leave', cv.region === region && cv.days.length >= 1 && cv.me === rc.id && cv.leave.length === 1);
+const cv = await coverView(env, sum, rcW, {}); ok('a coordinator sees their region: days to come and the leave', cv.region === region && cv.days.length >= 1 && cv.me === rc.id && cv.leave.length >= 1);
 ok('HQ sees every region', (await coverView(env, sum, hq, {})).regions.length >= 1);
 ok('a volunteer sees only where they are acting', (await coverView(env, sum, { role: 'volunteer', name: v1.name, id: v1.id }, {})).acting.some((a) => a.school === A.id && a.date === future));
 ok('the Bridge hears of nothing waiting for the region once it has answered', (await coverAttention(env, sum)).rows_open === 0);
@@ -95,7 +98,7 @@ ok('the Bridge hears of nothing waiting for the region once it has answered', (a
 if (isWorkingDay(today)) {
   mem.delete('v2:cover:conf'); mem.delete('v2:cover:leave'); mem.delete('v2:cover:alerted'); mem.delete('v2:cover:assign');
   const out = await runCover(env, '11:30', sum, spy, '2000-01-01');
-  ok('the afternoon alert goes to each coordinator who has not confirmed, one by one', calls.filter((c) => c.pred({ id: Z.rc.id }) || c.pred({ id: Z.arc.id })).length === 2 && calls.every((c) => !c.pred({ id: Z.vols[0].id })) && /needs your confirmation/.test((calls.find((c) => c.pred({ id: Z.rc.id })) || { a: { title: '' } }).a.title), JSON.stringify(out));
+  ok('the afternoon alert goes to each coordinator who has not confirmed, one by one', calls.filter((c) => c.pred({ id: Z.rc.id }) || c.pred({ id: Z.arc.id })).length === 2 && calls.every((c) => !c.pred({ id: Z.vols[0].id })) && /needs your help/.test((calls.find((c) => c.pred({ id: Z.rc.id })) || { a: { title: '' } }).a.title), JSON.stringify(out));
   ok('the same alert is never sent twice', (await runCover(env, '11:30', sum, spy, '2000-01-01')).sent === 0);
 } else console.log('PASS (weekend: alert checks skipped)');
 

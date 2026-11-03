@@ -75,9 +75,9 @@ function validateVisits(region, visits, dayNotes = {}) {
     if (n > cap) errors.push(`${d}: ${n} schools planned, the limit is ${cap} a day`);
     if (region !== 'DODOMA' && n === 3 && !dayNoteOk('three', dayNotes[d])) errors.push(`${d}: 3 schools in one day needs a reason (small schools, close together) and a short explanation of at least 8 characters`);
     if (region !== 'DODOMA' && n === 1 && !dayNoteOk('one', dayNotes[d])) errors.push(`${d}: only 1 school that day needs a reason (large school, distance, remote) and a short explanation of at least 8 characters`);
-    for (const person of overloaded(vs)) errors.push(`${d}: ${person} is planned at three schools. One person, team or coordinator cannot run three schools in a day: spread the people and the coordinators across the schools.`);
+    for (const person of overloaded(vs)) errors.push(`${d}: ${person} is planned at three schools in one day. That is too much for one person or team. Please share the people and the coordinators between the schools.`);
     if (n >= 2) { // nobody can be at two schools at the same time (the same person may visit several schools in a day at different times)
-      for (const v of vs) for (const person of clashingPeople(v, vs)) errors.push(`${d}: ${person} is planned at ${SCHOOL_BY_ID[v.school]?.name || v.school} and another school within an hour of each other. Use different start times (at least an hour apart) or a different team`);
+      for (const v of vs) for (const person of clashingPeople(v, vs)) errors.push(`${d}: ${person} is planned at ${SCHOOL_BY_ID[v.school]?.name || v.school} and at another school at almost the same time. Please start the schools at least one hour apart, or use a different team.`);
     }
   }
   for (const id of ids) if (!seen.has(id)) errors.push(`${SCHOOL_BY_ID[id].name} has no date yet`);
@@ -126,8 +126,8 @@ export async function changeVisit(env, who, region, { visit_id, new_date, new_st
   });
   { // moving a visit must not put the same person at two schools at the same time, and the RC leads when both coordinators are in the team
     const team = (new_team || v.team || []); const other = plan.visits.filter((x) => x.date === date && x.id !== v.id);
-    const start = new_start || v.start; for (const person of team) { const at = other.find((x) => (x.team || []).includes(person) && clash({ start }, x)); if (at) return { error: `${person} is already planned at ${SCHOOL_BY_ID[at.school]?.name || at.school} from ${at.start || '08:00'} on ${date}. The same person can visit two schools in a day only at different times (at least an hour apart): change the start time or choose a different team.`, status: 422 }; }
-    const over = overloaded([...other, { ...v, team, lead: new_lead || v.lead || null }]); if (over.length) return { error: `${over[0]} would be at three schools on ${date}. One person, team or coordinator cannot run three schools in a day: spread the people and the coordinators across the schools.`, status: 422 };
+    const start = new_start || v.start; for (const person of team) { const at = other.find((x) => (x.team || []).includes(person) && clash({ start }, x)); if (at) return { error: `${person} is already planned at ${SCHOOL_BY_ID[at.school]?.name || at.school} at ${at.start || '08:00'} on ${date}. One person can visit two schools in a day only if the visits start at least one hour apart. Please change the start time or choose a different team.`, status: 422 }; }
+    const over = overloaded([...other, { ...v, team, lead: new_lead || v.lead || null }]); if (over.length) return { error: `${over[0]} would be at three schools on ${date}. That is too much for one person or team. Please share the people and the coordinators between the schools.`, status: 422 };
     const le = leadErrors(region, [{ ...v, team, lead: new_lead || v.lead || null }]); if (le.length && (new_team || new_lead)) return { error: le[0], status: 422 };
   }
   if (date !== v.date) { v.notices = {}; v.status = 'moved'; }

@@ -83,7 +83,7 @@ export async function alertQa(env, send = pushTo) {
   let sent = 0;
   for (const v of fresh) {
     done.add(v.id); if (/^\s*test\b/i.test(v.comment || '')) continue; const n = score(v, F).critical; if (!n) continue;
-    await send(env, (w) => Boolean(w && w.role === 'hq' && !(Array.isArray(w.hide) && w.hide.length)), { title: 'QA visit: serious item answered No', body: `${(SCHOOL_BY_ID[v.school] || {}).name || 'A school'}: ${n} serious item${n === 1 ? '' : 's'}. Open QA visits.`, url: '/#qa' }); sent++;
+    await send(env, (w) => Boolean(w && w.role === 'hq' && !(Array.isArray(w.hide) && w.hide.length)), { title: 'A QA visit has a serious item', body: `${(SCHOOL_BY_ID[v.school] || {}).name || 'A school'}: ${n} serious item${n === 1 ? '' : 's'} answered No. Open QA visits.`, url: '/#qa' }); sent++;
   }
   await kv(env).put(K_ALERTED, [...done]); return { sent };
 }
@@ -142,8 +142,8 @@ export async function qaView(env, sum) {
     if (v.ass && !staffForKoboName(v.ass)) flags.push({ t: 'person', text: `"${v.ass}" is not in the people list.` });
     const pv = ((plans[R] || {}).visits || []).filter((x) => x.school === v.school);
     if (pv.length) { const on = pv.find((x) => x.date === v.date); if (!on) flags.push({ t: 'plan', text: `The plan has this school on ${pv.map((x) => x.date).join(', ')}, not on ${v.date}.` }); else if (v.ass && !(on.team || []).some((n) => norm(n) === norm(canon))) flags.push({ t: 'plan', text: `${canon} is not on the planned team for this visit (${(on.team || []).join(', ')}).` }); }
-    const da = (((sum || {}).schools || {})[v.school] || {}).dayAdmins || {}; if (sum && v.date && v.date <= today && v.ass && !(da[v.date] || []).includes(canon)) flags.push({ t: 'records', text: `The Command Center has no tests or sampling by ${canon} at this school on ${v.date} (records may not have arrived yet).` });
-    const att = (((((sum || {}).schools || {})[v.school] || {}).g || {})[v.grade] || {}).att; if (v.reg != null && att != null && att !== v.reg) flags.push({ t: 'register', text: `The register count seen by the observer (${v.reg}) differs from the attendance the team entered (${att}).` });
+    const da = (((sum || {}).schools || {})[v.school] || {}).dayAdmins || {}; if (sum && v.date && v.date <= today && v.ass && !(da[v.date] || []).includes(canon)) flags.push({ t: 'records', text: `We have no tests or sampling by ${canon} at this school on ${v.date} yet. The records may not have arrived.` });
+    const att = (((((sum || {}).schools || {})[v.school] || {}).g || {})[v.grade] || {}).att; if (v.reg != null && att != null && att !== v.reg) flags.push({ t: 'register', text: `The observer saw ${v.reg} pupils in the register, but the team sent ${att} as the attendance.` });
     if (v.ans.e1 === 0) flags.push({ t: 'plan', text: 'The observer marked the assessor as not on the planned team.' });
     if (SG && v.grade) { const rn = (SG[`${v.school}|${v.grade}`] || {}).rn || []; (v.rands || []).forEach((n, i) => { if (n == null) return; const hit = rn.map((e) => e.split('~')).find((e) => parseInt(e[0], 10) === n); if (!hit) flags.push({ t: 'pupil', text: `Pupil ${i + 1} (number ${n}) has no test record for this school and grade yet.` }); else if (v.ass && norm(hit[1]) !== norm(canon)) flags.push({ t: 'pupil', text: `Pupil ${i + 1} (number ${n}) was tested by ${hit[1]}, not by ${canon}.` }); }); }
     const f0 = first.get(kOf(v)); if (f0 !== v.id) flags.push({ t: 'dup', text: `Looks like a repeat of QA record ${f0}.` });
