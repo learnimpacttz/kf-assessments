@@ -85,6 +85,9 @@ if (regionG) { const pr = pastRows(await loadCtx(env, sum, [regionG]), regionG).
   const r3 = await rowAction(env, { role: 'rc', name: Gz.rc.name, id: Gz.rc.id, region: regionG }, { region: regionG, date: past3, choice: 'records_right' }, sum, spy);
   const after = pastRows(await loadCtx(env, sum, [regionG]), regionG).find((x) => x.date === past3);
   ok('confirming the records are right closes a plan-only day by itself', r3.closed === true && after.stage === 'closed' && after.auto === true); }
+// the banner and the HQ box must always agree on how many regions are unclear
+{ const bb = await coverView(env, sum, hq, { brief: '1' }); const oo = await coverView(env, sum, hq, {}); const n = oo.regions.filter((r) => r.next && r.next.state === 'open' && r.next.date >= oo.live_from).length;
+  ok('the banner and the HQ box count the same unclear regions', bb.unclear === n, `${bb.unclear} vs ${n}`); }
 // privacy: health details are refused everywhere a note can be written
 ok('a leave note with health words is refused', (await leaveAction(env, hq, { action: 'add', staff_id: arc.id, from: future, to: future, kind: 'sick', note: 'she has malaria and went to hospital' })).status === 422 && (await setConfirm(env, rcW, { region, date: future, staff_id: rc.id, status: 'absent', reason: 'sick', note: 'stomach pain' })).status === 422);
 ok('a plain note is accepted', (await leaveAction(env, hq, { action: 'add', staff_id: arc.id, from: addWorkingDays(future, 3), to: addWorkingDays(future, 3), kind: 'sick', note: 'away' })).ok === true);

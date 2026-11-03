@@ -540,3 +540,11 @@ table.kv{table-layout:fixed;max-width:100%}table.kv td{overflow-wrap:anywhere;wo
 .btn.big{font-size:16px;padding:12px 18px;border-radius:10px;font-weight:700}
 .act-banner{display:flex;gap:10px;align-items:center;flex-wrap:wrap;border-radius:10px;padding:10px 14px;margin:8px 0;background:var(--bad-bg);border:2px solid var(--bad);color:var(--ink)}
 .act-banner .btn{margin-left:auto}
+
+/* the action box is compact: one title line and buttons side by side */
+.act-board{padding:8px 12px;margin:8px 0;border-radius:10px}
+.act-board .act-big{font-size:17px;line-height:1.2;display:inline}
+.act-board .act-sub{display:inline;margin:0 0 0 8px;font-size:13px}
+.act-board ol{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 0}
+.act-board li{flex:0 1 auto}
+.act-board li .btn{width:auto;font-size:13px;padding:6px 10px;border-radius:8px}

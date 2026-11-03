@@ -70,6 +70,7 @@ export function regionDay(ctx, region, date) {
 
 // ---- days still to come (confirmed ahead) and days gone (plan against records)
 export const nextDays = (today, n = 3) => { const out = []; let d = today; if (isWorkingDay(today)) out.push(today); for (let i = 0; i < n; i++) { d = addWorkingDays(d, 1); if (d <= FIELD_END) out.push(d); } return out; };
+export const focusDay = (today) => nextDays(today, 3).filter((d) => d > today && d >= COVER_LIVE_FROM)[0] || null; // the same day for the banner, the HQ box and the Bridge
 export const deadlineOf = (date) => { let d = new Date(date + 'T00:00:00Z'); do { d = new Date(d.getTime() - 86400e3); } while (!isWorkingDay(d.toISOString().slice(0, 10))); return d.toISOString().slice(0, 10) + 'T' + CONFIRM_BY; }; // working day before, 18:00 EAT
 const stageOf = (r) => r.stage || (r.ack ? 'closed' : r.response ? 'hq1' : 'open');
 export const STAGE_LABEL = { open: 'Waiting for the region', rework: 'Sent back to the region', hq1: 'First HQ review (Joram)', final: 'Final confirmation (Mundo)', closed: 'Closed' };
@@ -92,13 +93,13 @@ export async function coverView(env, sum, who, q = {}) {
   const ctx = await loadCtx(env, sum); const today = ctx.today;
   if (q.brief) { const regs = who.role === 'hq' ? REGIONS : ['rc', 'arc'].includes(who.role) ? [who.region] : []; let open = 0, overdue = 0, h1 = 0, fin = 0, unclear = 0; const win = nextDays(today, 2).filter((d) => d >= COVER_LIVE_FROM);
     for (const r of regs) { for (const x of pastRows(ctx, r)) { if (['open', 'rework'].includes(x.stage)) open++; if (x.overdue) overdue++; if (x.stage === 'hq1') h1++; if (x.stage === 'final') fin++; }
-      if (who.role === 'hq') { const nd = win.find((d) => d > today) || win[0]; if (nd) { const dd = regionDay(ctx, r, nd); if (dd.schools.length && !dd.clear && !dd.complete) unclear++; } } else for (const d of win) { const dd = regionDay(ctx, r, d); const me = dd.coordinators.find((c) => String(c.id) === String(who.id)); if (dd.schools.length && !dd.clear && !dd.complete && me && me.state === 'open') unclear++; } }
+      if (who.role === 'hq') { const nd = focusDay(today); if (nd) { const dd = regionDay(ctx, r, nd); if (dd.schools.length && !dd.clear && !dd.complete) unclear++; } } else for (const d of win) { const dd = regionDay(ctx, r, d); const me = dd.coordinators.find((c) => String(c.id) === String(who.id)); if (dd.schools.length && !dd.clear && !dd.complete && me && me.state === 'open') unclear++; } }
     const lvl = who.review_level || 0; const for_me = who.role === 'hq' ? (isEditor(who) && lvl >= 2 && !isMundo(who) ? h1 : 0) + (isEditor(who) && lvl >= 3 ? fin : 0) : 0;
     return { status: 'ok', brief: true, role: who.role, open, overdue, for_me, unclear, act: who.role === 'hq' ? for_me + unclear : open + unclear }; }
   if (who.role === 'volunteer') return { status: 'ok', role: 'volunteer', today, acting: actingFor(ctx, who) };
   const hq = who.role === 'hq'; const own = ['rc', 'arc'].includes(who.role) ? who.region : null; if (!hq && !own) return { error: 'This page is for coordinators and HQ', status: 403 };
   if (hq && !q.region) { // HQ overview: every region, the next working day and the days waiting for an answer
-    const next = nextDays(today, 1).filter((d) => d > today)[0] || null; const regions = REGIONS.filter((r) => ctx.plans[r] && (ctx.plans[r].visits || []).length).map((r) => { const d = next ? regionDay(ctx, r, next) : null; const rows = pastRows(ctx, r);
+    const next = focusDay(today); const regions = REGIONS.filter((r) => ctx.plans[r] && (ctx.plans[r].visits || []).length).map((r) => { const d = next ? regionDay(ctx, r, next) : null; const rows = pastRows(ctx, r);
       return { region: r, next: d && d.schools.length ? { date: next, state: d.clear ? 'clear' : d.complete ? 'complete' : 'open', coordinators: d.coordinators.map((c) => ({ name: c.name, position: c.position, state: c.state })), unassigned: d.unassigned, problems: d.problems } : null, rows_open: rows.filter((x) => ['open', 'rework'].includes(x.stage)).length, rows_overdue: rows.filter((x) => x.overdue).length, rows_hq: rows.filter((x) => ['hq1', 'final'].includes(x.stage)).length }; });
     const rq = []; for (const r of REGIONS) for (const x of pastRows(ctx, r)) if (['hq1', 'final'].includes(x.stage)) rq.push({ region: r, date: x.date, stage: x.stage, stage_label: x.stage_label, response: x.response, history: x.history, due: x.due, schools: x.schools.map((y) => y.name) });
     const lvl = who.review_level || 0; return { status: 'ok', role: 'hq', today, live_from: COVER_LIVE_FROM, review: rq, can_review: { hq1: isEditor(who) && lvl >= 2 && !isMundo(who), final: isEditor(who) && lvl >= 3 }, next_day: next, deadline: next ? deadlineOf(next) : null, regions, coordinators: STAFF.filter((x) => x.active && ['rc', 'arc'].includes(x.role)).map((x) => ({ id: x.id, name: x.name, position: x.role === 'rc' ? 'RC' : 'ARC', region: x.region })), leave: ctx.leaves.slice().sort((a, b) => (b.from > a.from ? 1 : -1)).slice(0, 60) };
@@ -215,7 +216,7 @@ export async function runCover(env, hhmm, sum, send = pushTo, liveFrom = COVER_L
   return out;
 }
 export async function coverAttention(env, sum, liveFrom = COVER_LIVE_FROM) {
-  const ctx = await loadCtx(env, sum); const today = ctx.today; const next = nextDays(today, 1).filter((d) => d > today)[0]; const nowEat = new Date(Date.now() + 3 * 3600e3).toISOString(); let unconf = 0, unassigned = 0, rows = 0, overdue = 0, h1 = 0, fin = 0; const regs = new Set();
+  const ctx = await loadCtx(env, sum); const today = ctx.today; const next = focusDay(today); const nowEat = new Date(Date.now() + 3 * 3600e3).toISOString(); let unconf = 0, unassigned = 0, rows = 0, overdue = 0, h1 = 0, fin = 0; const regs = new Set();
   for (const region of REGIONS) {
     if (next) { const d = regionDay(ctx, region, next); if (d.schools.length) { const late = nowEat >= deadlineOf(next) && next >= liveFrom && !d.clear && !d.complete; if (next >= liveFrom && !d.clear) unassigned += d.unassigned; if (late) { const o = d.coordinators.filter((c) => c.state === 'open').length; unconf += o; if (o) regs.add(region); } } }
     const pr = pastRows(ctx, region); rows += pr.filter((r) => ['open', 'rework'].includes(r.stage)).length; overdue += pr.filter((r) => r.overdue).length; h1 += pr.filter((r) => r.stage === 'hq1').length; fin += pr.filter((r) => r.stage === 'final').length; if (pr.some((r) => ['open', 'rework'].includes(r.stage))) regs.add(region);
