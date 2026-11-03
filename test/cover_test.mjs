@@ -5,7 +5,7 @@ import { coverView, setAssign, setConfirm, leaveAction, rowAction, runCover, cov
 import { changeVisit } from '../src/plan.js';
 
 const good3 = [...new Set(STAFF.map((s) => s.region))].filter((r) => STAFF.filter((s) => s.active && s.region === r && s.role === 'volunteer').length >= 3 && STAFF.some((s) => s.active && s.region === r && s.role === 'rc') && STAFF.some((s) => s.active && s.region === r && s.role === 'arc') && (SCHOOLS_BY_REGION[r] || []).length >= 4);
-const region = good3[0], regionB = good3[1], regionC = good3[2], regionD = good3[3], regionE = good3[4], regionF = good3[5]; // the plan is cached for a few seconds per region, so each phase uses its own
+const region = good3[0], regionB = good3[1], regionC = good3[2], regionD = good3[3], regionE = good3[4], regionF = good3[5], regionG = good3[6]; // the plan is cached for a few seconds per region, so each phase uses its own
 const who3 = (r) => { const q = STAFF.filter((s) => s.active && s.region === r); return { rc: q.find((s) => s.role === 'rc'), arc: q.find((s) => s.role === 'arc'), vols: q.filter((s) => s.role === 'volunteer'), schools: SCHOOLS_BY_REGION[r] }; };
 const st = STAFF.filter((s) => s.active && s.region === region); const rc = st.find((s) => s.role === 'rc'), arc = st.find((s) => s.role === 'arc'); const [v1, v2, v3] = st.filter((s) => s.role === 'volunteer'); const [A, B, C, D] = SCHOOLS_BY_REGION[region];
 const put = (k, x) => mem.set(k, JSON.stringify(x));
@@ -16,6 +16,7 @@ put('v2:plan:' + region, { region, status: 'locked', version: 1, day_notes: {}, 
   visit('a', A, future, [rc.name, v1.name], rc.name), visit('b', B, future, [rc.name, v1.name], rc.name), // same team and lead at two schools: the gap we found
   visit('c', C, past, [rc.name, v2.name], rc.name), visit('d', D, past, [arc.name, v3.name], arc.name) ] });
 const sum = { schools: { [C.id]: { dayAdmins: { [past]: [v2.name] } }, [D.id]: { dayAdmins: { [past]: [arc.name, v3.name] } } } };
+if (regionG) sum.schools[SCHOOLS_BY_REGION[regionG][0].id] = { dayAdmins: { '2026-10-23': [STAFF.filter((s) => s.active && s.region === regionG && s.role === 'arc')[0].name, STAFF.filter((s) => s.active && s.region === regionG && s.role === 'volunteer')[0].name] } };
 if (regionF) sum.schools[SCHOOLS_BY_REGION[regionF][0].id] = { dayAdmins: { '2026-10-22': [STAFF.filter((s) => s.active && s.region === regionF && s.role === 'volunteer')[0].name] } }; // the RC planned at C was not recorded anywhere that day
 const hq = { role: 'hq', name: 'HQ Tester', level: 'admin', id: 'hq:t' }; const rcW = { role: 'rc', name: rc.name, id: rc.id, region }; const arcW = { role: 'arc', name: arc.name, id: arc.id, region };
 
@@ -26,6 +27,7 @@ put('v2:plan:' + regionC, { region: regionC, status: 'locked', version: 3, day_n
 const nd = addWorkingDays(today, 1);
 const Dd = who3(regionD); put('v2:plan:' + regionD, { region: regionD, status: 'locked', version: 1, day_notes: {}, changes: [], visits: [visit('c1', Dd.schools[0], nd, [Dd.rc.name, Dd.vols[0].name], Dd.rc.name), visit('c2', Dd.schools[1], nd, [Dd.arc.name, Dd.vols[1].name], Dd.arc.name)] }); // clear: both coordinators placed, own team each
 const past2 = '2026-10-22'; const Fz = regionF ? who3(regionF) : null; if (regionF) put('v2:plan:' + regionF, { region: regionF, status: 'locked', version: 1, day_notes: {}, changes: [], visits: [visit('f1', Fz.schools[0], past2, [Fz.rc.name, Fz.vols[0].name], Fz.rc.name)] });
+const past3 = '2026-10-23'; const Gz = regionG ? who3(regionG) : null; if (regionG) put('v2:plan:' + regionG, { region: regionG, status: 'locked', version: 1, day_notes: {}, changes: [], visits: [visit('g1', Gz.schools[0], past3, [Gz.rc.name, Gz.vols[0].name], Gz.rc.name)] }); // plan says the RC, the records show the ARC: only the plan was out of date
 const Ee = who3(regionE); put('v2:plan:' + regionE, { region: regionE, status: 'locked', version: 1, day_notes: {}, changes: [], visits: [{ ...visit('o1', Ee.schools[0], nd, [Ee.rc.name, Ee.vols[0].name], Ee.rc.name), start: '08:00' }, { ...visit('o2', Ee.schools[1], nd, [Ee.arc.name, Ee.vols[0].name], Ee.arc.name), start: '10:00' }, { ...visit('o3', Ee.schools[2], nd, [Ee.rc.name, Ee.vols[0].name], Ee.rc.name), start: '12:00' }] }); // one volunteer at three schools
 let ctx = await loadCtx(env, sum, [region]); let day = regionDay(ctx, region, future);
 ok('the same team at two schools on one day is flagged', day.schools.every((s) => s.issues.some((i) => i.t === 'shared_team')));
@@ -79,6 +81,10 @@ if (regionF) { // approved leave on record plus a named acting coordinator close
   const fr = pastRows(await loadCtx(env, sum, [regionF]), regionF).find((x) => x.date === past2);
   ok('leave plus an acting coordinator closes by itself, nobody at HQ has to read it', auto.closed === true && fr.stage === 'closed' && fr.auto === true && fr.history.some((h) => h.level === 'auto')); }
 
+if (regionG) { const pr = pastRows(await loadCtx(env, sum, [regionG]), regionG).find((x) => x.date === past3); ok('a plan-only day: every school had a coordinator in the records', pr && pr.needs_acting.length === 0, JSON.stringify(pr && pr.needs_acting));
+  const r3 = await rowAction(env, { role: 'rc', name: Gz.rc.name, id: Gz.rc.id, region: regionG }, { region: regionG, date: past3, choice: 'records_right' }, sum, spy);
+  const after = pastRows(await loadCtx(env, sum, [regionG]), regionG).find((x) => x.date === past3);
+  ok('confirming the records are right closes a plan-only day by itself', r3.closed === true && after.stage === 'closed' && after.auto === true); }
 // views
 const cv = await coverView(env, sum, rcW, {}); ok('a coordinator sees their region: days to come and the leave', cv.region === region && cv.days.length >= 1 && cv.me === rc.id && cv.leave.length === 1);
 ok('HQ sees every region', (await coverView(env, sum, hq, {})).regions.length >= 1);

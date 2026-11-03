@@ -182,7 +182,8 @@ export async function rowAction(env, who, b, sum = null, send = pushTo) {
   hist(r, who, 'region', re ? 'answered again' : 'answered', `${choice}${b.note ? ': ' + b.note : ''}`);
   const approvedLeave = leaveStaff && ls.some((l) => String(l.staff_id) === String(leaveStaff.id) && l.from <= b.date && b.date <= l.to && l.approved);
   const actedFine = Object.values(acting).every((n) => n.toLowerCase() !== 'nobody');
-  if (choice === 'leave' && approvedLeave && actedFine) { r.stage = 'closed'; r.auto = true; r.closed_at = new Date().toISOString(); (r.history ||= []).push({ at: r.closed_at, by: 'Command Center', by_id: 'system', level: 'auto', action: 'closed by itself', note: 'Approved leave is on record and an acting coordinator is named where needed.' }); await kv(env).put(K_ROWS, rows); return { ok: true, closed: true }; }
+  const planOnly = choice === 'records_right' && !((row && row.needs_acting) || []).length; // every school that day had a coordinator in the records: only the plan was out of date, nothing to judge
+  if ((choice === 'leave' && approvedLeave && actedFine) || planOnly) { r.stage = 'closed'; r.auto = true; r.closed_at = new Date().toISOString(); (r.history ||= []).push({ at: r.closed_at, by: 'Command Center', by_id: 'system', level: 'auto', action: 'closed by itself', note: planOnly ? 'The region confirmed the records are right; every school had a coordinator in the records, so only the plan was out of date.' : 'Approved leave is on record and an acting coordinator is named where needed.' }); await kv(env).put(K_ROWS, rows); return { ok: true, closed: true }; }
   r.stage = 'hq1'; await kv(env).put(K_ROWS, rows);
   await alertHq(env, send, 'First HQ review waiting', `Coverage for ${region.charAt(0) + region.slice(1).toLowerCase()} on ${b.date} is ready for your review.`, (w) => (w.review_level || 0) >= 2 && !isMundo(w));
   return { ok: true };
