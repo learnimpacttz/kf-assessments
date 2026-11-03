@@ -2,6 +2,7 @@
 // submission to payment readiness, targets and milestones, early warnings, and the weekly update for the ED.
 import { computePatterns } from './patterns.js';
 import { qaAttention } from './qa.js';
+import { coverAttention } from './cover.js';
 import { kv } from './store.js';
 import { SCHOOL_BY_ID, REGIONS, STAFF, FIELD_START, FIELD_END, isWorkingDay, addDays, workingDaysBetween } from './config.js';
 import { decorate, overdueQueries, QUERY_REPLY_DAYS } from './queries.js';
@@ -81,6 +82,11 @@ export async function computeBridge(env, who, { sum, queries, today, quota, pred
   if (opsLate.length) needs.push({ sev: 'bad', title: `${opsLate.length} operations item${opsLate.length === 1 ? ' is' : 's are'} past due`, text: opsLate.slice(0, 3).map((x) => x.title).join('; '), act: { tab: 'today', card: 'ops', label: 'Open the list' } });
   { const pt = computePatterns(sum, today); const n = pt.counts.attention; if (n) needs.push({ sev: 'warn', title: `${n} test administrator${n === 1 ? '' : 's'} may need support`, text: pt.people.filter((p) => p.level === 'attention').slice(0, 3).map((p) => `${p.name}: ${p.signals.slice(0, 2).map((s) => s.label.toLowerCase()).join(', ')}`).join('; '), act: { tab: 'patterns', label: 'Open Team patterns' } }); }
   try { const qa = await qaAttention(env, today); if (qa.n) needs.push({ sev: 'warn', title: `${qa.n} QA visit${qa.n === 1 ? '' : 's'} with a serious item answered No`, text: qa.list.slice(0, 3).map((x) => `${x.school}: ${x.ass}`).join('; '), act: { tab: 'qa', label: 'Open QA visits' } }); } catch { /* the QA form is optional for the Bridge */ }
+  try { const cv = await coverAttention(env, sum); const regs = cv.regions.map((r) => r[0] + r.slice(1).toLowerCase()).slice(0, 4).join(', ');
+    if (cv.unconfirmed) needs.push({ sev: 'warn', title: `${cv.unconfirmed} coordinator${cv.unconfirmed === 1 ? ' has' : 's have'} not confirmed the next working day`, text: `${regs}. Each coordinator confirms who is at each school and who is away. The deadline was 18:00.`, act: { tab: 'cover', label: 'Open Coverage' } });
+    else if (cv.unassigned) needs.push({ sev: 'warn', title: `${cv.unassigned} school${cv.unassigned === 1 ? '' : 's'} on the next working day ${cv.unassigned === 1 ? 'has' : 'have'} no coordinator named`, text: 'Every school visit needs an RC or ARC, or an acting coordinator from the team.', act: { tab: 'cover', label: 'Open Coverage' } });
+    if (cv.rows_open) needs.push({ sev: 'warn', title: `${cv.rows_open} past day${cv.rows_open === 1 ? '' : 's'} waiting for the coordinators to confirm`, text: `${regs}. The plan and the records differ; they are asked what happened.`, act: { tab: 'cover', label: 'Open Coverage' } });
+    if (cv.rows_to_ack) needs.push({ sev: 'warn', title: `${cv.rows_to_ack} answer${cv.rows_to_ack === 1 ? '' : 's'} to acknowledge in Coverage`, text: 'Coordinators have answered. HQ reads and acknowledges.', act: { tab: 'cover', label: 'Open Coverage' } }); } catch { /* the Bridge works without it */ }
   if (opsSoon.length) needs.push({ sev: 'warn', title: `${opsSoon.length} operations item${opsSoon.length === 1 ? '' : 's'} due within 7 days`, text: opsSoon.slice(0, 3).map((x) => `${x.title} (${x.due})`).join('; '), act: { tab: 'today', card: 'ops', label: 'Open the list' } });
   const msCl = ms.find((m) => m.id === 'cleaning'); if (msCl && cleanBy && cleanBy > msCl.date && F.phase !== 'before') needs.push({ sev: 'warn', title: 'Cleaning will finish after its deadline at the current pace', text: `Backlog ${backlog}, closing about ${Math.round(perDay)} a day: clear on ${cleanBy}, deadline ${msCl.date}.`, act: { tab: 'allq', label: 'Open queries' } });
   const warnings = [];

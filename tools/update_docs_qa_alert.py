@@ -13,7 +13,7 @@ def bump(doc, a, b):
         for r in p.runs:
             if a in r.text: r.text = r.text.replace(a, b)
 g = B + 'KF4_Field_Command_Centre_User_Guide.docx'; d = docx.Document(g); add_after(d, 'The Bridge shows a line under Needs you now when a recent visit', BUL); bump(d, 'Version 2.6', 'Version 2.7'); d.save(g)
-m = B + 'KF4_Field_Operations_Manual_INTERIM_v1.4.docx'; d = docx.Document(m); add_after(d, 'The Bridge shows a line under Needs you now when a recent visit', BUL); bump(d, 'Version 1.4', 'Version 1.5')
+m = B + 'KF4_Field_Operations_Manual_INTERIM_v1.5.docx'; d = docx.Document(m); add_after(d, 'The Bridge shows a line under Needs you now when a recent visit', BUL); bump(d, 'Version 1.4', 'Version 1.5')
 for t in d.tables:
     if t.rows and 'ersion' in t.rows[0].cells[0].text:
         c = t.add_row().cells

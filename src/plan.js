@@ -117,6 +117,11 @@ export async function changeVisit(env, who, region, { visit_id, new_date, new_st
     from: { date: v.date, start: v.start, team: v.team }, to: { date, start: new_start || v.start, team: new_team || v.team },
     reason_code, reason: REASONS[reason_code], note: (note || '').slice(0, 300), late,
   });
+  { // one team, one school, one day: moving a visit must not put the same people at two schools, and the RC leads when both coordinators are in the team
+    const team = (new_team || v.team || []); const other = plan.visits.filter((x) => x.date === date && x.id !== v.id);
+    for (const person of team) { const at = other.find((x) => (x.team || []).includes(person)); if (at) return { error: `${person} is already in the team of ${SCHOOL_BY_ID[at.school]?.name || at.school} on ${date}. Each school needs its own team and its own coordinator, so choose a different team for this school.`, status: 422 }; }
+    const le = leadErrors(region, [{ ...v, team, lead: new_lead || v.lead || null }]); if (le.length && (new_team || new_lead)) return { error: le[0], status: 422 };
+  }
   if (date !== v.date) { v.notices = {}; v.status = 'moved'; }
   plan.day_notes ||= {};
   const dayNote = { code: 'change', note: `${REASONS[reason_code]}${note ? ': ' + String(note).slice(0, 200) : ''} (changed by ${who.name})` };
