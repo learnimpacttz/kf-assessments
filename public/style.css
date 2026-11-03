@@ -517,3 +517,26 @@ table.kv{table-layout:fixed;max-width:100%}table.kv td{overflow-wrap:anywhere;wo
 .pgrings{display:grid;grid-template-columns:1fr 1fr;gap:14px}@media(max-width:640px){.pgrings .ringw{flex-direction:column;text-align:center;gap:6px}.pgrings .ringw svg{width:84px;height:84px}.pgrings .ringw b{font-size:14px}}
 @media(max-width:640px){#nav2{flex-wrap:wrap;overflow-x:visible}}
 .lcbar{display:flex;gap:12px;flex-wrap:wrap;align-items:center;justify-content:space-between;margin-bottom:12px;border-left:4px solid var(--teal)}.lcmsg{flex:1 1 260px;min-width:0}.lcsw{display:flex;flex-wrap:wrap;gap:6px}
+
+/* action first: red means it needs you now, amber a heads-up, teal waiting for someone else, green done */
+.act-board{border-radius:12px;padding:14px 16px;margin:12px 0;border:2px solid var(--bad);background:var(--bad-bg)}
+.act-board.good{border-color:var(--good);background:var(--good-bg)}
+.act-board.warn{border-color:var(--warn);background:var(--warn-bg)}
+.act-big{font-size:22px;font-weight:800;color:var(--bad);letter-spacing:.01em}
+.act-board.good .act-big{color:var(--good-ink)}.act-board.warn .act-big{color:var(--warn-ink)}
+.act-sub{margin:2px 0 8px;font-size:14px}
+.act-board ol{margin:6px 0 0;padding:0;list-style:none;display:grid;gap:8px}
+.act-board li .btn{width:100%;text-align:left;font-size:15px;padding:12px 14px;border-radius:10px}
+.act-card{border-radius:10px;border:1px solid var(--line);border-left:8px solid var(--bad);background:var(--bad-bg);padding:12px 14px;margin-top:12px}
+.act-card.warn{border-left-color:var(--warn);background:var(--warn-bg)}
+.act-card.good{border-left-color:var(--good);background:var(--good-bg)}
+.act-card.wait{border-left-color:var(--teal);background:var(--teal-soft)}
+.act-card .tbl{background:var(--surface);border-radius:8px}
+.act-pill{display:inline-block;padding:3px 10px;border-radius:999px;font-weight:800;font-size:12px;letter-spacing:.05em;text-transform:uppercase;background:var(--bad);color:var(--bad-bg);vertical-align:middle}
+.act-pill.warn{background:var(--warn);color:var(--warn-bg)}.act-pill.good{background:var(--good);color:var(--good-bg)}.act-pill.wait{background:var(--teal);color:var(--surface)}
+.act-steps{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0}
+.act-steps span{background:var(--surface);border:1px solid var(--line);border-radius:999px;padding:4px 10px;font-size:13px}
+.act-steps b{display:inline-block;min-width:20px;text-align:center;border-radius:50%;background:var(--bad);color:var(--bad-bg);margin-right:4px}
+.btn.big{font-size:16px;padding:12px 18px;border-radius:10px;font-weight:700}
+.act-banner{display:flex;gap:10px;align-items:center;flex-wrap:wrap;border-radius:10px;padding:10px 14px;margin:8px 0;background:var(--bad-bg);border:2px solid var(--bad);color:var(--ink)}
+.act-banner .btn{margin-left:auto}
