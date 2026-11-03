@@ -68,15 +68,19 @@ ok('the Bridge hears of nothing outstanding when all is answered', (await coverA
 // alerts: individual, once
 if (isWorkingDay(today)) {
   mem.delete('v2:cover:conf'); mem.delete('v2:cover:leave'); mem.delete('v2:cover:alerted'); mem.delete('v2:cover:assign');
-  const out = await runCover(env, '11:30', sum, spy);
+  const out = await runCover(env, '11:30', sum, spy, '2000-01-01');
   ok('the afternoon alert goes to each coordinator who has not confirmed, one by one', out.sent === 2 && calls.length === 2 && calls.some((c) => c.pred({ id: Z.rc.id })) && calls.every((c) => !c.pred({ id: Z.vols[0].id })) && /Confirm tomorrow/.test(calls[0].a.title), JSON.stringify(out));
-  ok('the same alert is never sent twice', (await runCover(env, '11:30', sum, spy)).sent === 0);
+  ok('the same alert is never sent twice', (await runCover(env, '11:30', sum, spy, '2000-01-01')).sent === 0);
 } else console.log('PASS (weekend: alert checks skipped)');
 
 // the plan guard: one team, one school, one day
 const bad = await changeVisit(env, gW, regionC, { visit_id: 'q', new_date: addWorkingDays(today, 8), new_team: [G.arc.name, G.vols[0].name], reason_code: Object.keys(REASONS)[0] }, today);
-ok('moving a school onto a day must not put the same person at two schools', bad.status === 422 && /already in the team/.test(bad.error), JSON.stringify(bad).slice(0, 160));
+ok('moving a school must not put the same person at two schools at the same time', bad.status === 422 && /already planned at/.test(bad.error), JSON.stringify(bad).slice(0, 160));
 const good = await changeVisit(env, gW, regionC, { visit_id: 'q', new_date: addWorkingDays(today, 8), new_team: [G.arc.name, G.vols[1].name], reason_code: Object.keys(REASONS)[0] }, today);
 ok('with its own team the move is accepted', !good.error, JSON.stringify(good).slice(0, 120));
+// the same person may visit several schools in a day at different times (the 1 or 3 school days)
+const seq = await changeVisit(env, gW, regionC, { visit_id: 'q', new_date: addWorkingDays(today, 8), new_start: '10:30', new_team: [G.arc.name, G.vols[0].name], reason_code: Object.keys(REASONS)[0] }, today);
+ok('the same person can be at two schools on one day at different times', !seq.error, JSON.stringify(seq).slice(0, 160));
+ok('before the go-live day nobody is asked to confirm', (await runCover(env, '11:30', sum, spy)).skipped === true);
 ok('the wording is for support', !/cheat|fraud|blame|fault of/i.test(JSON.stringify(await coverView(env, sum, hq, { region }))));
 done();

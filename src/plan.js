@@ -22,6 +22,11 @@ async function getPlanRaw(env, region) {
 }
 
 const uid = () => Math.random().toString(36).slice(2, 8);
+// The same person can be at several schools on one day (mostly the 1 or 3 school days) but only at different times: two visits clash when they start less than an hour apart.
+export const MIN_GAP_MIN = 60;
+const startMin = (t) => { const m = /^(\d\d):(\d\d)/.exec(t || '08:00'); return m ? Number(m[1]) * 60 + Number(m[2]) : 480; };
+export const clash = (a, b) => Math.abs(startMin(a.start) - startMin(b.start)) < MIN_GAP_MIN;
+export const clashingPeople = (v, others) => (v.team || []).filter((p) => others.some((o) => o !== v && (o.team || []).includes(p) && clash(v, o)));
 
 // Who leads the school: the RC leads one school and the ARC the other; where both are at the same school the RC leads and the ARC supports.
 const coordsOf = (region) => STAFF.filter((s) => s.active && s.region === region && (s.role === 'rc' || s.role === 'arc'));
@@ -68,9 +73,8 @@ function validateVisits(region, visits, dayNotes = {}) {
     if (n > cap) errors.push(`${d}: ${n} schools planned, the limit is ${cap} a day`);
     if (region !== 'DODOMA' && n === 3 && !dayNoteOk('three', dayNotes[d])) errors.push(`${d}: 3 schools in one day needs a reason (small schools, close together) and a short explanation of at least 8 characters`);
     if (region !== 'DODOMA' && n === 1 && !dayNoteOk('one', dayNotes[d])) errors.push(`${d}: only 1 school that day needs a reason (large school, distance, remote) and a short explanation of at least 8 characters`);
-    if (n >= 2) { // nobody can be at two schools on the same day
-      const where = {};
-      for (const v of vs) for (const person of v.team || []) { if (where[person] && where[person] !== v.school) errors.push(`${d}: ${person} is in the team of two different schools`); where[person] = v.school; }
+    if (n >= 2) { // nobody can be at two schools at the same time (the same person may visit several schools in a day at different times)
+      for (const v of vs) for (const person of clashingPeople(v, vs)) errors.push(`${d}: ${person} is planned at ${SCHOOL_BY_ID[v.school]?.name || v.school} and another school within an hour of each other. Use different start times (at least an hour apart) or a different team`);
     }
   }
   for (const id of ids) if (!seen.has(id)) errors.push(`${SCHOOL_BY_ID[id].name} has no date yet`);
@@ -117,9 +121,9 @@ export async function changeVisit(env, who, region, { visit_id, new_date, new_st
     from: { date: v.date, start: v.start, team: v.team }, to: { date, start: new_start || v.start, team: new_team || v.team },
     reason_code, reason: REASONS[reason_code], note: (note || '').slice(0, 300), late,
   });
-  { // one team, one school, one day: moving a visit must not put the same people at two schools, and the RC leads when both coordinators are in the team
+  { // moving a visit must not put the same person at two schools at the same time, and the RC leads when both coordinators are in the team
     const team = (new_team || v.team || []); const other = plan.visits.filter((x) => x.date === date && x.id !== v.id);
-    for (const person of team) { const at = other.find((x) => (x.team || []).includes(person)); if (at) return { error: `${person} is already in the team of ${SCHOOL_BY_ID[at.school]?.name || at.school} on ${date}. Each school needs its own team and its own coordinator, so choose a different team for this school.`, status: 422 }; }
+    const start = new_start || v.start; for (const person of team) { const at = other.find((x) => (x.team || []).includes(person) && clash({ start }, x)); if (at) return { error: `${person} is already planned at ${SCHOOL_BY_ID[at.school]?.name || at.school} from ${at.start || '08:00'} on ${date}. The same person can visit two schools in a day only at different times (at least an hour apart): change the start time or choose a different team.`, status: 422 }; }
     const le = leadErrors(region, [{ ...v, team, lead: new_lead || v.lead || null }]); if (le.length && (new_team || new_lead)) return { error: le[0], status: 422 };
   }
   if (date !== v.date) { v.notices = {}; v.status = 'moved'; }

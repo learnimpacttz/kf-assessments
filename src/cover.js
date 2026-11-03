@@ -1,14 +1,15 @@
 // Coordinator coverage: every school visit has an RC or ARC present, or a named acting coordinator from the team's volunteers.
 // Each working day the coordinators confirm who is at which school (and who is away, and who acts). Every evening the plan is compared with the records.
 // Rules: (1) a school visit always has a coordinator or a named acting coordinator; (2) when the RC and the ARC are both at one school the RC leads;
-// (3) the same person is never in the team of two schools on one day, so each school has its own lead. Wording is for support, never blame.
+// (3) the same person may visit several schools in a day only at different times (an hour apart), so each school has its own lead at its own time. Wording is for support, never blame.
 // Nothing here changes a test record, a plan or a payment. Leave notes never hold medical detail.
 import { kv } from './store.js';
 import { STAFF, SCHOOL_BY_ID, REGIONS, FIELD_START, FIELD_END, eatToday, isWorkingDay, addWorkingDays, norm } from './config.js';
-import { getPlan, leadOfVisit } from './plan.js';
+import { getPlan, leadOfVisit, clashingPeople } from './plan.js';
 import { pushTo } from './push.js';
 
 const K_LEAVE = 'v2:cover:leave', K_ASSIGN = 'v2:cover:assign', K_CONF = 'v2:cover:conf', K_ROWS = 'v2:cover:rows', K_ALERTED = 'v2:cover:alerted';
+export const COVER_LIVE_FROM = '2026-11-05'; // coordinators are asked to confirm from this day on (the first alert goes out the afternoon before)
 export const CONFIRM_BY = '18:00'; // East Africa Time, the working day before: coordinators use the app mostly 12:00 to 19:00 and field days end by about 14:00
 export const LEAVE_KINDS = { sick: 'Sick leave', leave: 'Approved leave', duty: 'Other duty', other: 'Other' };
 const clip = (s, n) => String(s || '').trim().slice(0, n);
@@ -28,15 +29,14 @@ const leaveOn = (ctx, staff, date) => (staff ? ctx.leaves.find((l) => String(l.s
 // ---- one region on one day: each school with its coordinator (named, planned or missing), what the records show, and the problems
 export function regionDay(ctx, region, date) {
   const plan = ctx.plans[region] || { visits: [] }; const { rc, arc } = coordsOf(region); const names = new Set([rc && rc.name, arc && arc.name].filter(Boolean));
-  const visits = (plan.visits || []).filter((v) => v.date === date); const count = {};
-  for (const v of visits) for (const n of v.team || []) count[n] = (count[n] || 0) + 1;
+  const visits = (plan.visits || []).filter((v) => v.date === date);
   const schools = visits.map((v) => {
     const team = v.team || []; const inRc = rc && team.includes(rc.name), inArc = arc && team.includes(arc.name);
     let planLead = leadOfVisit(v, region); if (inRc && inArc) planLead = rc.name; // when both are at one school, the RC leads
     const a = ctx.assign[`${date}|${v.school}`] || null; const lead = a ? a.name : planLead; const leadStaff = [rc, arc].find((c) => c && c.name === lead) || null;
     const leave = leaveOn(ctx, leadStaff, date); const issues = [];
-    const shared = team.filter((n) => count[n] > 1);
-    if (shared.length && !a) issues.push({ t: 'shared_team', text: `${shared.join(', ')} ${shared.length === 1 ? 'is' : 'are'} in the team of more than one school on this day.` });
+    const shared = clashingPeople(v, visits);
+    if (shared.length && !a) issues.push({ t: 'shared_team', text: `${shared.join(', ')} ${shared.length === 1 ? 'is' : 'are'} planned at another school starting within an hour of this one. Change a start time (at least an hour apart) or the team, or choose who is at each school below.` });
     if (inRc && inArc && v.lead && v.lead !== rc.name && !a) issues.push({ t: 'rc_rule', text: 'Both coordinators are in this team, so the RC leads.' });
     if (!lead) issues.push({ t: 'no_coordinator', text: 'No RC or ARC is named for this school. Name an acting coordinator from the team.' });
     else if (leave && (!a || a.name === leadStaff.name)) issues.push({ t: 'lead_on_leave', text: `${lead} is on leave this day. Name an acting coordinator from the team.` });
@@ -151,9 +151,9 @@ export async function rowAction(env, who, b, sum = null) {
 
 // ---- scheduled: alerts to the individual, and what the Bridge shows
 const seen = async (env, key, set) => { const l = await get(env, K_ALERTED, {}); if (l[key]) return true; if (set) { l[key] = Date.now(); await kv(env).put(K_ALERTED, l); } return false; };
-export async function runCover(env, hhmm, sum, send = pushTo) {
+export async function runCover(env, hhmm, sum, send = pushTo, liveFrom = COVER_LIVE_FROM) {
   const today = eatToday(); const slot = { '11:30': 'ask', '13:30': 'remind', '04:05': 'morning' }[hhmm]; if (!slot || !isWorkingDay(today)) return { skipped: true };
-  const ctx = await loadCtx(env, sum); const next = slot === 'morning' ? today : addWorkingDays(today, 1); if (next > FIELD_END) return { skipped: true }; const out = { sent: 0 };
+  const ctx = await loadCtx(env, sum); const next = slot === 'morning' ? today : addWorkingDays(today, 1); if (next > FIELD_END || next < liveFrom) return { skipped: true }; const out = { sent: 0 };
   const to = async (c, title, body, url) => { await send(env, (w) => Boolean(w) && String(w.id) === String(c.id), { title, body, url }); out.sent++; };
   for (const region of REGIONS) {
     const day = regionDay(ctx, region, next); if (!day.schools.length) continue;
@@ -163,10 +163,10 @@ export async function runCover(env, hhmm, sum, send = pushTo) {
   }
   return out;
 }
-export async function coverAttention(env, sum) {
+export async function coverAttention(env, sum, liveFrom = COVER_LIVE_FROM) {
   const ctx = await loadCtx(env, sum); const today = ctx.today; const next = nextDays(today, 1).filter((d) => d > today)[0]; const nowEat = new Date(Date.now() + 3 * 3600e3).toISOString(); let unconf = 0, unassigned = 0, rows = 0, rowsAck = 0; const regs = new Set();
   for (const region of REGIONS) {
-    if (next) { const d = regionDay(ctx, region, next); if (d.schools.length) { const late = nowEat >= deadlineOf(next); unassigned += d.unassigned; if (late) { const o = d.coordinators.filter((c) => c.state === 'open').length; unconf += o; if (o) regs.add(region); } } }
+    if (next) { const d = regionDay(ctx, region, next); if (d.schools.length) { const late = nowEat >= deadlineOf(next) && next >= liveFrom; if (next >= liveFrom) unassigned += d.unassigned; if (late) { const o = d.coordinators.filter((c) => c.state === 'open').length; unconf += o; if (o) regs.add(region); } } }
     const pr = pastRows(ctx, region); rows += pr.filter((r) => !r.response).length; rowsAck += pr.filter((r) => r.response && !r.ack).length; if (pr.some((r) => !r.response)) regs.add(region);
   }
   return { unconfirmed: unconf, unassigned, rows_open: rows, rows_to_ack: rowsAck, regions: [...regs], next };
