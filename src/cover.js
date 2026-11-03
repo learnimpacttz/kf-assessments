@@ -10,6 +10,8 @@ import { pushTo } from './push.js';
 
 const K_LEAVE = 'v2:cover:leave', K_ASSIGN = 'v2:cover:assign', K_CONF = 'v2:cover:conf', K_ROWS = 'v2:cover:rows', K_ALERTED = 'v2:cover:alerted';
 export const COVER_LIVE_FROM = '2026-11-05'; // coordinators are asked to confirm from this day on (the first alert goes out the afternoon before)
+export const ROWS_FROM = '2026-11-03'; // days gone get 2 working days to answer, counted from this day for anything older
+export const DUE_DAYS = 2;
 export const CONFIRM_BY = '18:00'; // East Africa Time, the working day before: coordinators use the app mostly 12:00 to 19:00 and field days end by about 14:00
 export const LEAVE_KINDS = { sick: 'Sick leave', leave: 'Approved leave', duty: 'Other duty', other: 'Other' };
 const clip = (s, n) => String(s || '').trim().slice(0, n);
@@ -66,6 +68,9 @@ export function regionDay(ctx, region, date) {
 // ---- days still to come (confirmed ahead) and days gone (plan against records)
 export const nextDays = (today, n = 3) => { const out = []; let d = today; if (isWorkingDay(today)) out.push(today); for (let i = 0; i < n; i++) { d = addWorkingDays(d, 1); if (d <= FIELD_END) out.push(d); } return out; };
 export const deadlineOf = (date) => { let d = new Date(date + 'T00:00:00Z'); do { d = new Date(d.getTime() - 86400e3); } while (!isWorkingDay(d.toISOString().slice(0, 10))); return d.toISOString().slice(0, 10) + 'T' + CONFIRM_BY; }; // working day before, 18:00 EAT
+const stageOf = (r) => r.stage || (r.ack ? 'closed' : r.response ? 'hq1' : 'open');
+export const STAGE_LABEL = { open: 'Waiting for the region', rework: 'Sent back to the region', hq1: 'First HQ review (Joram)', final: 'Final confirmation (Mundo)', closed: 'Closed' };
+function rowState(ctx, date, r) { const stage = stageOf(r); const due = addWorkingDays(date > ROWS_FROM ? date : ROWS_FROM, DUE_DAYS); return { stage, stage_label: STAGE_LABEL[stage], due, overdue: ['open', 'rework'].includes(stage) && ctx.today > due, auto: Boolean(r.auto), history: r.history || [], closed_at: r.closed_at || null }; }
 export function pastRows(ctx, region) {
   const plan = ctx.plans[region] || { visits: [] }; const dates = [...new Set((plan.visits || []).map((v) => v.date))].filter((d) => d >= FIELD_START && d < ctx.today).sort(); const { rc, arc } = coordsOf(region); const out = [];
   for (const d of dates) {
@@ -74,7 +79,7 @@ export function pastRows(ctx, region) {
     const r = ctx.rows[`${region}|${d}`] || {};
     out.push({ region, date: d, schools: day.schools.map((s) => ({ school: s.school, name: s.name, plan_lead: s.plan_lead, present: s.present, testers: s.testers, issues: s.issues.map((i) => i.t), note: s.issues.map((i) => i.text).join(' ') })),
       leave_on_record: [rc, arc].filter(Boolean).map((c) => ({ c, l: leaveOn(ctx, c, d) })).filter((x) => x.l).map((x) => ({ staff_id: x.c.id, name: x.c.name, kind: x.l.kind, approved: x.l.approved })),
-      needs_acting: day.schools.filter((s) => s.issues.some((i) => i.t === 'nocoord_actual')).map((s) => ({ school: s.school, name: s.name, testers: s.testers })), response: r.response || null, ack: r.ack || null });
+      needs_acting: day.schools.filter((s) => s.issues.some((i) => i.t === 'nocoord_actual')).map((s) => ({ school: s.school, name: s.name, testers: s.testers })), response: r.response || null, ...rowState(ctx, d, r) });
   }
   return out;
 }
@@ -82,12 +87,14 @@ export function pastRows(ctx, region) {
 // ---- the views people get
 export async function coverView(env, sum, who, q = {}) {
   const ctx = await loadCtx(env, sum); const today = ctx.today;
+  if (q.brief) { const regs = who.role === 'hq' ? REGIONS : ['rc', 'arc'].includes(who.role) ? [who.region] : []; let open = 0, overdue = 0, h1 = 0, fin = 0; for (const r of regs) for (const x of pastRows(ctx, r)) { if (['open', 'rework'].includes(x.stage)) open++; if (x.overdue) overdue++; if (x.stage === 'hq1') h1++; if (x.stage === 'final') fin++; } const lvl = who.review_level || 0; return { status: 'ok', brief: true, role: who.role, open, overdue, for_me: who.role === 'hq' ? (isEditor(who) && lvl >= 2 && !isMundo(who) ? h1 : 0) + (isEditor(who) && lvl >= 3 ? fin : 0) : 0 }; }
   if (who.role === 'volunteer') return { status: 'ok', role: 'volunteer', today, acting: actingFor(ctx, who) };
   const hq = who.role === 'hq'; const own = ['rc', 'arc'].includes(who.role) ? who.region : null; if (!hq && !own) return { error: 'This page is for coordinators and HQ', status: 403 };
   if (hq && !q.region) { // HQ overview: every region, the next working day and the days waiting for an answer
     const next = nextDays(today, 1).filter((d) => d > today)[0] || null; const regions = REGIONS.filter((r) => ctx.plans[r] && (ctx.plans[r].visits || []).length).map((r) => { const d = next ? regionDay(ctx, r, next) : null; const rows = pastRows(ctx, r);
-      return { region: r, next: d && d.schools.length ? { date: next, state: d.clear ? 'clear' : d.complete ? 'complete' : 'open', coordinators: d.coordinators.map((c) => ({ name: c.name, position: c.position, state: c.state })), unassigned: d.unassigned, problems: d.problems } : null, rows_open: rows.filter((x) => !x.response).length, rows_to_ack: rows.filter((x) => x.response && !x.ack).length }; });
-    return { status: 'ok', role: 'hq', today, next_day: next, deadline: next ? deadlineOf(next) : null, regions, coordinators: STAFF.filter((x) => x.active && ['rc', 'arc'].includes(x.role)).map((x) => ({ id: x.id, name: x.name, position: x.role === 'rc' ? 'RC' : 'ARC', region: x.region })), leave: ctx.leaves.slice().sort((a, b) => (b.from > a.from ? 1 : -1)).slice(0, 60) };
+      return { region: r, next: d && d.schools.length ? { date: next, state: d.clear ? 'clear' : d.complete ? 'complete' : 'open', coordinators: d.coordinators.map((c) => ({ name: c.name, position: c.position, state: c.state })), unassigned: d.unassigned, problems: d.problems } : null, rows_open: rows.filter((x) => ['open', 'rework'].includes(x.stage)).length, rows_overdue: rows.filter((x) => x.overdue).length, rows_hq: rows.filter((x) => ['hq1', 'final'].includes(x.stage)).length }; });
+    const rq = []; for (const r of REGIONS) for (const x of pastRows(ctx, r)) if (['hq1', 'final'].includes(x.stage)) rq.push({ region: r, date: x.date, stage: x.stage, stage_label: x.stage_label, response: x.response, history: x.history, due: x.due, schools: x.schools.map((y) => y.name) });
+    const lvl = who.review_level || 0; return { status: 'ok', role: 'hq', today, review: rq, can_review: { hq1: isEditor(who) && lvl >= 2 && !isMundo(who), final: isEditor(who) && lvl >= 3 }, next_day: next, deadline: next ? deadlineOf(next) : null, regions, coordinators: STAFF.filter((x) => x.active && ['rc', 'arc'].includes(x.role)).map((x) => ({ id: x.id, name: x.name, position: x.role === 'rc' ? 'RC' : 'ARC', region: x.region })), leave: ctx.leaves.slice().sort((a, b) => (b.from > a.from ? 1 : -1)).slice(0, 60) };
   }
   const region = (hq ? q.region : own).toUpperCase(); if (!REGIONS.includes(region)) return { error: 'Unknown region', status: 404 };
   const cs = coordsOf(region); const days = nextDays(today, 3).map((d) => ({ ...regionDay(ctx, region, d), deadline: deadlineOf(d) })).filter((d) => d.schools.length);
@@ -143,18 +150,41 @@ export async function leaveAction(env, who, b) {
 }
 
 // ---- days gone: the region answers once for the whole item, HQ acknowledges
-export async function rowAction(env, who, b, sum = null) {
+const isMundo = (w) => Boolean(w && w.role === 'hq' && (w.hq_id === 'h1' || /mundo/i.test(w.name || '')));
+const hist = (r, who, level, action, note) => { (r.history ||= []).push({ at: new Date().toISOString(), by: who.name, by_id: who.hq_id || who.id, level, action, note: clip(note, 300) }); };
+const alertHq = async (env, send, title, body, pred) => { try { await send(env, (w) => Boolean(w) && w.role === 'hq' && pred(w), { title, body, url: '/#cover' }); } catch { /* the page still shows it */ } };
+const alertRegion = async (env, send, region, title, body) => { const cs = coordsOf(region); for (const c of [cs.rc, cs.arc].filter(Boolean)) { try { await send(env, (w) => Boolean(w) && String(w.id) === String(c.id), { title, body, url: '/#cover' }); } catch { /* the page still shows it */ } } };
+// days gone: the region answers; an answer that is approved leave plus a named acting coordinator closes by itself; any other answer goes to Joram, then to Mundo (a different person)
+export async function rowAction(env, who, b, sum = null, send = pushTo) {
   const region = String(b.region || '').toUpperCase(); if (!REGIONS.includes(region) || !isIso(b.date)) return { error: 'Choose a region and a day', status: 422 };
-  const rows = await get(env, K_ROWS, {}); const key = `${region}|${b.date}`; const r = (rows[key] ||= {});
-  if (b.action === 'ack') { if (!isEditor(who)) return { error: 'Only HQ editors acknowledge', status: 403 }; if (!r.response) return { error: 'There is no answer to acknowledge yet', status: 409 }; r.ack = { by: who.name, at: new Date().toISOString(), note: clip(b.note, 200) }; await kv(env).put(K_ROWS, rows); return { ok: true }; }
+  const rows = await get(env, K_ROWS, {}); const key = `${region}|${b.date}`; const r = (rows[key] ||= {}); const stage = stageOf(r);
+  if (b.action === 'review') {
+    if (!['hq1', 'final'].includes(stage)) return { error: 'There is nothing to review at the moment.', status: 409 }; if (!isEditor(who)) return { error: 'Only HQ editors review', status: 403 };
+    const lvl = who.review_level || 0; const me = who.hq_id || who.id;
+    if (stage === 'hq1' && (lvl < 2 || isMundo(who))) return { error: 'This is waiting for the first HQ reviewer. Mundo gives the final confirmation.', status: 403 };
+    if (stage === 'final' && (lvl < 3 || (r.history || []).some((h) => h.level === 'hq1' && h.action !== 'sent back' && h.by_id === me))) return { error: 'This is waiting for the final confirmation, from a different person than the first reviewer.', status: 403 };
+    if (b.decision === 'reject') { const n = clip(b.note, 300); if (n.length < 8) return { error: 'Write why you are sending it back (at least a short sentence).', status: 422 }; hist(r, who, stage, 'sent back', n); r.stage = 'rework'; r.rework_note = n; await kv(env).put(K_ROWS, rows); await alertRegion(env, send, region, 'A day was sent back to you', `${b.date}: ${n.slice(0, 90)}`); return { ok: true }; }
+    if (b.decision !== 'approve') return { error: 'Choose approve or send back', status: 422 };
+    hist(r, who, stage, 'approved', b.note); if (stage === 'hq1') { r.stage = 'final'; await kv(env).put(K_ROWS, rows); await alertHq(env, send, 'Final confirmation waiting', `Coverage for ${region.charAt(0) + region.slice(1).toLowerCase()} on ${b.date} is ready for your confirmation.`, (w) => (w.review_level || 0) >= 3); }
+    else { r.stage = 'closed'; r.closed_at = new Date().toISOString(); await kv(env).put(K_ROWS, rows); }
+    return { ok: true };
+  }
   if (!canAct(who, region)) return { error: 'Only the coordinators of this region, or HQ editors, can answer', status: 403 };
+  if (!['open', 'rework'].includes(stage)) return { error: 'This day is already with HQ or closed.', status: 409 };
   const ctx = await loadCtx(env, sum, [region]); ctx.rows = rows; const row = pastRows(ctx, region).find((x) => x.date === b.date);
   const choice = String(b.choice || ''); if (!['records_right', 'leave', 'other'].includes(choice)) return { error: 'Choose what happened', status: 422 };
   if (choice === 'other' && clip(b.note, 300).length < 8) return { error: 'Write a short explanation (at least 8 characters)', status: 422 };
-  const acting = {}; for (const s of (row && row.needs_acting) || []) { const n = clip((b.acting || {})[s.school], 80); if (!n) return { error: `Name who acted as coordinator at ${s.name}, or write "nobody" and explain`, status: 422 }; if (n.toLowerCase() === 'nobody' && clip(b.note, 300).length < 8) return { error: `At ${s.name}, write a short note about why nobody acted as coordinator`, status: 422 }; acting[s.school] = n; }
+  const acting = {}; for (const sc of (row && row.needs_acting) || []) { const n = clip((b.acting || {})[sc.school], 80); if (!n) return { error: `Name who acted as coordinator at ${sc.name}, or write "nobody" and explain`, status: 422 }; if (n.toLowerCase() === 'nobody' && clip(b.note, 300).length < 8) return { error: `At ${sc.name}, write a short note about why nobody acted as coordinator`, status: 422 }; acting[sc.school] = n; }
   let leaveStaff = null; if (choice === 'leave') { const cs = coordsOf(region); leaveStaff = [cs.rc, cs.arc].find((c) => c && String(c.id) === String(b.staff_id)); if (!leaveStaff) return { error: 'Choose which coordinator was on leave', status: 422 }; }
-  r.response = { choice, note: clip(b.note, 300), acting, staff_id: leaveStaff ? leaveStaff.id : null, by: who.name, at: new Date().toISOString() }; delete r.ack; await kv(env).put(K_ROWS, rows);
-  if (leaveStaff) { const ls = await get(env, K_LEAVE, []); if (!ls.some((l) => String(l.staff_id) === String(leaveStaff.id) && l.from <= b.date && b.date <= l.to)) { ls.push({ id: Math.random().toString(36).slice(2, 9), staff_id: leaveStaff.id, name: leaveStaff.name, region, from: b.date, to: b.date, kind: 'other', approved: false, approved_by: null, note: clip(b.note, 120), by: who.name, at: new Date().toISOString(), source: 'coordinator' }); await kv(env).put(K_LEAVE, ls); } }
+  const re = stage === 'rework'; r.response = { choice, note: clip(b.note, 300), acting, staff_id: leaveStaff ? leaveStaff.id : null, by: who.name, at: new Date().toISOString() }; delete r.rework_note;
+  let ls = await get(env, K_LEAVE, []);
+  if (leaveStaff && !ls.some((l) => String(l.staff_id) === String(leaveStaff.id) && l.from <= b.date && b.date <= l.to)) { ls.push({ id: Math.random().toString(36).slice(2, 9), staff_id: leaveStaff.id, name: leaveStaff.name, region, from: b.date, to: b.date, kind: 'other', approved: false, approved_by: null, note: clip(b.note, 120), by: who.name, at: new Date().toISOString(), source: 'coordinator' }); await kv(env).put(K_LEAVE, ls); }
+  hist(r, who, 'region', re ? 'answered again' : 'answered', `${choice}${b.note ? ': ' + b.note : ''}`);
+  const approvedLeave = leaveStaff && ls.some((l) => String(l.staff_id) === String(leaveStaff.id) && l.from <= b.date && b.date <= l.to && l.approved);
+  const actedFine = Object.values(acting).every((n) => n.toLowerCase() !== 'nobody');
+  if (choice === 'leave' && approvedLeave && actedFine) { r.stage = 'closed'; r.auto = true; r.closed_at = new Date().toISOString(); (r.history ||= []).push({ at: r.closed_at, by: 'Command Center', by_id: 'system', level: 'auto', action: 'closed by itself', note: 'Approved leave is on record and an acting coordinator is named where needed.' }); await kv(env).put(K_ROWS, rows); return { ok: true, closed: true }; }
+  r.stage = 'hq1'; await kv(env).put(K_ROWS, rows);
+  await alertHq(env, send, 'First HQ review waiting', `Coverage for ${region.charAt(0) + region.slice(1).toLowerCase()} on ${b.date} is ready for your review.`, (w) => (w.review_level || 0) >= 2 && !isMundo(w));
   return { ok: true };
 }
 
@@ -167,17 +197,18 @@ export async function runCover(env, hhmm, sum, send = pushTo, liveFrom = COVER_L
   for (const region of REGIONS) {
     const day = regionDay(ctx, region, next); if (!day.schools.length) continue;
     if (!day.clear && !day.complete) for (const c of day.coordinators) if (c.state === 'open' && !(await seen(env, `${slot}|${next}|${c.id}`, true))) await to(c, slot === 'remind' ? 'Please settle tomorrow before 18:00' : slot === 'morning' ? 'Today\'s plan needs your confirmation' : 'Tomorrow\'s plan needs your confirmation', `${(day.reasons[0] || 'The distribution of coordinators is unclear').slice(0, 110)}${day.reasons.length > 1 ? ` (+${day.reasons.length - 1} more)` : ''}`, '/#cover');
-    if (slot === 'ask') { const rows = pastRows(ctx, region).filter((r) => !r.response); const al = await get(env, K_ALERTED, {}); const fresh = rows.filter((r) => !al[`row|${region}|${r.date}`]);
-      if (fresh.length) { for (const r of fresh) al[`row|${region}|${r.date}`] = Date.now(); await kv(env).put(K_ALERTED, al); for (const c of day.coordinators.length ? day.coordinators : [coordsOf(region).rc, coordsOf(region).arc].filter(Boolean)) await to(c, 'Days to confirm', `${fresh.length} past day${fresh.length === 1 ? '' : 's'} where the plan and the records differ. Please confirm what happened.`, '/#cover'); } }
+    if (slot === 'ask') { const rows = pastRows(ctx, region).filter((r) => ['open', 'rework'].includes(r.stage)); const al = await get(env, K_ALERTED, {}); const fresh = rows.filter((r) => !al[`row|${region}|${r.date}`]);
+      if (fresh.length) { for (const r of fresh) al[`row|${region}|${r.date}`] = Date.now(); await kv(env).put(K_ALERTED, al); for (const c of day.coordinators.length ? day.coordinators : [coordsOf(region).rc, coordsOf(region).arc].filter(Boolean)) await to(c, 'Days to confirm', `${fresh.length} past day${fresh.length === 1 ? '' : 's'} where the plan and the records differ. Please answer by ${fresh[0].due}.`, '/#cover'); } }
   }
+  for (const region of REGIONS) { const od = pastRows(ctx, region).filter((r) => r.overdue && !(false)); const al = await get(env, K_ALERTED, {}); const fresh = od.filter((r) => !al[`due|${region}|${r.date}`]); if (slot === 'ask' && fresh.length) { for (const r of fresh) al[`due|${region}|${r.date}`] = Date.now(); await kv(env).put(K_ALERTED, al); const cs = coordsOf(region); for (const c of [cs.rc, cs.arc].filter(Boolean)) await to(c, 'Days overdue', `${fresh.length} past day${fresh.length === 1 ? ' is' : 's are'} past the due date. Please answer under Confirm days.`, '/#cover'); } }
   return out;
 }
 export async function coverAttention(env, sum, liveFrom = COVER_LIVE_FROM) {
-  const ctx = await loadCtx(env, sum); const today = ctx.today; const next = nextDays(today, 1).filter((d) => d > today)[0]; const nowEat = new Date(Date.now() + 3 * 3600e3).toISOString(); let unconf = 0, unassigned = 0, rows = 0, rowsAck = 0; const regs = new Set();
+  const ctx = await loadCtx(env, sum); const today = ctx.today; const next = nextDays(today, 1).filter((d) => d > today)[0]; const nowEat = new Date(Date.now() + 3 * 3600e3).toISOString(); let unconf = 0, unassigned = 0, rows = 0, overdue = 0, h1 = 0, fin = 0; const regs = new Set();
   for (const region of REGIONS) {
     if (next) { const d = regionDay(ctx, region, next); if (d.schools.length) { const late = nowEat >= deadlineOf(next) && next >= liveFrom && !d.clear && !d.complete; if (next >= liveFrom && !d.clear) unassigned += d.unassigned; if (late) { const o = d.coordinators.filter((c) => c.state === 'open').length; unconf += o; if (o) regs.add(region); } } }
-    const pr = pastRows(ctx, region); rows += pr.filter((r) => !r.response).length; rowsAck += pr.filter((r) => r.response && !r.ack).length; if (pr.some((r) => !r.response)) regs.add(region);
+    const pr = pastRows(ctx, region); rows += pr.filter((r) => ['open', 'rework'].includes(r.stage)).length; overdue += pr.filter((r) => r.overdue).length; h1 += pr.filter((r) => r.stage === 'hq1').length; fin += pr.filter((r) => r.stage === 'final').length; if (pr.some((r) => ['open', 'rework'].includes(r.stage))) regs.add(region);
   }
-  return { unconfirmed: unconf, unassigned, rows_open: rows, rows_to_ack: rowsAck, regions: [...regs], next };
+  return { unconfirmed: unconf, unassigned, rows_open: rows, rows_overdue: overdue, hq_first: h1, hq_final: fin, regions: [...regs], next };
 }
 export const _norm = norm;
