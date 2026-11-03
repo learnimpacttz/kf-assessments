@@ -39,7 +39,7 @@ Use `npm run deploy`. It checks that wrangler is logged in as the LearnImpact ac
 
 ## Coverage (every school visit has an RC or ARC)
 - Rules: every school visit has an RC or ARC present, or a named acting coordinator from the team's volunteers; when both coordinators are at one school the RC leads; the same person may visit several schools in a day only at different times (at least an hour apart).
-- Each working day the coordinators confirm the next working day under Confirm days (HQ: Coverage) by 18:00. Alerts go to the coordinator concerned at 14:30, 16:30 and 07:05. The Bridge lists days nobody confirmed and schools with no coordinator named.
+- The system checks every working day's plan. A clear day asks nobody anything. For an unclear day the coordinators are alerted (14:30, 16:30 and 07:05) and confirm under Confirm days (HQ: Coverage) by 18:00 the day before. One person, team or coordinator never runs three schools in a day. The Bridge lists days nobody confirmed and schools with no coordinator named.
 - Leave: a coordinator reports their own; HQ records or approves anyone's (write the name and date of the approving email in "Approved by"). Never write medical details.
 - Days gone: one item per day per region where the plan and the records differ. The region answers (records are right, leave, or something else with a note, and who acted at any school with no coordinator). HQ acknowledges.
 - If an alert does not reach someone, check Admin, Health (alert devices) and ask them to turn alerts on.
