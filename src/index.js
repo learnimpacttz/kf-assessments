@@ -10,7 +10,7 @@ import { regionProgress, schoolDetail, standingFor } from './progress.js';
 import { togetherBoard } from './together.js';
 import { computePatterns } from './patterns.js';
 import { syncQa, qaView, raiseQa, qaRaisedFlags, alertQa } from './qa.js';
-import { coverView, setAssign, setConfirm, leaveAction, rowAction, runCover, sweepRows } from './cover.js';
+import { coverView, setAssign, setConfirm, leaveAction, rowAction, runCover, runLateNotices, sweepRows } from './cover.js';
 import { boxPublic, setBoxKey, setBoxLive, submitBox, listBox, markBox, deleteBox, boxSummary, markSaved, takePending } from './box.js';
 import { SCHOOL_COORDS, COORD_SOURCE, COORD_WRONG } from './data/school_coords.js';
 import { findRecords as findToMove, previewMove, applyMove, correctionsView, correctionCopy } from './corrections.js';
@@ -49,7 +49,7 @@ import { subscribe, unsubscribe, takeAlert, hashEndpoint, pushTo, pushStatus, pu
 import { tick, syncStatus, recomputeSummaries, resetAll, resetKind, loadState, loadYear, saveYear, stateYears, clearPractice, restartRebuildFrom, seedFirstIds } from './sync.js';
 import { getPlan, submitPlan, saveDraft, changeVisit, markNotice, withNotices } from './plan.js';
 import {
-  devCode as devCodeOf, REGIONS, PARTNERS, REASONS, DAY_REASONS, PRACTICE_BY_ID, PRACTICE_REGION, PLAN_DEADLINE, FIELD_START, FIELD_END, PILOT_DAY, TRAINING_START, CURRENT_YEAR, STAFF, rosterState, addDays, isWorkingDay, staffForKoboName, SCHOOLS_BY_REGION, SCHOOL_BY_ID, eatToday,
+  devCode as devCodeOf, REGIONS, PARTNERS, REASONS, DAY_REASONS, PRACTICE_BY_ID, PRACTICE_REGION, PLAN_DEADLINE, FIELD_START, FIELD_END, SCHOOL_CLOSE, PILOT_DAY, TRAINING_START, CURRENT_YEAR, STAFF, rosterState, addDays, isWorkingDay, staffForKoboName, SCHOOLS_BY_REGION, SCHOOL_BY_ID, eatToday,
   TARGET_PER_GRADE, DODOMA_TARGET_PER_GRADE, NOTICE_AEK_WORKING_DAYS, NOTICE_HT_WORKING_DAYS,
   leadOrgOf,
 } from './config.js';
@@ -224,7 +224,7 @@ export default {
       if (path === '/api/config') {
         return json({
           brand: { ...BRAND, assistant: assistantName() },
-          year: CURRENT_YEAR, field: { start: FIELD_START, end: FIELD_END }, pilot_day: PILOT_DAY, training_start: TRAINING_START, regions: REGIONS, partners: PARTNERS, reasons: REASONS, day_reasons: DAY_REASONS,
+          year: CURRENT_YEAR, field: { start: FIELD_START, end: SCHOOL_CLOSE }, pilot_day: PILOT_DAY, training_start: TRAINING_START, regions: REGIONS, partners: PARTNERS, reasons: REASONS, day_reasons: DAY_REASONS,
           targets: { per_grade: TARGET_PER_GRADE, dodoma_per_grade: DODOMA_TARGET_PER_GRADE },
           notice: { aek_working_days: NOTICE_AEK_WORKING_DAYS, head_teacher_working_days: NOTICE_HT_WORKING_DAYS },
           today: eatToday(),
@@ -1149,6 +1149,7 @@ export default {
       try { const cs = await syncCalendar(env); if (cs) console.log('calendar ' + JSON.stringify(cs).slice(0, 400)); } catch (e) { console.error('calendar sync failed: ' + (e && e.message)); }
       try { const qs = await syncQa(env, { minAge: 50e3 }); if (qs) console.log('qa ' + JSON.stringify(qs).slice(0, 200)); const qal = await alertQa(env); if (qal.sent || qal.baseline) console.log('qa alert ' + JSON.stringify(qal)); } catch (e) { console.error('qa sync failed: ' + (e && e.message)); }
       try { if (['11:30', '13:30', '04:05'].includes(hhmm)) { const cv = await runCover(env, hhmm, await sumNow(env)); if (cv && cv.sent) console.log('cover ' + JSON.stringify(cv)); } } catch (e) { console.error('cover failed: ' + (e && e.message)); }
+      try { const ln = await runLateNotices(env, hhmm); if (ln && ln.sent) console.log('late notices ' + JSON.stringify(ln)); } catch (e) { console.error('late notices failed: ' + (e && e.message)); }
       try { const fj = await maybeRunFormJob(env); if (fj) console.log('formjob ' + JSON.stringify(fj).slice(0, 600)); } catch (e) { console.error('form job failed: ' + (e && e.message)); }
       try { const nw = await runDueNews(env); if (nw.length) console.log('news ' + JSON.stringify(nw)); if (new Date().getUTCMinutes() % 15 === 0) { const ms = await checkMilestones(env); if (ms && ms.length) console.log('milestones ' + JSON.stringify(ms)); } } catch (e) { console.error('news failed: ' + (e && e.message)); }
       try { const mj = await runDueMessages(env); if (mj) console.log('messages ' + JSON.stringify(mj).slice(0, 500)); } catch (e) { console.error('messages failed: ' + (e && e.message)); }

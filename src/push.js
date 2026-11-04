@@ -3,7 +3,7 @@
 // subscription's own endpoint, which only that phone knows). That keeps this
 // to a signed VAPID request, with no payload encryption to get wrong.
 import { kv } from './store.js';
-import { STAFF, SCHOOL_BY_ID, REGIONS, eatToday, addWorkingDays, FIELD_START, FIELD_END, isWorkingDay, staffForKoboName } from './config.js';
+import { STAFF, SCHOOL_BY_ID, REGIONS, eatToday, addWorkingDays, FIELD_START, FIELD_END, SCHOOL_CLOSE, isWorkingDay, staffForKoboName } from './config.js';
 import { loadQueries, decorate, overdueQueries } from './queries.js';
 import { getPlan, withNotices } from './plan.js';
 import { silentVisits } from './brief.js';
@@ -154,7 +154,7 @@ export async function runAlerts(env, slot, sum) {
   if (slot === 'evening') {
     // tomorrow's schools to the team that is planned for them
     const tomorrow = addWorkingDays(today, 1);
-    if (tomorrow >= FIELD_START && tomorrow <= FIELD_END) for (const r of REGIONS) {
+    if (tomorrow >= FIELD_START && tomorrow <= SCHOOL_CLOSE) for (const r of REGIONS) {
       const plan = await getPlan(env, r);
       if (plan.status !== 'locked') continue;
       const vs = plan.visits.filter((v) => v.date === tomorrow);

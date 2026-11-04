@@ -4,7 +4,7 @@
 // (3) the same person may visit several schools in a day only at different times (an hour apart), so each school has its own lead at its own time. Wording is for support, never blame.
 // Nothing here changes a test record, a plan or a payment. Leave notes never hold medical detail.
 import { kv } from './store.js';
-import { STAFF, SCHOOL_BY_ID, REGIONS, FIELD_START, FIELD_END, eatToday, isWorkingDay, addWorkingDays, norm } from './config.js';
+import { STAFF, SCHOOL_BY_ID, REGIONS, FIELD_START, SCHOOL_CLOSE, eatToday, isWorkingDay, addWorkingDays, norm } from './config.js';
 import { getPlan, leadOfVisit, clashingPeople, overloaded, withNotices } from './plan.js';
 import { pushTo } from './push.js';
 
@@ -69,7 +69,7 @@ export function regionDay(ctx, region, date) {
 }
 
 // ---- days still to come (confirmed ahead) and days gone (plan against records)
-export const nextDays = (today, n = 3) => { const out = []; let d = today; if (isWorkingDay(today)) out.push(today); for (let i = 0; i < n; i++) { d = addWorkingDays(d, 1); if (d <= FIELD_END) out.push(d); } return out; };
+export const nextDays = (today, n = 3) => { const out = []; let d = today; if (isWorkingDay(today)) out.push(today); for (let i = 0; i < n; i++) { d = addWorkingDays(d, 1); if (d <= SCHOOL_CLOSE) out.push(d); } return out; };
 export const focusDay = (today) => nextDays(today, 3).filter((d) => d > today && d >= COVER_LIVE_FROM)[0] || null; // the same day for the banner, the HQ box and the Bridge
 export const deadlineOf = (date) => { let d = new Date(date + 'T00:00:00Z'); do { d = new Date(d.getTime() - 86400e3); } while (!isWorkingDay(d.toISOString().slice(0, 10))); return d.toISOString().slice(0, 10) + 'T' + CONFIRM_BY; }; // working day before, 18:00 EAT
 const stageOf = (r) => r.stage || (r.ack ? 'closed' : r.response ? 'hq1' : 'open');
@@ -221,7 +221,7 @@ const seen = async (env, key, set) => { const l = await get(env, K_ALERTED, {});
 export async function runCover(env, hhmm, sum, send = pushTo, liveFrom = COVER_LIVE_FROM) {
   const today = eatToday(); const slot = { '11:30': 'ask', '13:30': 'remind', '04:05': 'morning' }[hhmm]; if (!slot || !isWorkingDay(today)) return { skipped: true };
   try { await sweepRows(env, sum); } catch { /* try again next time */ }
-  const ctx = await loadCtx(env, sum); const next = slot === 'morning' ? today : addWorkingDays(today, 1); if (next > FIELD_END || next < liveFrom) return { skipped: true }; const out = { sent: 0 };
+  const ctx = await loadCtx(env, sum); const next = slot === 'morning' ? today : addWorkingDays(today, 1); if (next > SCHOOL_CLOSE || next < liveFrom) return { skipped: true }; const out = { sent: 0 };
   const to = async (c, title, body, url) => { await send(env, (w) => Boolean(w) && String(w.id) === String(c.id), { title, body, url }); out.sent++; };
   for (const region of REGIONS) {
     const day = regionDay(ctx, region, next); if (!day.schools.length) continue;
@@ -230,6 +230,19 @@ export async function runCover(env, hhmm, sum, send = pushTo, liveFrom = COVER_L
       if (fresh.length) { for (const r of fresh) al[`row|${region}|${r.date}`] = Date.now(); await kv(env).put(K_ALERTED, al); for (const c of day.coordinators.length ? day.coordinators : [coordsOf(region).rc, coordsOf(region).arc].filter(Boolean)) await to(c, 'Please answer some past days', `${fresh.length} past day${fresh.length === 1 ? '' : 's'} need${fresh.length === 1 ? 's' : ''} your answer. The plan and the test records do not match. Please answer by ${fresh[0].due}. Open Confirm days.`, '/#cover'); } }
   }
   for (const region of REGIONS) { const od = pastRows(ctx, region).filter((r) => r.overdue && !(false)); const al = await get(env, K_ALERTED, {}); const fresh = od.filter((r) => !al[`due|${region}|${r.date}`]); if (slot === 'ask' && fresh.length) { for (const r of fresh) al[`due|${region}|${r.date}`] = Date.now(); await kv(env).put(K_ALERTED, al); const cs = coordsOf(region); for (const c of [cs.rc, cs.arc].filter(Boolean)) await to(c, 'Past days are late', `${fresh.length} past day${fresh.length === 1 ? ' is' : 's are'} late. Please answer under Confirm days.`, '/#cover'); } }
+  return out;
+}
+// A phone alert for late notices: every working morning, the RC and ARC of a region with a notice not sent by its day get ONE alert (once a day per region) until the notices are marked sent.
+export async function runLateNotices(env, hhmm, send = pushTo, today = eatToday()) {
+  if (hhmm !== '04:05' || !isWorkingDay(today) || today > SCHOOL_CLOSE) return { skipped: true }; const out = { sent: 0, regions: [] };
+  for (const region of REGIONS) {
+    let pl; try { pl = await getPlan(env, region); } catch { continue; } if (!pl || pl.status !== 'locked') continue;
+    const n = withNotices(pl, today, null).visits.filter((v) => v.date >= today && (v.aek_state === 'late' || v.ht_state === 'late')).length; if (!n) continue;
+    if (await seen(env, `late|${today}|${region}`, true)) continue;
+    const { rc, arc } = coordsOf(region); const ids = new Set([rc, arc].filter(Boolean).map((c) => String(c.id)));
+    await send(env, (w) => Boolean(w) && ids.has(String(w.id)), { title: `${n} notice${n === 1 ? ' is' : 's are'} late`, body: 'Tell the ward officer and the head teacher now, then mark it sent in Plan & calendar.', url: '/#plan' });
+    out.sent++; out.regions.push(region);
+  }
   return out;
 }
 export async function coverAttention(env, sum, liveFrom = COVER_LIVE_FROM) {

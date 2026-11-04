@@ -10,7 +10,7 @@ const who3 = (r) => { const q = STAFF.filter((s) => s.active && s.region === r);
 const st = STAFF.filter((s) => s.active && s.region === region); const rc = st.find((s) => s.role === 'rc'), arc = st.find((s) => s.role === 'arc'); const [v1, v2, v3] = st.filter((s) => s.role === 'volunteer'); const [A, B, C, D] = SCHOOLS_BY_REGION[region];
 const put = (k, x) => mem.set(k, JSON.stringify(x));
 const calls = []; const spy = async (e, pred, a) => { calls.push({ pred, a }); };
-const today = eatToday(); const future = addWorkingDays(today, 2); const past = '2026-10-21';
+const today = eatToday(); const far = addWorkingDays(today, 8) > '2026-11-12' ? '2026-11-12' : addWorkingDays(today, 8); /* plans end the day schools close, 13 Nov */ const future = addWorkingDays(today, 2); const past = '2026-10-21';
 const visit = (id, school, date, team, lead) => ({ id, school: school.id, date, start: '08:00', team, lead, notices: {}, status: 'planned' });
 put('v2:plan:' + region, { region, status: 'locked', version: 1, day_notes: {}, changes: [], visits: [
   visit('a', A, future, [rc.name, v1.name], rc.name), visit('b', B, future, [rc.name, v1.name], rc.name), // same team and lead at two schools: the gap we found
@@ -23,7 +23,7 @@ const hq = { role: 'hq', name: 'HQ Tester', level: 'admin', id: 'hq:t' }; const 
 
 const Z = who3(regionB); put('v2:plan:' + regionB, { region: regionB, status: 'locked', version: 2, day_notes: {}, changes: [], visits: [visit('n', Z.schools[0], addWorkingDays(today, 1), [Z.rc.name, Z.vols[0].name], Z.rc.name)] });
 const G = who3(regionC); const gW = { role: 'rc', name: G.rc.name, id: G.rc.id, region: regionC };
-put('v2:plan:' + regionC, { region: regionC, status: 'locked', version: 3, day_notes: {}, changes: [], visits: [visit('p', G.schools[0], addWorkingDays(today, 8), [G.rc.name, G.vols[0].name], G.rc.name), visit('q', G.schools[1], addWorkingDays(today, 9), [G.arc.name, G.vols[1].name], G.arc.name)] });
+put('v2:plan:' + regionC, { region: regionC, status: 'locked', version: 3, day_notes: {}, changes: [], visits: [visit('p', G.schools[0], far, [G.rc.name, G.vols[0].name], G.rc.name), visit('q', G.schools[1], addWorkingDays(today, 9), [G.arc.name, G.vols[1].name], G.arc.name)] });
 
 const nd = addWorkingDays(today, 1);
 const Dd = who3(regionD); put('v2:plan:' + regionD, { region: regionD, status: 'locked', version: 1, day_notes: {}, changes: [], visits: [visit('c1', Dd.schools[0], nd, [Dd.rc.name, Dd.vols[0].name], Dd.rc.name), visit('c2', Dd.schools[1], nd, [Dd.arc.name, Dd.vols[1].name], Dd.arc.name)] }); // clear: both coordinators placed, own team each
@@ -129,13 +129,13 @@ if (isWorkingDay(today)) {
 if (isWorkingDay(today)) { const to = calls.filter((c) => c.pred({ id: Dd.rc.id }) || c.pred({ id: Dd.arc.id })); ok('no alert for a clear day', to.length === 0);
   const eeAlerts = calls.filter((c) => c.pred({ id: Ee.rc.id })); ok('an unclear day alerts its coordinators with the reason', eeAlerts.length >= 1 && /three schools/.test(eeAlerts[0].a.body), eeAlerts[0] && eeAlerts[0].a.body); }
 // the plan guard: one team, one school, one day
-const bad = await changeVisit(env, gW, regionC, { visit_id: 'q', new_date: addWorkingDays(today, 8), new_team: [G.arc.name, G.vols[0].name], reason_code: Object.keys(REASONS)[0] }, today);
+const bad = await changeVisit(env, gW, regionC, { visit_id: 'q', new_date: far, new_team: [G.arc.name, G.vols[0].name], reason_code: Object.keys(REASONS)[0] }, today);
 ok('moving a school must not put the same person at two schools at the same time', bad.status === 422 && /already planned at/.test(bad.error), JSON.stringify(bad).slice(0, 160));
-const good = await changeVisit(env, gW, regionC, { visit_id: 'q', new_date: addWorkingDays(today, 8), new_team: [G.arc.name, G.vols[1].name], reason_code: Object.keys(REASONS)[0] }, today);
+const good = await changeVisit(env, gW, regionC, { visit_id: 'q', new_date: far, new_team: [G.arc.name, G.vols[1].name], reason_code: Object.keys(REASONS)[0] }, today);
 ok('with its own team the move is accepted', !good.error, JSON.stringify(good).slice(0, 120));
 // the same person may visit several schools in a day at different times (the 1 or 3 school days)
-const seq = await changeVisit(env, gW, regionC, { visit_id: 'q', new_date: addWorkingDays(today, 8), new_start: '10:30', new_team: [G.arc.name, G.vols[0].name], reason_code: Object.keys(REASONS)[0] }, today);
-const third = await changeVisit(env, gW, regionC, { visit_id: 'p', new_date: addWorkingDays(today, 8), new_start: '13:00', new_team: [G.rc.name, G.vols[0].name], new_lead: G.rc.name, reason_code: Object.keys(REASONS)[0] }, today);
+const seq = await changeVisit(env, gW, regionC, { visit_id: 'q', new_date: far, new_start: '10:30', new_team: [G.arc.name, G.vols[0].name], reason_code: Object.keys(REASONS)[0] }, today);
+const third = await changeVisit(env, gW, regionC, { visit_id: 'p', new_date: far, new_start: '13:00', new_team: [G.rc.name, G.vols[0].name], new_lead: G.rc.name, reason_code: Object.keys(REASONS)[0] }, today);
 ok('the same person can be at two schools on one day at different times', !seq.error, JSON.stringify(seq).slice(0, 160));
 ok('before the go-live day nobody is asked to confirm', (await runCover(env, '11:30', sum, spy, addWorkingDays(today, 30))).skipped === true);
 ok('the wording is for support', !/cheat|fraud|blame|fault of/i.test(JSON.stringify(await coverView(env, sum, hq, { region }))));

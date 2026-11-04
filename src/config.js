@@ -9,7 +9,7 @@ export const SCHOOL_CLOSE = '2026-11-13'; // schools close: the last day a schoo
 export const SUBMISSIONS_TARGET = 20000; // the aim: not more than this many KoBo submissions in the period (the plan's own limit is higher)
 export const PILOT_DAY = '2026-10-15'; // Dodoma pilot schools (5) are all visited on this training-week day
 export const TRAINING_START = '2026-10-13';
-export const planWindow = (region) => (region === 'DODOMA' ? [TRAINING_START, FIELD_END] : [FIELD_START, FIELD_END]);
+export const planWindow = (region) => (region === 'DODOMA' ? [TRAINING_START, SCHOOL_CLOSE] : [FIELD_START, SCHOOL_CLOSE]); // plans end the day schools close
 export const CURRENT_YEAR = '2026';
 
 export const TARGET_PER_GRADE = 20; // 20 pupils per grade per school (60 a school)
