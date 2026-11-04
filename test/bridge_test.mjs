@@ -39,7 +39,7 @@ ok('Joram\'s level sees the request in needs', (await computeBridge(env, { ...wh
 ok('the quota warning appears when it runs out before field close', br.needs.some((n) => /KoBo submissions/.test(n.title)));
 ok('a region below 50% on time is a warning', br.warnings.some((w) => /Tanga is below/.test(w.title)));
 ok('the cleaning deadline is 25 Nov and payments 5 Dec by default', br.milestones.find((m) => m.id === 'cleaning').date === '2026-11-25' && br.milestones.find((m) => m.id === 'payments').date === '2026-12-05' && br.milestones.find((m) => m.id === 'reports').date === '2026-12-15');
-ok('a note that records arrive after the cleaning deadline', br.warnings.some((w) => /after the cleaning deadline/.test(w.title)));
+ok('no cleaning-deadline note when schools close (13 Nov) before the cleaning deadline (25 Nov)', !br.warnings.some((w) => /after the cleaning deadline/.test(w.title)));
 ok('an HQ Admin or Editor can change milestones, a Viewer cannot', (await saveMilestones(env, { role: 'hq', level: 'viewer' }, [])).status === 403 && (await saveMilestones(env, who, [{ label: 'A', date: '2026-11-01' }, { label: 'B', date: '2026-11-02' }])).ok && (await getMilestones(env)).length === 2);
 const u = await buildUpdate(env, 'ed', br, sum); ok('the ED update has status, data, targets, risks and asks', /STATUS/.test(u.text) && /DATA/.test(u.text) && /TARGETS AND DATES/.test(u.text) && /RISKS/.test(u.text) && /DECISIONS AND ASKS/.test(u.text));
 const uf = await buildUpdate(env, 'funder', br, sum); ok('the funder update is aggregate only: no risks, no queue details, no names', !/RISKS/.test(uf.text) && !/waiting for a reply/.test(uf.text) && !/P One|P Two/.test(uf.text) && /BY REGION/.test(uf.text));
