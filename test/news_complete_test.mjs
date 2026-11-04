@@ -1,0 +1,23 @@
+// A long message that was cut short in the News feed (old 2,000-letter limit) is completed in place, with no email.
+import { env, mem, ok, done } from './_kit.mjs';
+import { messagesApi } from '../src/messages.js';
+import { saveNews, publish, listNews } from '../src/news.js';
+import { kv } from '../src/store.js';
+const who = { role: 'hq', level: 'admin', name: 'Michael Kamukulu', id: 'hq:h3' };
+const full = ('Habari dunia '.repeat(10).trim() + '.\n\n').repeat(40).trim().slice(0, 3698).replace(/\s+$/, '.');
+const short = full.slice(0, 2000).replace(/\s+$/, '.');
+const s = await saveNews(env, who, { title: 'Mrejesho kutoka Sanduku la Maoni', body: short, kind: 'announcement', to: 'all', push: false }); await publish(env, s.id, 'Michael Kamukulu');
+const d = { templates: [], jobs: [{ id: 'j1', name: 'Mrejesho', status: 'sent', subject: 'Mrejesho kutoka Sanduku la Maoni', body: full, channels: { email: true, news: true, push: true }, audience: { roles: ['hq', 'rc', 'arc', 'volunteer'] }, schedule: { type: 'now' } }], log: [], seeded: true };
+await kv(env).put('v2:msgs', d);
+const first = (await listNews(env, who)).items.find((i) => i.id === s.id); ok('the feed first holds the cut text', first && first.body === short && short.length < full.length, first ? String(first.body.length) : JSON.stringify(s));
+const vol = { role: 'volunteer', name: 'V One', id: 'x1', region: 'TANGA' };
+const denied = await messagesApi(env, { ...who, level: 'editor' }, { action: 'news_complete', id: 'j1' });
+ok('only an Admin can complete it', Boolean(denied.error));
+const r = await messagesApi(env, who, { action: 'news_complete', id: 'j1', alert: false });
+const item = (await listNews(env, vol)).items.find((i) => i.id === s.id);
+ok('the whole text is now in the feed for everyone', r.ok && item.body === full, JSON.stringify(r).slice(0, 120));
+const log = (await kv(env).get('v2:msgs')).log;
+ok('nothing was sent again (no new log line, no email)', log.length === 0);
+const again = await messagesApi(env, who, { action: 'news_complete', id: 'j1' });
+ok('running it twice does nothing more', Boolean(again.error));
+done();

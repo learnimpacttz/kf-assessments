@@ -4,7 +4,7 @@ import { computePatterns } from './patterns.js';
 import { qaAttention } from './qa.js';
 import { coverAttention } from './cover.js';
 import { kv } from './store.js';
-import { SCHOOL_BY_ID, REGIONS, STAFF, FIELD_START, FIELD_END, isWorkingDay, addDays, workingDaysBetween } from './config.js';
+import { SCHOOL_BY_ID, REGIONS, STAFF, FIELD_START, FIELD_END, FIELD_TARGET_END, SUBMISSIONS_TARGET, isWorkingDay, addDays, workingDaysBetween } from './config.js';
 import { decorate, overdueQueries, QUERY_REPLY_DAYS } from './queries.js';
 import { getPlan, withNotices } from './plan.js';
 
@@ -30,6 +30,13 @@ export function fieldInfo(today) {
   const phase = today < FIELD_START ? 'before' : today > FIELD_END ? 'after' : 'during';
   const day = phase === 'before' ? 0 : phase === 'after' ? total : workingDaysBetween(FIELD_START, today) + (isWorkingDay(FIELD_START) ? 1 : 0);
   return { start: FIELD_START, end: FIELD_END, total, day: Math.min(day, total), left: Math.max(0, total - day), phase, to_start: phase === 'before' ? workingDaysBetween(today, FIELD_START) : 0 };
+}
+// The submissions check: how many KoBo submissions there will be on the day the field work is meant to finish (10 Nov), against the aim (20,000) and the plan's own limit.
+export function quotaProjection(quota, today) {
+  if (!quota || quota.used == null) return null; const per = quota.per_day || 0; const end = today <= FIELD_TARGET_END ? FIELD_TARGET_END : FIELD_END;
+  let days = 0; for (let d = addDays(today, 1); d <= end; d = addDays(d, 1)) if (isWorkingDay(d)) days++;
+  const projected = Math.round(quota.used + per * days); const state = projected > quota.limit ? 'over_limit' : projected > SUBMISSIONS_TARGET ? 'over_target' : 'ok';
+  return { used: quota.used, limit: quota.limit, per_day: per, end, days, projected, target: SUBMISSIONS_TARGET, state };
 }
 export async function computeBridge(env, who, { sum, queries, today, quota, pred }) {
   const F = fieldInfo(today); const ms = await getMilestones(env);
@@ -75,8 +82,9 @@ export async function computeBridge(env, who, { sum, queries, today, quota, pred
   if (askHq) needs.push({ sev: askUrgent ? 'bad' : 'warn', title: `${askHq} question${askHq === 1 ? '' : 's'} from the field${askUrgent ? ', ' + askUrgent + ' urgent' : ''}`, text: 'The person gets an alert when you answer.', act: { tab: 'questions', label: 'Answer' } });
   if (lvl >= 2 && waitJoram) needs.push({ sev: 'warn', title: `${waitJoram} edit or delete request${waitJoram === 1 ? '' : 's'} waiting for the first HQ review`, text: 'Data cleaning > requests.', act: { tab: 'clean', label: 'Open requests' } });
   if (lvl >= 3 && waitMundo) needs.push({ sev: 'warn', title: `${waitMundo} request${waitMundo === 1 ? '' : 's'} waiting for the final decision`, text: 'The originals are saved before anything is changed.', act: { tab: 'clean', label: 'Open requests' } });
-  if (late) needs.push({ sev: 'warn', title: `${late} notice${late === 1 ? ' is' : 's are'} late for coming visits`, text: 'Ward officer 5 working days before, head teacher 3.', act: { tab: 'regions', label: 'Open plans' } });
-  if (quota && quota.runs_out && quota.runs_out < FIELD_END) needs.push({ sev: 'bad', title: 'KoBo submissions will reach the monthly limit before field work ends', text: `${quota.used} of ${quota.limit} used. At about ${quota.per_day} a day the limit is reached on ${quota.runs_out}.`, act: { tab: 'admin', label: 'Open storage' } });
+  if (late) { const where = REGIONS.filter((r) => (byRegion[r] || {}).late_notices).map((r) => `${r[0]}${r.slice(1).toLowerCase()} ${byRegion[r].late_notices}`).join(', '); needs.push({ sev: 'bad', title: `${late} notice${late === 1 ? ' is' : 's are'} late for coming visits`, text: `Ward officer 5 working days before, head teacher 3. Late: ${where}. Each notice not sent by its day puts the visit at risk.`, act: { tab: 'regions', label: 'Open plans' } }); }
+  const qp = quotaProjection(quota, today); // where the submissions will stand when the field work is meant to be finished
+  if (qp && qp.state !== 'ok') needs.push({ sev: qp.state === 'over_limit' ? 'bad' : 'warn', title: qp.state === 'over_limit' ? 'KoBo submissions will pass the monthly limit before field work ends' : 'KoBo submissions are heading above the 20,000 aim', text: `${qp.used} used so far. At about ${qp.per_day} a day that is about ${qp.projected} by ${qp.end}. The aim is ${qp.target} at most; the monthly limit is ${qp.limit}.`, act: { tab: 'admin', label: 'Open storage' } });
   const ops = ((await kv(env).get('v2:bridge:ops')) || []).filter((x) => x.status !== 'done' && x.due);
   const opsLate = ops.filter((x) => x.due < today), opsSoon = ops.filter((x) => x.due >= today && dayDiff(today, x.due) <= 7);
   if (opsLate.length) needs.push({ sev: 'bad', title: `${opsLate.length} operations item${opsLate.length === 1 ? ' is' : 's are'} past due`, text: opsLate.slice(0, 3).map((x) => x.title).join('; '), act: { tab: 'today', card: 'ops', label: 'Open the list' } });
@@ -93,7 +101,7 @@ export async function computeBridge(env, who, { sum, queries, today, quota, pred
   if (sum.integrity && sum.integrity.repeated_entries > 0) warnings.push({ sev: 'warn', title: 'Repeated records were ignored', text: `${sum.integrity.repeated_entries} repeated record entries were found in the stored data and left out of the duplicate check, so no false duplicate queries come from them. Tell the systems owner.` });
   for (const b of behindRegions.slice(0, 4)) warnings.push({ sev: b.p < 25 ? 'bad' : 'warn', title: `${b.region[0]}${b.region.slice(1).toLowerCase()} is below the pace it needs`, text: `Needs ${b.need} schools a day${b.pace != null ? ', doing ' + b.pace : ''}. Chance of finishing by ${FIELD_END}: ${b.p}%.`, act: { region: b.region, label: 'Open region' } });
   if (pred && pred.at_risk && pred.at_risk.length) warnings.push({ sev: 'warn', title: `${pred.at_risk.length} school${pred.at_risk.length === 1 ? '' : 's'} at risk`, text: 'Planned date passed without a visit, or started and not finished.', act: { tab: 'regions', label: 'Open list' } });
-  if (quota && quota.runs_out) warnings.push({ sev: quota.runs_out < FIELD_END ? 'bad' : 'good', title: 'KoBo submissions', text: `${quota.used} of ${quota.limit} used this period; at about ${quota.per_day} a day the limit is reached ${quota.runs_out}.`, act: { tab: 'admin', label: 'Open storage' } });
+  if (qp) warnings.push({ sev: qp.state === 'over_limit' ? 'bad' : qp.state === 'over_target' ? 'warn' : 'good', title: 'KoBo submissions', text: `${qp.used} of ${qp.limit} used this period; at about ${qp.per_day} a day about ${qp.projected} by ${qp.end}${qp.state === 'ok' ? ', under the ' + qp.target + ' aim' : ''}.`, act: { tab: 'admin', label: 'Open storage' } });
   if (cleanBy && msCl) warnings.push({ sev: cleanBy > msCl.date ? 'warn' : 'good', title: 'Cleaning forecast', text: `At the current closing pace the backlog clears ${cleanBy} (deadline ${msCl.date}).`, act: { tab: 'allq', label: 'Open queries' } });
   const ahead = F.phase === 'during' && msCl && msCl.date < FIELD_END; if (ahead) warnings.push({ sev: 'warn', title: 'Records sent after the cleaning deadline', text: `Field work closes ${FIELD_END}, ${dayDiff(msCl.date, FIELD_END)} days after the cleaning deadline (${msCl.date}). Plan a final cleaning sweep for the last week of records.`, act: { tab: 'allq', label: 'Open queries' } });
   return {

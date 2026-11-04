@@ -67,7 +67,7 @@ export async function react(env, who, id, emoji) {
 }
 
 function clean(b, who, old = {}) {
-  const title = String(b.title ?? old.title ?? '').trim().slice(0, 120), body = String(b.body ?? old.body ?? '').trim().slice(0, 2000);
+  const title = String(b.title ?? old.title ?? '').trim().slice(0, 120), body = String(b.body ?? old.body ?? '').trim().slice(0, 5000);
   const to = AUDIENCES.includes(b.to) ? b.to : old.to || 'all';
   const regions = Array.isArray(b.regions) ? b.regions.filter((r) => REGIONS.includes(r)) : old.regions || [];
   const kind = KINDS[b.kind] ? b.kind : old.kind || 'announcement';
@@ -151,7 +151,7 @@ export async function polish(env, b) {
   });
   if (!res.ok) return { error: 'The AI service did not answer (' + res.status + ')' };
   const data = await res.json(); const txt = (data.content || []).map((c) => c.text || '').join('');
-  try { const p = JSON.parse(txt.slice(txt.indexOf('{'), txt.lastIndexOf('}') + 1)); return { title: String(p.title || b.title || '').slice(0, 120), body: String(p.body || '').slice(0, 2000) }; } catch { return { error: 'Could not read the AI answer. Try again.' }; }
+  try { const p = JSON.parse(txt.slice(txt.indexOf('{'), txt.lastIndexOf('}') + 1)); return { title: String(p.title || b.title || '').slice(0, 120), body: String(p.body || '').slice(0, 5000) }; } catch { return { error: 'Could not read the AI answer. Try again.' }; }
 }
 
 // "Seen": recorded when a person opens the News tab, once per message
@@ -164,4 +164,16 @@ export async function markSeen(env, who, ids) {
   }
   if (changed) await save(env, d);
   return { ok: true };
+}
+
+// Repair for a message that was cut short in the feed: put the full text into the News post that was already sent. Sends no email.
+// With alert, the same people get ONE phone alert saying the full message can now be read.
+export async function extendNews(env, id, body, { alert, title } = {}) {
+  const d = await load(env); const item = d.items.find((i) => i.id === id); if (!item) return { error: 'Not found', status: 404 };
+  if (item.status !== 'sent') return { error: 'Only a message that was already sent can be completed this way' };
+  const full = String(body || '').trim().slice(0, 5000); if (full.length <= (item.body || '').length) return { error: 'The text there is already complete' };
+  item.body = full; item.completed_at = new Date().toISOString(); await save(env, d);
+  let push = null;
+  if (alert) { const pred = (w) => { if (!w) return false; if (w.role === 'hq') return true; return toOk(item, w) && regionOk(item, w); }; push = await pushTo(env, pred, { title: title || item.title, body: 'Ujumbe kamili sasa unaonekana kwenye News. The full message is now in News.', url: '/#news' }); }
+  return { ok: true, length: full.length, push };
 }

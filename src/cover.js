@@ -5,7 +5,7 @@
 // Nothing here changes a test record, a plan or a payment. Leave notes never hold medical detail.
 import { kv } from './store.js';
 import { STAFF, SCHOOL_BY_ID, REGIONS, FIELD_START, FIELD_END, eatToday, isWorkingDay, addWorkingDays, norm } from './config.js';
-import { getPlan, leadOfVisit, clashingPeople, overloaded } from './plan.js';
+import { getPlan, leadOfVisit, clashingPeople, overloaded, withNotices } from './plan.js';
 import { pushTo } from './push.js';
 
 const K_LEAVE = 'v2:cover:leave', K_ASSIGN = 'v2:cover:assign', K_CONF = 'v2:cover:conf', K_ROWS = 'v2:cover:rows', K_ALERTED = 'v2:cover:alerted';
@@ -94,8 +94,9 @@ export async function coverView(env, sum, who, q = {}) {
   if (q.brief) { const regs = who.role === 'hq' ? REGIONS : ['rc', 'arc'].includes(who.role) ? [who.region] : []; let open = 0, overdue = 0, h1 = 0, fin = 0, unclear = 0; const dues = []; const win = nextDays(today, 2).filter((d) => d >= COVER_LIVE_FROM);
     for (const r of regs) { for (const x of pastRows(ctx, r)) { if (['open', 'rework'].includes(x.stage)) { open++; if (who.role !== 'hq') dues.push(x.due); } if (x.overdue) overdue++; if (x.stage === 'hq1') h1++; if (x.stage === 'final') fin++; }
       if (who.role === 'hq') { const nd = focusDay(today); if (nd) { const dd = regionDay(ctx, r, nd); if (dd.schools.length && !dd.clear && !dd.complete) unclear++; } } else for (const d of win) { const dd = regionDay(ctx, r, d); const me = dd.coordinators.find((c) => String(c.id) === String(who.id)); if (dd.schools.length && !dd.clear && !dd.complete && me && me.state === 'open') { unclear++; dues.push(deadlineOf(d)); } } }
+    let late_notices = 0; if (who.role !== 'hq') for (const r of regs) { const pl = ctx.plans[r]; if (pl && pl.status === 'locked') for (const v of withNotices(pl, today, null).visits) if (v.date >= today && (v.aek_state === 'late' || v.ht_state === 'late')) late_notices++; } // red alert for the region's coordinators: a notice not sent by its day
     const lvl = who.review_level || 0; const for_me = who.role === 'hq' ? (isEditor(who) && lvl >= 2 && !isMundo(who) ? h1 : 0) + (isEditor(who) && lvl >= 3 ? fin : 0) : 0;
-    return { status: 'ok', brief: true, role: who.role, open, overdue, for_me, unclear, due: dues.sort()[0] || null, act: who.role === 'hq' ? for_me + unclear : open + unclear }; }
+    return { status: 'ok', brief: true, role: who.role, open, overdue, for_me, unclear, late_notices, due: dues.sort()[0] || null, act: who.role === 'hq' ? for_me + unclear : open + unclear }; }
   if (who.role === 'volunteer') return { status: 'ok', role: 'volunteer', today, acting: actingFor(ctx, who) };
   const hq = who.role === 'hq'; const own = ['rc', 'arc'].includes(who.role) ? who.region : null; if (!hq && !own) return { error: 'This page is for coordinators and HQ', status: 403 };
   if (hq && !q.region) { // HQ overview: every region, the next working day and the days waiting for an answer

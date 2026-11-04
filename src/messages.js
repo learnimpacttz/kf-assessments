@@ -4,7 +4,7 @@
 import { kv } from './store.js';
 import { loadRecipients, sendMail, hqCc } from './digest.js';
 import { pushTo } from './push.js';
-import { saveNews, publish, polish } from './news.js';
+import { saveNews, publish, polish, extendNews, manageNews } from './news.js';
 import { BRAND } from './hq.js';
 import { REGIONS, eatToday, addDays } from './config.js';
 
@@ -124,6 +124,14 @@ export async function messagesApi(env, who, b) {
   if (a === 'count') { const c = cleanJob(b, who); return { email: pick(c, await loadRecipients(env), today).length }; }
   if (a === 'preview') { const c = cleanJob(b, who); const p = pick(c, await loadRecipients(env), today)[0] || { name: 'Test Person', role: 'rc', region: 'TANGA' }; return { subject: render(c.subject, p, today), html: html({ ...c, ...stamp }, p, today, siteOf(env)), sample: p.name }; }
   if (a === 'test') { const c = cleanJob(b, who); const to = String(b.to || '').trim(); if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(to)) return { error: 'Type a valid email address for the test' }; if (!sendingOn(env)) return { error: 'Email sending is switched off in this system' }; const p = { name: who.name || 'Test Person', role: 'rc', region: 'TANGA' }; await sendMail(env, to, { subject: '[TEST] ' + render(c.subject, p, today), html: html({ ...c, ...stamp }, p, today, siteOf(env)), text: render(c.body, p, today) }); return { ok: true, sent_to: to }; }
+  if (a === 'news_complete') { // the News post of a sent message was cut short: put the full text there (no email) and, if asked, send one phone alert
+    if (!admin) return { error: 'Only an HQ Admin can do this', status: 403 };
+    const job = d.jobs.find((x) => x.id === b.id); if (!job || !job.channels?.news) return { error: 'Not found', status: 404 };
+    const blank = { name: '', role: '', region: '' }; const title = render(job.subject, blank, today).replace(/colleague/, '').trim(); const full = render(job.body, blank, today);
+    const mng = await manageNews(env, who); const it = (mng.items || []).filter((x) => x.status === 'sent' && x.title === title).sort((x, y) => String(y.sent_at).localeCompare(String(x.sent_at)))[0];
+    if (!it) return { error: 'The News post was not found' };
+    return extendNews(env, it.id, full, { alert: Boolean(b.alert), title });
+  }
   if (a === 'polish') return polish(env, { title: b.subject, body: b.body, kind: 'announcement', add_swahili: Boolean(b.sw) });
   if (a === 'template_save') { const t = { name: String(b.name || '').slice(0, 80), subject: String(b.subject || '').slice(0, 140), body: String(b.body || '').slice(0, 5000) }; if (!t.name || !t.subject || !t.body) return { error: 'A template needs a name, a subject and a message.' }; const old = b.id && d.templates.find((x) => x.id === b.id); if (old) Object.assign(old, t, { by: who.name, at: new Date().toISOString() }); else d.templates.push({ id: uid(), ...t, by: who.name, at: new Date().toISOString() }); await kv(env).put(KEY, d); return { ok: true }; }
   if (a === 'template_delete') { d.templates = d.templates.filter((x) => x.id !== b.id); await kv(env).put(KEY, d); return { ok: true }; }

@@ -1,5 +1,5 @@
 import { env, mem, ok, done } from './_kit.mjs';
-import { computeBridge, buildUpdate, saveMilestones, getMilestones, fieldInfo } from '../src/bridge.js';
+import { computeBridge, buildUpdate, saveMilestones, getMilestones, fieldInfo, quotaProjection } from '../src/bridge.js';
 import { SCHOOLS_BY_REGION } from '../src/config.js';
 const [a, b, c] = SCHOOLS_BY_REGION.TANGA; const day = '2026-10-27';
 const g = (n) => ({ 1: { n, av: n }, 2: { n, av: n }, 3: { n, av: n } });
@@ -49,5 +49,15 @@ import { reminderFor } from '../src/bridge.js';
   ok('reminder links straight to the work', r.url === '/#go=allq.mine', r.url);
   ok('reminder mentions 3+ days', /3 or more days/.test(r.body));
   ok('no reminder without pending work', reminderFor([{ title: 'Late notices', act: { tab: 'regions' } }], { oldest: 0 }) === null);
+}
+
+// KoBo submissions check: judged on the day field work is meant to end (10 Nov), against the 20,000 aim and the plan's own limit
+{ const real = quotaProjection({ used: 12188, limit: 25000, per_day: 1424 }, '2026-11-04');
+  ok('submissions: 4 working days to 10 Nov, about 17,884 projected, no alert', real.end === '2026-11-10' && real.days === 4 && real.projected === 17884 && real.state === 'ok', JSON.stringify(real));
+  ok('submissions: above 20,000 but under the limit is a warning', quotaProjection({ used: 16000, limit: 25000, per_day: 1424 }, '2026-11-04').state === 'over_target');
+  ok('submissions: above the plan limit is serious', quotaProjection({ used: 22000, limit: 25000, per_day: 1424 }, '2026-11-04').state === 'over_limit');
+  ok('submissions: after 10 Nov the check looks to the old field close', quotaProjection({ used: 12000, limit: 25000, per_day: 100 }, '2026-11-11').end === '2026-12-04');
+  const calm = await computeBridge(env, who, { sum, queries: {}, today: '2026-11-04', quota: { used: 12188, limit: 25000, per_day: 1424 }, pred: null });
+  ok('no submissions alert when the projection is under the aim', !calm.needs.some((n) => /KoBo submissions/.test(n.title)) && calm.warnings.some((w) => /KoBo submissions/.test(w.title) && w.sev === 'good'), JSON.stringify(calm.warnings.filter((w) => /KoBo/.test(w.title))));
 }
 done();
