@@ -447,16 +447,22 @@ function viewDay() {
   const today = o.today;
   const me = S.who;
   const mine = (plan?.visits || []).filter((v) => !v.team?.length || v.team.includes(me.name));
-  const todays = mine.filter((v) => v.date === today);
+  const planned = mine.filter((v) => v.date === today);
+  // schools this person actually tested at today (from their own records), even when the plan says another school
+  const workedIds = [...new Set((o.mine.work || []).filter((w) => w[0] === today).map((w) => w[1]))];
+  const plannedIds = new Set(planned.map((v) => v.school));
+  const moved = workedIds.filter((id) => !plannedIds.has(id)).map((id) => ({ school: id, school_name: schoolName(id), lga: '', start: '', moved: true }));
+  // a planned school that has no work yet stays listed, unless the person worked somewhere else today (then it is shown as 'planned, not worked')
+  const todays = [...planned, ...moved];
   const next = mine.filter((v) => v.date > today).sort((a, b) => (a.date < b.date ? -1 : 1)).slice(0, 4);
   const sch = Object.fromEntries((o.mine.schools || []).map((s) => [s.id, s]));
-  const card = (v) => { const s = sch[v.school]; const g = s?.g; return `<div class="sch"><h4>${lk('school', v.school, v.school_name)}</h4><div class="m">${esc(title(v.lga))} · ${esc(armLabel(v))} · starts ${esc(v.start)}</div>${g ? `<div class="gr">${[1, 2, 3].map((k) => `<div><b>${g[k].av}/${g[k].target}</b><small>Darasa ${k}</small></div>`).join('')}</div>` : ''}${s?.done ? '<div class="note" style="margin-top:8px">Shule imekamilika · School complete</div>' : ''}</div>`; };
+  const card = (v) => { const s = sch[v.school]; const g = s?.g; return `<div class="sch"><h4>${lk('school', v.school, v.school_name)}</h4><div class="m">${v.moved ? 'You worked here today · Umefanya kazi hapa leo' : `${esc(title(v.lga))} · ${esc(armLabel(v))} · starts ${esc(v.start)}`}</div>${v.moved ? '' : (!(workedIds.length) || workedIds.includes(v.school) ? '' : '<div class="note" style="margin-top:6px">Planned for you, but your records today are from another school. Tell your RC if the plan should change.</div>')}${g ? `<div class="gr">${[1, 2, 3].map((k) => `<div><b>${g[k].av}/${g[k].target}</b><small>Darasa ${k}</small></div>`).join('')}</div>` : ''}${s?.done ? '<div class="note" style="margin-top:8px">Shule imekamilika · School complete</div>' : ''}</div>`; };
   const mf = o.mine.flags.filter(isOpen).length;
   const lead = (o.mine.staff || []).filter((x) => x.role === 'rc' || x.role === 'arc'); const team = lead.length ? lead.map((x) => esc(x.name.split(' ')[0]) + ' (' + x.role.toUpperCase() + ')').join(', ') : '';
   return `${dataBanner()}<div class="pagehead"><div><h2>Habari, ${esc(me.name.split(' ')[0])}</h2><p>${esc(/^volunteer/i.test(me.position || '') || !me.position ? 'Test admin' + (me.position ? ' (' + me.position + ')' : '') : me.position)} · ${esc(title(me.region))} · ${dayName(today)}${team ? ' · ' + team : ''} · ${todays.length ? todays.length + ' school' + (todays.length > 1 ? 's' : '') + ' today' : 'no school today'}</p></div></div>
   ${queryPrompt()}
   ${standStrip()}
-  ${(() => { let t = 0, g = 0; for (const v of todays) { const x = sch[v.school]; if (x) for (const k of [1, 2, 3]) { t += x.g[k].av; g += x.g[k].target; } } return g ? `<div class="card" style="margin-top:12px">${ring(t, g, { label: `${t} of ${g} pupils tested today`, sub: t >= g ? 'Well done. Check that every assessment is finished and sent.' : `${g - t} to go at ${todays.map((v) => esc(v.school_name)).join(' and ')}` })}</div>` : ''; })()}
+  ${(() => { let t = 0, g = 0; const ringSch = workedIds.length ? todays.filter((v) => workedIds.includes(v.school)) : todays; for (const v of ringSch) { const x = sch[v.school]; if (x) for (const k of [1, 2, 3]) { t += x.g[k].av; g += x.g[k].target; } } return g ? `<div class="card" style="margin-top:12px">${ring(t, g, { label: `${t} of ${g} pupils tested today`, sub: t >= g ? 'Well done. Check that every assessment is finished and sent.' : `${g - t} to go at ${ringSch.filter((v) => sch[v.school]).map((v) => esc(v.school_name)).join(' and ')}` })}</div>` : ''; })()}
   <h3 style="margin:14px 0 8px">Leo · Today</h3>${todays.length ? todays.map(card).join('') : '<div class="note">No school in the plan for you today. Check with your RC.</div>'}
   <h3 style="margin:18px 0 8px">Zinazofuata · Coming up</h3>${next.length ? next.map((v) => `<div class="sch"><h4>${esc(v.school_name)}</h4><div class="m">${dayName(v.date)} · ${esc(v.start)} · ${esc(title(v.lga))}</div></div>`).join('') : '<div class="note">Nothing planned yet.</div>'}`;
 }
@@ -2023,7 +2029,7 @@ const HELP = {
   volunteer: [
     ['Quick start (3 minutes)', '<ol style="margin:4px 0 8px;padding-left:20px"><li>Open the app from its icon and turn on alerts.</li><li><b>My day</b>: your school and today\'s numbers.</li><li>Finish and send every assessment the same day. Never reopen a sent record.</li><li>If a check (query) appears, open <b>My queries</b> and write what happened.</li><li>Stuck? <b>Ask a question</b> (under Today).</li></ol>'],
     ['Ask a question', 'Open <b>Ask a question</b> (under Today). Choose what it is about, write a sentence or two and press Send. Your coordinator answers first and sends it to HQ if needed. You get an alert when there is an answer. If it is not solved, press <b>Ask again</b>.'],
-    ['My day', 'Shows the school you are at today, the sampling status and your own test times. Check it in the morning.'],
+    ['My day', 'Shows the school you are at today, the sampling status and your own test times. Check it in the morning. If you worked at a different school than the plan says, it shows that school too, marked "You worked here today". Tell your RC if the plan should change.'],
     ['Sending your records', 'Turn on auto send in KoBo Collect so records go out on the day of the test. A record sent after the test day is a check: it asks why it waited.'],
     ['My queries: how to respond', 'When a check is raised on your records, press <b>Write the response</b> and say in a sentence or two what happened and what was done. Your RC or ARC reviews it, then HQ reviews and approves it. You can see every step and the history. If it is sent back, read the reason and write it again.'],
     ['Phones', 'Each phone should belong to one person. Do not lend yours. If you must, tell your RC and write it in your response.'],

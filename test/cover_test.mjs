@@ -137,6 +137,6 @@ ok('with its own team the move is accepted', !good.error, JSON.stringify(good).s
 const seq = await changeVisit(env, gW, regionC, { visit_id: 'q', new_date: addWorkingDays(today, 8), new_start: '10:30', new_team: [G.arc.name, G.vols[0].name], reason_code: Object.keys(REASONS)[0] }, today);
 const third = await changeVisit(env, gW, regionC, { visit_id: 'p', new_date: addWorkingDays(today, 8), new_start: '13:00', new_team: [G.rc.name, G.vols[0].name], new_lead: G.rc.name, reason_code: Object.keys(REASONS)[0] }, today);
 ok('the same person can be at two schools on one day at different times', !seq.error, JSON.stringify(seq).slice(0, 160));
-ok('before the go-live day nobody is asked to confirm', (await runCover(env, '11:30', sum, spy)).skipped === true);
+ok('before the go-live day nobody is asked to confirm', (await runCover(env, '11:30', sum, spy, addWorkingDays(today, 30))).skipped === true);
 ok('the wording is for support', !/cheat|fraud|blame|fault of/i.test(JSON.stringify(await coverView(env, sum, hq, { region }))));
 done();
