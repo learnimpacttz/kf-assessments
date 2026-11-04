@@ -3312,7 +3312,7 @@ async function setViewAs(val) {
     else if (/^guest:/.test(val)) { S.viewAs = val; S.who = { role: 'guest', name: 'Preview: ' + val.slice(6), profile: val.slice(6), org: '', can_download: false, logo: '', viewAs: true }; }
     else { const p = S.staffList.find((s) => String(s.id) === val); if (!p) return; S.viewAs = val; S.who = { role: p.role, name: p.name, region: p.region, position: p.position, id: p.id, viewAs: true, ...(p.lead ? { lead: p.lead, title: 'Lead Coordinator (LC)' } : {}) }; }
   }
-  S.lcRegion = undefined; S.ov = null; S.pub = null; S.cmp = null; S.pred = null; S.brief = null; S.plan = null; S.allSchools = null; S.workCache = {}; S.tbl = {}; S.qf = null; S.tch = null; S.linked = null; S.exTab = 'assess'; S.exErr = null; S.tab = null; S.cur = null; closeDetail(); S.stale = null;
+  S.lcRegion = undefined; S.planRegion = null; S.ov = null; S.pub = null; S.cmp = null; S.pred = null; S.brief = null; S.plan = null; S.allSchools = null; S.workCache = {}; S.tbl = {}; S.qf = null; S.tch = null; S.linked = null; S.exTab = 'assess'; S.exErr = null; S.tab = null; S.cur = null; closeDetail(); S.stale = null;
   await go();
 }
 const previewBanner = () => (S.viewAs ? `<div class="banner preview"><b>Preview.</b> You are looking at the app as ${S.viewAs === 'public' ? 'a public visitor' : /^hq:/.test(S.viewAs) ? esc(S.who.name) + ' (HQ, ' + esc(DESKS[S.who.desk] || '') + ' desk, ' + esc(S.who.level) + ')' : esc(S.who.name) + ' (' + esc(S.who.position || S.who.role) + ', ' + esc(title(S.who.region)) + ')'}. Nothing you do here changes anything. <button class="btn sm sec" data-act="exitPreview">Back to HQ</button></div>` : '');
@@ -3380,7 +3380,7 @@ function publicCompare(pub) {
   return { regions: pub.regions.map((r) => ({ ...r, tested_pct: pc(r.tested, r.target) })).sort((a, b) => b.tested_pct - a.tested_pct), people: [] };
 }
 async function loadPlan(region) {
-  const r = region || S.planRegion || (viewingOther() && S.lcRegion) || S.who.region || S.cfg.regions[0];
+  const r = (S.who.role === 'volunteer' && S.who.region) || region || S.planRegion || (viewingOther() && S.lcRegion) || S.who.region || S.cfg.regions[0]; // a volunteer always reads their own region's plan (also when HQ views as them)
   S.planRegion = r;
   S.planErr = null;
   try { S.plan = await api('/api/plan?region=' + r); } catch (e) { S.plan = null; S.planErr = e.message; }
