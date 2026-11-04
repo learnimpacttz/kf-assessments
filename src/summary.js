@@ -1,7 +1,7 @@
 // Turns the raw per-day aggregates into everything the dashboards show:
 // school progress, test-admin stats, checks/flags, pace and projected finish.
 // Computed once per sync (not per request) and stored; the API only slices it.
-import { devCode as devCodeOf, PRACTICE_BY_ID, PRACTICE_REGION, SCHOOL_BY_ID, SCHOOLS_BY_REGION, REGIONS, FIELD_END, DEFAULT_BANDS, targetPerGrade, staffForKoboName, PILOT_DAY, addWorkingDays, workingDaysBetween, isWorkingDay, STAFF } from './config.js';
+import { devCode as devCodeOf, PRACTICE_BY_ID, PRACTICE_REGION, SCHOOL_BY_ID, SCHOOLS_BY_REGION, REGIONS, FIELD_END, FIELD_TARGET_END, DEFAULT_BANDS, targetPerGrade, staffForKoboName, PILOT_DAY, addWorkingDays, workingDaysBetween, isWorkingDay, STAFF } from './config.js';
 import { HIST_BUCKETS, uniqueRn } from './ingest.js';
 import { summarizeAnswers } from './answers.js';
 
@@ -461,7 +461,7 @@ export function summarize(Y, { year, bands, today, owners = {}, practice = false
     if (remaining <= 0) reg.projected = 'done';
     else if (pace > 0) reg.projected = addWorkingDays(today, Math.ceil(remaining / pace));
     else reg.projected = null;
-    reg.behind = reg.projected && reg.projected !== 'done' && reg.projected > FIELD_END;
+    reg.behind = reg.projected && reg.projected !== 'done' && reg.projected > FIELD_TARGET_END;
     reg.flags_open = flags.filter((f) => UNI[f.school]?.region === R).length;
   }
 

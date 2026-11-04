@@ -15,4 +15,5 @@ ok('basis names this year\'s plan', /this year's plan/.test(r.basis), r.basis);
 ok('plan finish is the last planned day', r.plan_finish === days[2], r.plan_finish);
 ok('likely finish is near the plan, not last year\'s pattern', r.likely && r.likely <= addDays(days[2], 6), r.likely);
 ok('national plan finish reported', f.national.plan_finish === days[2] || f.national.plan_finish > days[2] || f.national.plan_finish === null);
+ok('the projection judges school visits by 10 Nov and reports the 13 Nov school closing separately', f.close === '2026-11-10' && f.school_close === '2026-11-13' && r.p_by_close >= r.p_on_time && f.national.p_by_close >= f.national.p_on_time, JSON.stringify({ c: f.close, sc: f.school_close, a: r.p_on_time, b: r.p_by_close }));
 done();

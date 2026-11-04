@@ -4,7 +4,7 @@
 // Last round's history is only a fallback for a region with no locked plan (and for schools missing from the plan).
 // Capped at the 2 to 3 schools a day the protocol allows (5 in Dodoma). It reports the chance of finishing by the close date and a likely finish range.
 import { kv } from './store.js';
-import { REGIONS, FIELD_START, FIELD_END, PILOT_DAY, CURRENT_YEAR, isWorkingDay, addDays, MAX_SCHOOLS_PER_DAY, DODOMA_MAX_SCHOOLS_PER_DAY } from './config.js';
+import { REGIONS, FIELD_START, FIELD_END, FIELD_TARGET_END, SCHOOL_CLOSE, PILOT_DAY, CURRENT_YEAR, isWorkingDay, addDays, MAX_SCHOOLS_PER_DAY, DODOMA_MAX_SCHOOLS_PER_DAY } from './config.js';
 import { getPlan } from './plan.js';
 
 const SIMS = 1500;
@@ -81,7 +81,8 @@ export async function forecast(env, sum, today) {
   const base = await baseline(env);
   const first = today < FIELD_START ? FIELD_START : addDays(today, 1);
   const window = workingDays(first, addDays(FIELD_END, 56));
-  const left = workingDays(first, FIELD_END);
+  const left = workingDays(first, FIELD_TARGET_END); // school visits are judged against the 10 Nov target; schools close 13 Nov; cleaning and reports run later
+  const leftToClose = workingDays(first, SCHOOL_CLOSE);
   const regions = {};
   const sims = {};
   const plans = {}; await Promise.all(REGIONS.map(async (r) => { try { plans[r] = await getPlan(env, r); } catch { plans[r] = null; } }));
@@ -118,24 +119,25 @@ export async function forecast(env, sum, today) {
     }
     const fin = remaining === 0 ? new Array(SIMS).fill(today) : planInfo ? simulatePlan(rand, planInfo, planInfo.backlog0, window, cap, planInfo.rel) : simulateRegion(rand, remaining, window, pool, cap);
     sims[r] = fin;
-    const onTime = fin.filter((d) => d && d <= FIELD_END).length / SIMS;
+    const onTime = fin.filter((d) => d && d <= FIELD_TARGET_END).length / SIMS;
+    const byClose = fin.filter((d) => d && d <= SCHOOL_CLOSE).length / SIMS;
     const p50 = quantile(fin, 0.5), p10 = quantile(fin, 0.1), p90 = quantile(fin, 0.9);
-    const needed = left.length ? remaining / left.length : remaining;
+    const nDays = left.length || leftToClose.length; const needed = nDays ? remaining / nDays : remaining;
     regions[r] = {
-      remaining, days_left: left.length, needed_per_day: Math.round(needed * 10) / 10, recent_pace: recent.length ? Math.round((recent.reduce((a, b) => a + b, 0) / recent.length) * 10) / 10 : null,
+      remaining, days_left: nDays, needed_per_day: Math.round(needed * 10) / 10, recent_pace: recent.length ? Math.round((recent.reduce((a, b) => a + b, 0) / recent.length) * 10) / 10 : null,
       basis: planInfo ? `this year's plan (keeps ${Math.round(planInfo.rel * 100)}% of planned visits)` : recent.length >= 3 ? 'recent days and last round' : base.year ? `last round (${base.year}), no locked plan yet` : 'default pattern',
       plan_finish: planInfo ? planInfo.planEnd : null, plan_reliability: planInfo ? Math.round(planInfo.rel * 100) : null,
-      p_on_time: Math.round(onTime * 100), earliest: p10, likely: p50, latest: p90,
-      level: remaining === 0 ? 'good' : onTime >= 0.85 ? 'good' : onTime >= 0.5 ? 'warn' : 'bad',
+      p_on_time: Math.round(onTime * 100), p_by_close: Math.round(byClose * 100), earliest: p10, likely: p50, latest: p90,
+      level: remaining === 0 ? 'good' : onTime >= 0.85 ? 'good' : byClose >= 0.85 ? 'warn' : 'bad', // warn = after the 10 Nov target but still before schools close; bad = likely to run into the school closing
     };
   }
   // all regions together: the program finishes when the last region does
   const nat = [];
   for (let n = 0; n < SIMS; n++) { let m = ''; let any = true; for (const r of Object.keys(sims)) { const d = sims[r][n]; if (!d) { any = false; break; } if (d > m) m = d; } nat.push(any ? m : null); }
-  const natOn = nat.filter((d) => d && d <= FIELD_END).length / SIMS;
+  const natOn = nat.filter((d) => d && d <= FIELD_TARGET_END).length / SIMS; const natClose = nat.filter((d) => d && d <= SCHOOL_CLOSE).length / SIMS;
   return {
-    today, close: FIELD_END, baseline_year: base.year, pre_field: today < FIELD_START, regions,
-    national: { plan_finish: Object.values(regions).reduce((m, x) => (x.plan_finish && x.plan_finish > m ? x.plan_finish : m), '') || null, p_on_time: Math.round(natOn * 100), earliest: quantile(nat, 0.1), likely: quantile(nat, 0.5), latest: quantile(nat, 0.9), level: natOn >= 0.85 ? 'good' : natOn >= 0.5 ? 'warn' : 'bad' },
+    today, close: FIELD_TARGET_END, school_close: SCHOOL_CLOSE, baseline_year: base.year, pre_field: today < FIELD_START, regions,
+    national: { plan_finish: Object.values(regions).reduce((m, x) => (x.plan_finish && x.plan_finish > m ? x.plan_finish : m), '') || null, p_on_time: Math.round(natOn * 100), p_by_close: Math.round(natClose * 100), earliest: quantile(nat, 0.1), likely: quantile(nat, 0.5), latest: quantile(nat, 0.9), level: natOn >= 0.85 ? 'good' : natOn >= 0.5 ? 'warn' : 'bad' },
   };
 }
 

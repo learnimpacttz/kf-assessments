@@ -12,7 +12,9 @@ const sum = { national: { tested: 360, target: 19800, series: [['2026-10-26', 12
     { type: 'team', sev: 'warn', school: c.id, grade: 0, date: '2026-10-27', admin: 'P Three', n: 0, text: 'team size', recs: [] }] };
 const who = { role: 'hq', level: 'admin', name: 'Michael', id: 'hq:h3', review_level: 3 };
 const br = await computeBridge(env, who, { sum, queries: {}, today: day, quota: { used: 4310, limit: 5000, per_day: 380, runs_out: '2026-11-10' }, pred: { national: { likely: '2026-12-01', earliest: '2026-11-25', latest: '2026-12-08' }, regions: { TANGA: { remaining: 40, p_on_time: 30, needed_per_day: 2, recent_pace: 1 } }, at_risk: [{}] } });
-ok('field day 7 of 35 on Tue 27 Oct', br.field.day === 7 && br.field.total === 35 && br.field.phase === 'during', JSON.stringify(br.field));
+ok('school visits: day 7 of 17 on Tue 27 Oct (target 10 Nov)', br.field.day === 7 && br.field.total === 17 && br.field.end === '2026-11-10' && br.field.school_close === '2026-11-13' && br.field.phase === 'during', JSON.stringify(br.field));
+ok('the milestones separate school visits (10 Nov, schools close 13 Nov) from the after-field dates, which are unchanged', br.milestones.find((m) => m.id === 'field_close').date === '2026-11-10' && br.milestones.find((m) => m.id === 'schools_close').date === '2026-11-13' && br.milestones.find((m) => m.id === 'cleaning').date === '2026-11-25' && br.milestones.find((m) => m.id === 'payments').date === '2026-12-05' && br.milestones.find((m) => m.id === 'reports').date === '2026-12-15');
+ok('between 10 and 13 Nov the visits are still under way; after 13 Nov only cleaning and reports remain', fieldInfo('2026-11-12').phase === 'during' && fieldInfo('2026-11-16').phase === 'after');
 ok('records are all student records at real schools', br.clean.records === 360, String(br.clean.records));
 ok('the same person, day and grade counts once (larger value), plus the duplicate', br.clean.flagged === 22 && br.clean.not_clean === 22, JSON.stringify({ f: br.clean.flagged }));
 ok('clean rate = 1 minus touched records over all records', br.clean.rate === 93.9, String(br.clean.rate));

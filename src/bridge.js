@@ -4,13 +4,14 @@ import { computePatterns } from './patterns.js';
 import { qaAttention } from './qa.js';
 import { coverAttention } from './cover.js';
 import { kv } from './store.js';
-import { SCHOOL_BY_ID, REGIONS, STAFF, FIELD_START, FIELD_END, FIELD_TARGET_END, SUBMISSIONS_TARGET, isWorkingDay, addDays, workingDaysBetween } from './config.js';
+import { SCHOOL_BY_ID, REGIONS, STAFF, FIELD_START, FIELD_END, FIELD_TARGET_END, SCHOOL_CLOSE, SUBMISSIONS_TARGET, isWorkingDay, addDays, workingDaysBetween } from './config.js';
 import { decorate, overdueQueries, QUERY_REPLY_DAYS } from './queries.js';
 import { getPlan, withNotices } from './plan.js';
 
 const MSKEY = 'v2:bridge:ms', SNAPS = 'v2:bridge:snaps';
 export const MS_DEFAULT = [
-  { id: 'field_close', label: 'Field work closes', date: FIELD_END, owner: 'Regional Coordinators', status: 'auto', kind: 'field' },
+  { id: 'field_close', label: 'School visits finish (target)', date: FIELD_TARGET_END, owner: 'Regional Coordinators', status: 'auto', kind: 'field' },
+  { id: 'schools_close', label: 'Schools close: the last day a school can be visited', date: SCHOOL_CLOSE, owner: 'Regional Coordinators', status: 'auto', kind: 'field' },
   { id: 'cleaning', label: 'Data cleaning closed (every check approved)', date: '2026-11-25', owner: 'HQ: Joram and Mundo', status: 'in progress', kind: 'after' },
   { id: 'payments', label: 'Payment calculations done and checked', date: '2026-12-05', owner: 'Mundo (Michael supporting)', status: 'not started', kind: 'after' },
   { id: 'reports', label: 'Reports ready: national, regional and school', date: '2026-12-15', owner: 'Michael', status: 'not started', kind: 'after' },
@@ -26,10 +27,10 @@ export async function saveMilestones(env, who, list) {
 const real = (id) => Boolean(SCHOOL_BY_ID[id]);
 const dayDiff = (a, b) => Math.round((Date.parse(b + 'T00:00:00Z') - Date.parse(a + 'T00:00:00Z')) / 864e5);
 export function fieldInfo(today) {
-  let total = 0; for (let d = FIELD_START; d <= FIELD_END; d = addDays(d, 1)) if (isWorkingDay(d)) total++;
-  const phase = today < FIELD_START ? 'before' : today > FIELD_END ? 'after' : 'during';
+  let total = 0; for (let d = FIELD_START; d <= FIELD_TARGET_END; d = addDays(d, 1)) if (isWorkingDay(d)) total++; // school visits: judged against the 10 Nov target
+  const phase = today < FIELD_START ? 'before' : today > SCHOOL_CLOSE ? 'after' : 'during'; // after = schools have closed; only cleaning, payments and reports remain
   const day = phase === 'before' ? 0 : phase === 'after' ? total : workingDaysBetween(FIELD_START, today) + (isWorkingDay(FIELD_START) ? 1 : 0);
-  return { start: FIELD_START, end: FIELD_END, total, day: Math.min(day, total), left: Math.max(0, total - day), phase, to_start: phase === 'before' ? workingDaysBetween(today, FIELD_START) : 0 };
+  return { start: FIELD_START, end: FIELD_TARGET_END, school_close: SCHOOL_CLOSE, total, day: Math.min(day, total), left: Math.max(0, total - day), phase, to_start: phase === 'before' ? workingDaysBetween(today, FIELD_START) : 0 };
 }
 // The submissions check: how many KoBo submissions there will be on the day the field work is meant to finish (10 Nov), against the aim (20,000) and the plan's own limit.
 export function quotaProjection(quota, today) {
@@ -73,7 +74,7 @@ export async function computeBridge(env, who, { sum, queries, today, quota, pred
   const daily = (await kv(env).get('v2:usage:daily')) || {}; const usedToday = daily[today] ? Object.keys(daily[today].users).length : 0; const subs = (await kv(env).get('v2:push:subs')) || {}; const alertIds = new Set(Object.values(subs).map((s) => String(s.who && s.who.id)));
   const field = STAFF.filter((s) => s.active); const alertsOn = field.filter((s) => alertIds.has(String(s.id))).length;
   // ---- pace and projections
-  const nat = pred && pred.national; const behindRegions = Object.entries((pred && pred.regions) || {}).filter(([, v]) => v.remaining && v.p_on_time < 50).map(([r, v]) => ({ region: r, p: v.p_on_time, need: v.needed_per_day, pace: v.recent_pace }));
+  const nat = pred && pred.national; const behindRegions = Object.entries((pred && pred.regions) || {}).filter(([, v]) => v.remaining && v.p_on_time < 50).map(([r, v]) => ({ region: r, p: v.p_on_time, pc: v.p_by_close, need: v.needed_per_day, pace: v.recent_pace }));
   // ---- needs you now (ranked; each has the place to act)
   const needs = []; const mine = open.filter((f) => (stage(f) === 'hq1' && lvl >= 2 && !/mundo/i.test(who.name || '')) || (stage(f) === 'final' && lvl >= 3)).length;
   if (mine) needs.push({ sev: 'bad', title: `${mine} quer${mine === 1 ? 'y waits' : 'ies wait'} for your review`, text: 'Approve, edit and approve, or send back, in order: team, first HQ review, final approval.', act: { tab: 'allq', filter: 'mine', label: 'Open reviews' } });
@@ -99,7 +100,7 @@ export async function computeBridge(env, who, { sum, queries, today, quota, pred
   const msCl = ms.find((m) => m.id === 'cleaning'); if (msCl && cleanBy && cleanBy > msCl.date && F.phase !== 'before') needs.push({ sev: 'warn', title: 'Cleaning will finish after its deadline at the current pace', text: `Backlog ${backlog}, closing about ${Math.round(perDay)} a day: clear on ${cleanBy}, deadline ${msCl.date}.`, act: { tab: 'allq', label: 'Open queries' } });
   const warnings = [];
   if (sum.integrity && sum.integrity.repeated_entries > 0) warnings.push({ sev: 'warn', title: 'Repeated records were ignored', text: `${sum.integrity.repeated_entries} repeated record entries were found in the stored data and left out of the duplicate check, so no false duplicate queries come from them. Tell the systems owner.` });
-  for (const b of behindRegions.slice(0, 4)) warnings.push({ sev: b.p < 25 ? 'bad' : 'warn', title: `${b.region[0]}${b.region.slice(1).toLowerCase()} is below the pace it needs`, text: `Needs ${b.need} schools a day${b.pace != null ? ', doing ' + b.pace : ''}. Chance of finishing by ${FIELD_END}: ${b.p}%.`, act: { region: b.region, label: 'Open region' } });
+  for (const b of behindRegions.slice(0, 4)) warnings.push({ sev: (b.pc ?? b.p) < 50 ? 'bad' : 'warn', title: `${b.region[0]}${b.region.slice(1).toLowerCase()} is below the pace it needs`, text: `Needs ${b.need} schools a day${b.pace != null ? ', doing ' + b.pace : ''}. Chance of finishing by ${FIELD_TARGET_END}: ${b.p}%; before schools close on ${SCHOOL_CLOSE}: ${b.pc ?? b.p}%.`, act: { region: b.region, label: 'Open region' } });
   if (pred && pred.at_risk && pred.at_risk.length) warnings.push({ sev: 'warn', title: `${pred.at_risk.length} school${pred.at_risk.length === 1 ? '' : 's'} at risk`, text: 'Planned date passed without a visit, or started and not finished.', act: { tab: 'regions', label: 'Open list' } });
   if (qp) warnings.push({ sev: qp.state === 'over_limit' ? 'bad' : qp.state === 'over_target' ? 'warn' : 'good', title: 'KoBo submissions', text: `${qp.used} of ${qp.limit} used this period; at about ${qp.per_day} a day about ${qp.projected} by ${qp.end}${qp.state === 'ok' ? ', under the ' + qp.target + ' aim' : ''}.`, act: { tab: 'admin', label: 'Open storage' } });
   if (cleanBy && msCl) warnings.push({ sev: cleanBy > msCl.date ? 'warn' : 'good', title: 'Cleaning forecast', text: `At the current closing pace the backlog clears ${cleanBy} (deadline ${msCl.date}).`, act: { tab: 'allq', label: 'Open queries' } });

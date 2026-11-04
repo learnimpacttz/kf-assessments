@@ -3,7 +3,7 @@
 // those same facts into short English and Kiswahili text; it never sees names
 // of pupils (there are none in the data) and is told to use only the facts given.
 import { kv } from './store.js';
-import { REGIONS, FIELD_START, FIELD_END, CURRENT_YEAR, SCHOOL_BY_ID, addWorkingDays, workingDaysBetween } from './config.js';
+import { REGIONS, FIELD_START, FIELD_END, FIELD_TARGET_END, SCHOOL_CLOSE, CURRENT_YEAR, SCHOOL_BY_ID, addWorkingDays, workingDaysBetween } from './config.js';
 import { getPlan, withNotices } from './plan.js';
 
 const title = (s) => String(s || '').toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
@@ -62,7 +62,7 @@ export async function buildBrief(env, sum, today, region = null) {
       const R = sum.regions[r];
       if (!R) continue;
       if (today >= FIELD_START && !R.started && r !== 'DODOMA') out.push({ sev: 'bad', kind: 'quiet', text: `${title(r)}: no submissions yet.` });
-      else if (R.behind) out.push({ sev: 'bad', kind: 'behind', text: `${title(r)} is projected to finish ${R.projected}, after the ${FIELD_END} close. Pace is ${R.pace} schools a day with ${R.total - R.done} schools left.` });
+      else if (R.behind) out.push({ sev: 'bad', kind: 'behind', text: `${title(r)} is projected to finish ${R.projected}, after the ${FIELD_TARGET_END} target (schools close ${SCHOOL_CLOSE}). Pace is ${R.pace} schools a day with ${R.total - R.done} schools left.` });
     }
     const flags = sum.flags.filter((f) => !region || SCHOOL_BY_ID[f.school]?.region === region);
     const bad = flags.filter((f) => f.sev === 'bad');

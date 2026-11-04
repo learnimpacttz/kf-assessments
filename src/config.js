@@ -5,6 +5,7 @@ import { ROSTER } from './data/roster.js';
 export const FIELD_START = '2026-10-19';
 export const FIELD_END = '2026-12-04';
 export const FIELD_TARGET_END = '2026-11-10'; // the target for finishing the field work; used only for the KoBo submissions check (the dates after field work are unchanged)
+export const SCHOOL_CLOSE = '2026-11-13'; // schools close: the last day a school visit can happen. Cleaning, payments and reports go on after it.
 export const SUBMISSIONS_TARGET = 20000; // the aim: not more than this many KoBo submissions in the period (the plan's own limit is higher)
 export const PILOT_DAY = '2026-10-15'; // Dodoma pilot schools (5) are all visited on this training-week day
 export const TRAINING_START = '2026-10-13';
