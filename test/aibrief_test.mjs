@@ -1,0 +1,27 @@
+// The AI morning brief must never make a page wait: it shows the saved text (or none) at once and writes a new one in the background.
+import { env, ok, done } from './_kit.mjs';
+import { aiBrief } from '../src/brief.js';
+import { kv } from '../src/store.js';
+const brief = { today: '2026-11-05', items: [{ text: 'a flag' }], tomorrow_schools: {} };
+env.ANTHROPIC_API_KEY = 'test-key';
+let calls = 0, mode = 'bad';
+const realFetch = globalThis.fetch;
+globalThis.fetch = async () => { calls++; if (mode === 'bad') return { ok: true, json: async () => ({ content: [{ text: '{"en":["cut off' }] }) }; return { ok: true, json: async () => ({ content: [{ text: '{"en":["hello"],"sw":["habari"]}' }] }) }; };
+const jobs = []; const ctx = { waitUntil: (p) => jobs.push(p) };
+const t0 = Date.now();
+const r1 = await aiBrief(env, brief, 'national', ctx);
+ok('the first open returns at once with no text, and does not wait for the writing', r1 === null && Date.now() - t0 < 200 && jobs.length === 1);
+await Promise.all(jobs.splice(0));
+ok('a broken answer is remembered as a failure', Boolean(await kv(env).get('v2:aibrief:fail:national')) && calls === 1);
+const r2 = await aiBrief(env, brief, 'national', ctx);
+ok('after a failure it does not try again on the next opening', r2 === null && jobs.length === 0 && calls === 1);
+await kv(env).put('v2:aibrief:fail:national', { t: Date.now() - 700e3 }); await kv(env).put('v2:aibrief:try:national', { t: Date.now() - 120e3 });
+mode = 'good';
+await aiBrief(env, brief, 'national', ctx); await Promise.all(jobs.splice(0));
+const r4 = await aiBrief(env, brief, 'national', ctx);
+ok('after ten minutes it tries again, saves the text, and the next opening shows it', r4 && r4.en[0] === 'hello' && calls === 2, JSON.stringify(r4));
+await kv(env).put('v2:aibrief:latest:national', { sig: 'old', v: { en: ['old'], sw: ['zamani'] }, t: Date.now() - 1000e3, today: '2026-11-05' }); await kv(env).put('v2:aibrief:try:national', { t: Date.now() - 120e3 });
+const r5 = await aiBrief(env, brief, 'national', ctx);
+ok('an older text from today is shown at once while a new one is written', r5 && r5.en[0] === 'old' && jobs.length === 1);
+await Promise.all(jobs.splice(0));
+globalThis.fetch = realFetch; done();

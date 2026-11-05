@@ -84,25 +84,39 @@ export async function buildBrief(env, sum, today, region = null) {
 
 export async function aiBrief(env, brief, scope, ctx) {
   if (!env.ANTHROPIC_API_KEY) return null;
-  const latestKey = `v2:aibrief:latest:${scope}`; const sig = brief.today + '|' + brief.items.map((i) => i.text).join('|').length;
+  const latestKey = `v2:aibrief:latest:${scope}`; const failKey = `v2:aibrief:fail:${scope}`; const sig = brief.today + '|' + brief.items.map((i) => i.text).join('|').length;
   const last = await kv(env).get(latestKey);
   if (last && last.sig === sig) return last.v; // same facts as before
   const fresh = async () => {
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: { 'x-api-key': env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-      body: JSON.stringify({
-        model: 'claude-sonnet-5-5', max_tokens: 900,
-        system: 'You write the morning briefing for the KiuFunza 4 endline field team in Tanzania. Use ONLY the facts given. Be specific, calm and practical. Output JSON only: {"en":["..."],"sw":["..."]} with 3 to 5 short bullets each. Kiswahili must be natural and simple, matching the English meaning.',
-        messages: [{ role: 'user', content: JSON.stringify({ scope, today: brief.today, facts: brief.items, tomorrow_schools: brief.tomorrow_schools }) }],
-      }),
-    });
-    if (!res.ok) return null;
-    const data = await res.json();
-    const txt = (data.content || []).map((c) => c.text || '').join('');
-    try { const parsed = JSON.parse(txt.slice(txt.indexOf('{'), txt.lastIndexOf('}') + 1)); await kv(env).put(latestKey, { sig, v: parsed, t: Date.now(), today: brief.today }); return parsed; } catch { return null; }
+    try {
+      const res = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'x-api-key': env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
+        body: JSON.stringify({
+          model: 'claude-sonnet-5-5', max_tokens: 2000,
+          system: 'You write the morning briefing for the KiuFunza 4 endline field team in Tanzania. Use ONLY the facts given. Be specific, calm and practical. Output JSON only: {"en":["..."],"sw":["..."]} with 3 to 5 short bullets each. Kiswahili must be natural and simple, matching the English meaning.',
+          messages: [{ role: 'user', content: JSON.stringify({ scope, today: brief.today, facts: brief.items, tomorrow_schools: brief.tomorrow_schools }) }],
+        }),
+      });
+      if (!res.ok) throw new Error('http ' + res.status);
+      const data = await res.json();
+      const txt = (data.content || []).map((c) => c.text || '').join('');
+      const parsed = JSON.parse(txt.slice(txt.indexOf('{'), txt.lastIndexOf('}') + 1));
+      await kv(env).put(latestKey, { sig, v: parsed, t: Date.now(), today: brief.today });
+      return parsed;
+    } catch (e) {
+      await kv(env).put(failKey, { t: Date.now(), why: String(e.message || e).slice(0, 80) }).catch(() => {}); // remember the failure so people are not made to wait again right away
+      return null;
+    }
   };
-  // Never make a person wait for the writing: a saved version from earlier today is shown at once while a new one is written behind the scenes (at most every 15 minutes).
-  if (last && last.today === brief.today) { if (Date.now() - last.t > 900e3 && ctx && ctx.waitUntil) ctx.waitUntil(fresh().catch(() => {})); return last.v; }
-  return fresh();
+  // Nobody ever waits for the writing: show the saved version at once (today's, or none) while a new one is written behind the scenes.
+  // After a failed try, wait 10 minutes before trying again, so a problem cannot slow every page opening.
+  const failed = await kv(env).get(failKey);
+  const tryKey = `v2:aibrief:try:${scope}`; const tried = await kv(env).get(tryKey);
+  const canTry = (!failed || Date.now() - failed.t > 600e3) && (!tried || Date.now() - tried.t > 60e3); // also one try at a time, so many people opening at once start only one
+  const stale = !last || last.today !== brief.today || Date.now() - last.t > 900e3;
+  if (canTry && stale) await kv(env).put(tryKey, { t: Date.now() });
+  if (canTry && stale && ctx && ctx.waitUntil) ctx.waitUntil(fresh());
+  else if (canTry && stale && !last) return fresh(); // no background hook (tests): write it now
+  return last && last.today === brief.today ? last.v : null;
 }

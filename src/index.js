@@ -695,7 +695,7 @@ export default {
       // ---------- QA visits (HQ, not Advisors): the observers' quality-assurance form, read from KoBo and checked against the plan and records ----------
       if (path === '/api/qa' || path === '/api/qa/refresh') {
         if (who.role !== 'hq' || (Array.isArray(who.hide) && who.hide.length)) return err('QA visits are for the HQ team', 403);
-        if (path === '/api/qa/refresh') { if (method !== "POST") return err('Use POST', 405); await syncQa(env, { force: true }); } else await syncQa(env, { minAge: 15e3 });
+        if (path === '/api/qa/refresh') { if (method !== "POST") return err('Use POST', 405); await syncQa(env, { force: true }); } else await syncQa(env, { minAge: 150e3 }); // the background job refreshes it every minute, so opening the page only fetches when that job has fallen behind
         await logActivity(env, who, 'Opened QA visits', '');
         return json(await qaView(env, await sumNow(env)));
       }
