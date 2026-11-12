@@ -117,7 +117,8 @@ export async function forecast(env, sum, today) {
       const rel = Math.min(1, Math.max(0.3, (hit + 0.9 * 5) / (due + 5)));
       planInfo = { byDate, total, backlog0, rel, planEnd };
     }
-    const fin = remaining === 0 ? new Array(SIMS).fill(today) : planInfo ? simulatePlan(rand, planInfo, planInfo.backlog0, window, cap, planInfo.rel) : simulateRegion(rand, remaining, window, pool, cap);
+    const lastDone = Object.values(sum.schools || {}).filter((x) => x.region === r && x.last).reduce((m, x) => (x.last > m ? x.last : m), '') || today; // a region that has finished keeps the day it really finished, so it is not judged against today
+    const fin = remaining === 0 ? new Array(SIMS).fill(lastDone) : planInfo ? simulatePlan(rand, planInfo, planInfo.backlog0, window, cap, planInfo.rel) : simulateRegion(rand, remaining, window, pool, cap);
     sims[r] = fin;
     const onTime = fin.filter((d) => d && d <= FIELD_TARGET_END).length / SIMS;
     const byClose = fin.filter((d) => d && d <= SCHOOL_CLOSE).length / SIMS;

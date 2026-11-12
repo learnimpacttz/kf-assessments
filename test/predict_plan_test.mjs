@@ -16,4 +16,12 @@ ok('plan finish is the last planned day', r.plan_finish === days[2], r.plan_fini
 ok('likely finish is near the plan, not last year\'s pattern', r.likely && r.likely <= addDays(days[2], 6), r.likely);
 ok('national plan finish reported', f.national.plan_finish === days[2] || f.national.plan_finish > days[2] || f.national.plan_finish === null);
 ok('the projection judges school visits by 10 Nov and reports the 13 Nov school closing separately', f.close === '2026-11-10' && f.school_close === '2026-11-13' && r.p_by_close >= r.p_on_time && f.national.p_by_close >= f.national.p_on_time, JSON.stringify({ c: f.close, sc: f.school_close, a: r.p_on_time, b: r.p_by_close }));
+// a region whose schools are all complete keeps the day it really finished: after the 10 Nov target it must not be judged against today
+{ const schoolsDone = {}; for (const id of ['d1', 'd2']) schoolsDone[id] = { done: true, started: true, region: R, last: '2026-11-05' };
+  const sumDone = { regions: { [R]: { total: 2, done: 2 } }, schools: schoolsDone };
+  const fd = await forecast(env, sumDone, '2026-11-12'); const rd = fd.regions[R];
+  ok('a finished region is on time when it finished before the target', rd.remaining === 0 && rd.p_on_time === 100 && rd.likely === '2026-11-05' && rd.level === 'good', JSON.stringify(rd));
+  const schoolsLate = { l1: { done: true, started: true, region: R, last: '2026-11-12' } };
+  const fl = await forecast(env, { regions: { [R]: { total: 1, done: 1 } }, schools: schoolsLate }, '2026-11-12'); const rl = fl.regions[R];
+  ok('a region that finished after the target is not called on time', rl.p_on_time === 0 && rl.p_by_close === 100 && rl.likely === '2026-11-12', JSON.stringify(rl)); }
 done();

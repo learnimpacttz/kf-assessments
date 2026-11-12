@@ -58,7 +58,9 @@ import { reminderFor } from '../src/bridge.js';
   ok('submissions: 4 working days to 10 Nov, about 17,884 projected, no alert', real.end === '2026-11-10' && real.days === 4 && real.projected === 17884 && real.state === 'ok', JSON.stringify(real));
   ok('submissions: above 20,000 but under the limit is a warning', quotaProjection({ used: 16000, limit: 25000, per_day: 1424 }, '2026-11-04').state === 'over_target');
   ok('submissions: above the plan limit is serious', quotaProjection({ used: 22000, limit: 25000, per_day: 1424 }, '2026-11-04').state === 'over_limit');
-  ok('submissions: after 10 Nov the check looks to the old field close', quotaProjection({ used: 12000, limit: 25000, per_day: 100 }, '2026-11-11').end === '2026-12-04');
+  ok('submissions: after 10 Nov the check counts only to the day schools close (13 Nov)', quotaProjection({ used: 12000, limit: 25000, per_day: 100 }, '2026-11-11').end === '2026-11-13');
+  ok('submissions: once schools are closed nothing more is projected', (() => { const q = quotaProjection({ used: 14931, limit: 25000, per_day: 1110 }, '2026-11-14'); return q.days === 0 && q.projected === 14931 && q.state === 'ok'; })());
+  ok('submissions: on 12 Nov with 14,931 used the projection stays under the 20,000 aim', quotaProjection({ used: 14931, limit: 25000, per_day: 1110 }, '2026-11-12').state === 'ok');
   const calm = await computeBridge(env, who, { sum, queries: {}, today: '2026-11-04', quota: { used: 12188, limit: 25000, per_day: 1424 }, pred: null });
   ok('no submissions alert when the projection is under the aim', !calm.needs.some((n) => /KoBo submissions/.test(n.title)) && calm.warnings.some((w) => /KoBo submissions/.test(w.title) && w.sev === 'good'), JSON.stringify(calm.warnings.filter((w) => /KoBo/.test(w.title))));
 }
