@@ -1,8 +1,9 @@
 // Deleting submissions from the dashboard, only through an approval chain (see DATA_DELETION_PROTOCOL.md).
 // RC/ARC or Mundo suggest, Joram reviews and initiates, Mundo approves and carries it out. A full copy of every
 // record is saved before anything is deleted. Every step stays in the history.
+import { scanSent, dayWindow } from './koboscan.js';
 import { kv } from './store.js';
-import { SCHOOL_BY_ID, SCHOOLS_BY_REGION } from './config.js';
+import { SCHOOL_BY_ID, SCHOOLS_BY_REGION, CURRENT_YEAR } from './config.js';
 import { tellHQ } from './formjob.js';
 import { pushTo } from './push.js';
 import { FIELDS, checkEdit, patchFor, describe, runEdit, attGuard } from './edits.js';
@@ -61,8 +62,18 @@ export async function findRecords(env, who, p) {
   const school = String(p.school || '').trim(); if (!school) return { error: 'Choose a school first.' };
   if (!SCHOOL_BY_ID[school]) return { error: 'Unknown school code.' };
   if (!regionOk(who, school)) return { error: 'That school is not in your region.', status: 403 };
-  const q = { 'id_data/school': school }; if (p.date && /^\d{4}-\d\d-\d\d$/.test(p.date)) q.today = p.date;
-  let recs = (await koboData(env, kind, q)).map((r) => summ(kind, r));
+  const day = p.date && /^\d{4}-\d\d-\d\d$/.test(p.date) ? p.date : null;
+  // The days to look at: the one chosen, or every day the dashboard knows tests were done at this school.
+  let days = day ? [day] : []; if (!day) { try { const sum = await kv(env).get('v2:sum:' + CURRENT_YEAR); days = ((sum && sum.schools && sum.schools[school] && sum.schools[school].dates) || []).slice().sort(); } catch { days = []; } }
+  let recs = [];
+  if (days.length && days.every((d) => d >= '2026-01-01')) { // current-year records: found by the time they were sent (KoBo cannot search a form this big by school)
+    const asset = env[KINDS[kind].env]; if (!asset) return { error: 'That project is not connected' };
+    const [from] = dayWindow(days[0]); const to = dayWindow(days[days.length - 1])[1];
+    await scanSent(env, kind, asset, from, to, (r) => { if ((sfx(r, 'school') || '') === school && (!day || String(sfx(r, 'date') || r.today || '').slice(0, 10) === day)) recs.push(summ(kind, r)); }, { maxPages: 30 });
+  } else {
+    const q = { 'id_data/school': school }; if (day) q.today = day;
+    recs = (await koboData(env, kind, q)).map((r) => summ(kind, r));
+  }
   if (p.grade) recs = recs.filter((r) => r.grade === String(p.grade));
   if (p.enumerator) recs = recs.filter((r) => r.enumerator === p.enumerator);
   if (p.stuid) recs = recs.filter((r) => String(r.stuid).includes(p.stuid));

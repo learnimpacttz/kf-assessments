@@ -4,6 +4,7 @@
 import { kv } from './store.js';
 import { SCHOOL_BY_ID } from './config.js';
 import { loadYear } from './sync.js';
+import { scanSent, dayWindow } from './koboscan.js';
 import { uniqueRn } from './ingest.js';
 
 const FORMS = { students: { env: 'KOBO_ASSET_ID', label: 'Students assessment' }, sampling: { env: 'KOBO_ASSET_SAMPLING', label: 'Sampling' } };
@@ -38,8 +39,9 @@ export async function findRecords(env, who, p) {
   if (!canLook(who)) return { error: 'HQ only', status: 403 };
   if (!FORMS[p.form]) return { error: 'Choose the Students or the Sampling form' };
   if (!/^\d{4}-\d\d-\d\d$/.test(p.day || '')) return { error: 'Choose the day' };
-  const rows = (await tail(env, p.form, p.tail)).filter((x) => dayOf(x) === p.day && (!p.person || String(sfx(x, 'enumerator') || '').toLowerCase() === String(p.person).toLowerCase()) && (!p.school || sfx(x, 'school') === p.school));
-  return { form: p.form, day: p.day, records: rows.map(brief), note: rows.length ? null : 'Nothing found in the newest records of that form. Check the name and day, or search a wider window.' };
+  const rows = []; const [from, to] = dayWindow(p.day); // found by the time the records were sent: the newest-records read no longer reaches back to the first weeks
+  await scanSent(env, p.form, env[FORMS[p.form].env], from, to, (x) => { if (dayOf(x) === p.day && (!p.person || String(sfx(x, 'enumerator') || '').toLowerCase() === String(p.person).toLowerCase()) && (!p.school || sfx(x, 'school') === p.school)) rows.push(x); });
+  return { form: p.form, day: p.day, records: rows.map(brief), note: rows.length ? null : 'Nothing found for that day. Check the name and the day.' };
 }
 
 // What each record would look like at the target school. The school's own fields are copied from a record of that school on the same day.

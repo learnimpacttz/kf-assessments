@@ -1,0 +1,35 @@
+// Finding records by school and day must work on a big form: KoBo cannot search those fields quickly, so records are found by the time they were sent.
+import { env, mem, ok, done } from './_kit.mjs';
+import { findRecords } from '../src/deletions.js';
+import { findRecords as findToMove } from '../src/corrections.js';
+import { kv } from '../src/store.js';
+const hq = { role: 'hq', level: 'admin', review_level: 3, name: 'Test HQ' };
+env.KOBO_ASSET_ID = 'aSTU'; env.KOBO_TOKEN = 't'; env.KOBO_SERVER = 'kobo.test';
+const SCH = 'PS1503001'; // a real school code
+// a form with 9000 records, numbers growing about 7 per second of sending time, a few at the test school on 22 Oct and one sent late on 23 Oct
+const T0 = Date.parse('2026-10-19T04:00:00Z'); const recs = [];
+for (let i = 0; i < 9000; i++) { const t = T0 + i * 60e3; const day = new Date(t + 3 * 3600e3).toISOString().slice(0, 10); recs.push({ _id: 890000000 + i * 400, _submission_time: new Date(t).toISOString().slice(0, 19), today: day, 'id_data/school': 'PS0000000', 'id_data/grade': '1', 'id_data/enumerator': 'Someone', stuid: 'x' + i }); }
+const mark = (i, o) => Object.assign(recs[i], o);
+const day22 = recs.findIndex((r) => r.today === '2026-10-22'); const lateIdx = recs.findIndex((r) => r._submission_time.startsWith('2026-10-23T15'));
+mark(day22 + 100, { 'id_data/school': SCH, 'id_data/grade': '1', stuid: '2026PS150300110001', 'stu_info/rand_nr': '1', 'id_data/enumerator': 'Evodia Mwashilindi' });
+mark(day22 + 101, { 'id_data/school': SCH, 'id_data/grade': '1', stuid: '2026PS150300110002', 'stu_info/rand_nr': '2', 'id_data/enumerator': 'Evodia Mwashilindi' });
+mark(lateIdx, { today: '2026-10-22', 'id_data/school': SCH, 'id_data/grade': '1', stuid: '2026PS150300110021', 'stu_info/rand_nr': '21', 'id_data/enumerator': 'Evodia Mwashilindi' });
+await kv(env).put('v2:minid:students:2026', 889999999);
+let calls = 0, schoolSearches = 0;
+globalThis.fetch = async (url) => {
+  calls++; const u = new URL(url); const q = JSON.parse(u.searchParams.get('query') || '{}'); if (JSON.stringify(q).includes('id_data/school') || JSON.stringify(q).includes('"today"')) { schoolSearches++; throw new Error('timeout'); } // KoBo cannot do these
+  const sort = JSON.parse(u.searchParams.get('sort') || '{"_id":1}'); const lim = Number(u.searchParams.get('limit') || 100); const start = Number(u.searchParams.get('start') || 0);
+  let list = recs.filter((r) => !q._id || r._id > q._id.$gt); list = sort._id === -1 ? list.slice().reverse() : list;
+  const page = list.slice(start, start + lim); const next = start + lim < list.length ? (() => { const n = new URL(url); n.searchParams.set('start', String(start + lim)); return n.toString(); })() : null;
+  return { ok: true, json: async () => ({ results: page, next, count: list.length }) };
+};
+const r = await findRecords(env, hq, { kind: 'students', school: SCH, date: '2026-10-22' });
+ok('the chain finder lists the school\'s records for the day, however far back', r.records && r.records.length === 3, JSON.stringify(r).slice(0, 200));
+ok('it includes the record sent late the next day', r.records.some((x) => x.rand === '21'), '');
+ok('it never searches KoBo by school or day', schoolSearches === 0);
+ok('it does not read the whole form', calls < 120, String(calls));
+const calls1 = calls; const r2 = await findRecords(env, hq, { kind: 'students', school: SCH, date: '2026-10-22' });
+ok('a second look is quicker because the time search is remembered', r2.records.length === 3 && calls - calls1 < 15, String(calls - calls1));
+const m = await findToMove(env, hq, { form: 'students', day: '2026-10-22', school: SCH });
+ok('the move tool finds them too', m.records && m.records.length === 3, JSON.stringify(m).slice(0, 160));
+globalThis.fetch = undefined; done();
