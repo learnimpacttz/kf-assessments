@@ -68,8 +68,9 @@ export async function findRecords(env, who, p) {
   let recs = [];
   if (days.length && days.every((d) => d >= '2026-01-01')) { // current-year records: found by the time they were sent (KoBo cannot search a form this big by school)
     const asset = env[KINDS[kind].env]; if (!asset) return { error: 'That project is not connected' };
-    const [from] = dayWindow(days[0]); const to = dayWindow(days[days.length - 1])[1];
-    await scanSent(env, kind, asset, from, to, (r) => { if ((sfx(r, 'school') || '') === school && (!day || String(sfx(r, 'date') || r.today || '').slice(0, 10) === day)) recs.push(summ(kind, r)); }, { maxPages: 30 });
+    const late = Math.min(40, Math.max(0, Number.isFinite(parseInt(p.late, 10)) ? parseInt(p.late, 10) : 4)); // days after the test day to look for records sent late (4 is normally enough)
+    const [from] = dayWindow(days[0], late); const to = dayWindow(days[days.length - 1], late)[1];
+    await scanSent(env, kind, asset, from, to, (r) => { if ((sfx(r, 'school') || '') === school && (!day || String(sfx(r, 'date') || r.today || '').slice(0, 10) === day)) recs.push(summ(kind, r)); }, { maxPages: late > 8 ? 60 : 30 });
   } else {
     const q = { 'id_data/school': school }; if (day) q.today = day;
     recs = (await koboData(env, kind, q)).map((r) => summ(kind, r));

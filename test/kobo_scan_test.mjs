@@ -30,6 +30,8 @@ ok('it never searches KoBo by school or day', schoolSearches === 0);
 ok('it does not read the whole form', calls < 120, String(calls));
 const calls1 = calls; const r2 = await findRecords(env, hq, { kind: 'students', school: SCH, date: '2026-10-22' });
 ok('a second look is quicker because the time search is remembered', r2.records.length === 3 && calls - calls1 < 15, String(calls - calls1));
+const r3 = await findRecords(env, hq, { kind: 'students', school: SCH, date: '2026-10-22', late: '10' });
+ok('looking further for late-sent records still finds the same three', r3.records.length === 3);
 const m = await findToMove(env, hq, { form: 'students', day: '2026-10-22', school: SCH });
 ok('the move tool finds them too', m.records && m.records.length === 3, JSON.stringify(m).slice(0, 160));
 globalThis.fetch = undefined; done();
