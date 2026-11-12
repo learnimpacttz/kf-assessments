@@ -4,6 +4,10 @@ import { STAFF, SCHOOLS_BY_REGION, REASONS, eatToday, addWorkingDays, isWorkingD
 import { coverView, setAssign, setConfirm, leaveAction, rowAction, runCover, coverAttention, loadCtx, regionDay, pastRows, autoCloses, sweepRows } from '../src/cover.js';
 import { changeVisit } from '../src/plan.js';
 
+// Pin the clock to a field day (5 Nov 2026, 10:00 East Africa Time): these rules are about the field window, so they must not depend on the real date.
+const RealDate = Date, FIXED_NOW = RealDate.parse('2026-11-05T07:00:00Z');
+globalThis.Date = class extends RealDate { constructor(...a) { if (a.length) super(...a); else super(FIXED_NOW); } static now() { return FIXED_NOW; } };
+
 const good3 = [...new Set(STAFF.map((s) => s.region))].filter((r) => STAFF.filter((s) => s.active && s.region === r && s.role === 'volunteer').length >= 3 && STAFF.some((s) => s.active && s.region === r && s.role === 'rc') && STAFF.some((s) => s.active && s.region === r && s.role === 'arc') && (SCHOOLS_BY_REGION[r] || []).length >= 4);
 const region = good3[0], regionB = good3[1], regionC = good3[2], regionD = good3[3], regionE = good3[4], regionF = good3[5], regionG = good3[6], regionH = good3[7]; // the plan is cached for a few seconds per region, so each phase uses its own
 const who3 = (r) => { const q = STAFF.filter((s) => s.active && s.region === r); return { rc: q.find((s) => s.role === 'rc'), arc: q.find((s) => s.role === 'arc'), vols: q.filter((s) => s.role === 'volunteer'), schools: SCHOOLS_BY_REGION[r] }; };

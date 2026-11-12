@@ -3,6 +3,8 @@
 // through KoBo's data interface (not the web editor), every record is read back and checked, and a fast rebuild of the dashboard is queued.
 import { kv } from './store.js';
 import { SCHOOL_BY_ID } from './config.js';
+import { loadYear } from './sync.js';
+import { uniqueRn } from './ingest.js';
 
 const FORMS = { students: { env: 'KOBO_ASSET_ID', label: 'Students assessment' }, sampling: { env: 'KOBO_ASSET_SAMPLING', label: 'Sampling' } };
 const LOG = 'v2:corrections'; // newest first: who moved what, when
@@ -20,6 +22,15 @@ async function tail(env, form, n) {
   const asset = env[FORMS[form].env]; const total = (await read(env, asset, 'data/?format=json&limit=1')).count || 0; const k = Math.min(Math.max(Number(n) || 1500, 100), 5000);
   return (await read(env, asset, `data/?format=json&limit=${k}&start=${Math.max(0, total - k)}`)).results || [];
 }
+// Records are found by their record number (fast), and the school's own fields are copied from a record of that school that sits
+// close by in the form, because a school's other pupils were sent in the same hour. This does not depend on how many records the form
+// has by now: the old way read only the newest 3000 records, which no longer reach back to the first days of field work.
+async function around(env, asset, ids, span, pages = 1) {
+  const lo = Math.max(0, Math.min(...ids) - span), hi = Math.max(...ids) + span; const out = [];
+  let path = `data/?format=json&limit=1000&sort=${encodeURIComponent('{"_id":1}')}&query=${encodeURIComponent(JSON.stringify({ _id: { $gte: lo, $lte: hi } }))}`;
+  for (let i = 0; i < pages && path; i++) { const r = await read(env, asset, path); out.push(...(r.results || [])); path = r.next ? r.next.slice(r.next.indexOf('/api/v2/assets/' + asset + '/') + ('/api/v2/assets/' + asset + '/').length) : null; }
+  return out;
+}
 const dayOf = (x) => String(x.today || sfx(x, 'date') || '').slice(0, 10);
 const brief = (x) => ({ id: x._id, school: sfx(x, 'school'), school_name: sfx(x, 'school_name'), grade: String(sfx(x, 'grade_conf') ?? sfx(x, 'grade') ?? ''), who: sfx(x, 'enumerator') || '', at: (x.start || '').slice(11, 16), pupil: x.stuid || sfx(x, 'rand_nr') || '', edited: Boolean(x['meta/deprecatedID']) });
 
@@ -36,16 +47,22 @@ async function buildPlan(env, p) {
   if (!FORMS[p.form]) throw new Error('Choose the Students or the Sampling form');
   const target = SCHOOL_BY_ID[p.target_school]; if (!target) throw new Error('The target must be a real school in the list');
   const ids = [...new Set((p.ids || []).map(Number).filter(Boolean))]; if (!ids.length || ids.length > 60) throw new Error('Choose between 1 and 60 records');
-  const asset = env[FORMS[p.form].env]; const all = await tail(env, p.form, p.tail || 3000);
-  const recs = []; for (const id of ids) { const r = all.find((x) => x._id === id) || (await read(env, asset, `data/${id}/?format=json`)); recs.push(r); }
+  const asset = env[FORMS[p.form].env];
+  const recs = []; for (const id of ids) recs.push(await read(env, asset, `data/${id}/?format=json`));
   if (recs.some((r) => sfx(r, 'school') === p.target_school)) throw new Error('One of the records is already at the target school');
   const days = new Set(recs.map(dayOf));
-  const ref = all.find((x) => sfx(x, 'school') === p.target_school && days.has(dayOf(x)) && !x['meta/deprecatedID']) || all.find((x) => sfx(x, 'school') === p.target_school && !x['meta/deprecatedID']);
+  const pick = (list) => list.find((x) => sfx(x, 'school') === p.target_school && days.has(dayOf(x)) && !x['meta/deprecatedID']) || list.find((x) => sfx(x, 'school') === p.target_school && !x['meta/deprecatedID']);
+  let all = [], ref = null; // look close to the records first, then wider and wider, and only then at the newest records
+  for (const [span, pages] of [[20000, 1], [300000, 1], [3000000, 4]]) { all = await around(env, asset, ids, span, pages); ref = pick(all); if (ref) break; }
+  if (!ref) { all = await tail(env, p.form, p.tail || 3000); ref = pick(all); }
   if (!ref) throw new Error(`No record from ${target.name} was found in this form to copy the school's fields from. Wait for one, or ask HQ to set it up.`);
   const copyStudents = ['id_data/school_name', 'stu_info/schoolname_conf', 'mne_text', 'id_data/cal_planned', 'region_label', 'lga_label', 'mne', 'ward', 'arm', 'latitude', 'longitude', 'gps2'];
   const copySampling = ['id_data/school_name', 'id_data/cal_planned'];
   const warnings = []; const plan = [];
   const sameSchoolStuids = new Set(all.filter((x) => sfx(x, 'school') === p.target_school).map((x) => x.stuid).filter(Boolean));
+  if (p.form === 'students') { // also the pupils the dashboard already holds for this school (every grade), so a duplicate is caught however far back the other pupils are
+    try { const Y = await loadYear(env, String(dayOf(recs[0])).slice(0, 4)); for (const g of ['1', '2', '3']) for (const e of uniqueRn(((Y && Y.sg && Y.sg[`${p.target_school}|${g}`]) || {}).rn || [])) { const q = e.split('~'); if (q[2] && !ids.includes(Number(q[3]))) sameSchoolStuids.add(q[2]); } } catch { /* the check on the records read from KoBo still applies */ }
+  }
   let draws = {}; if (p.form === 'students' && env.KOBO_ASSET_SAMPLING) { try { const sa = await tail(env, 'sampling', 1500); for (const x of sa) if (sfx(x, 'school') === p.target_school) { const g = String(sfx(x, 'grade_conf') ?? sfx(x, 'grade')); const set = (draws[g] ||= new Set()); for (let i = 1; i <= 40; i++) { const v = sfx(x, 'int' + i); if (v !== undefined && v !== null && v !== '') set.add(Number(v)); } } } catch { /* the preview still works without the sampling check */ } }
   for (const r of recs) {
     const oldSchool = sfx(r, 'school'); const d = { 'id_data/region': ref['id_data/region'] ?? target.region, 'id_data/lga': ref['id_data/lga'] ?? target.lga, 'id_data/school': p.target_school };
