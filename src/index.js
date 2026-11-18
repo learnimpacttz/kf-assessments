@@ -38,7 +38,7 @@ import { listNarr, getNarr, saveNarr, compiledHtml } from './narratives.js';
 import { TEMPLATES, buildReport, listReports, getReport, saveReport, deleteReport } from './reports.js';
 import { loadHq, hqChange, hqList, hqByCode, codeFor, levelGate, applySettings, settingsView, saveSettings, logActivity, readActivity, activityLabel, BRAND, assistantName } from './hq.js';
 import { emailSchedule, hqPersonalCodeEmail, morningDigest, eveningGap, loadRecipients, saveRecipients, runDigests, maybeRunScheduledDigests, sendMail, onboardingEmail, runOnboarding, followupEmail, runFollowup, hqCc, hqOnboardingEmail, reminderEmail, runReminders } from './digest.js';
-import { loadQueries, decorate, postQuery, flagKey, withdrawFalseDuplicates, listWithdrawn } from './queries.js';
+import { loadQueries, decorate, postQuery, flagKey, withdrawFalseDuplicates, listWithdrawn, reopenUnfixed } from './queries.js';
 import { identify, staffCodes, canSeeRegion, regionsOf, pickRegion } from './auth.js';
 import { forecast, atRiskSchools } from './predict.js';
 import { ensureRoster, changeRoster, rosterOptions, leadsView, changeLeads } from './roster.js';
@@ -460,8 +460,10 @@ export default {
         const school = String(body.key || '').split('|')[1];
         const sch = SCHOOL_BY_ID[school] || PRACTICE_BY_ID[school];
         if (!sch || (!sch.practice && !(who.role === 'hq' || who.region === sch.region) && !(PILOT_ALLOC[school] || []).includes(who.region))) return err('Not your region', 403); // acting on a query stays with the region's own coordinators, a Lead Coordinator included // practice schools are open to everyone
-        const r = await postQuery(env, who, body);
-        if (r.error) return err(r.error, r.status || 400);
+        let live = false; // is the check still showing in the data? (decided here, never taken from the request)
+        if (body.action === 'review') { const { sum: sL } = await loadSummary(env, CURRENT_YEAR); live = Boolean(sL && (sL.flags || []).some((f) => flagKey(f) === body.key)); }
+        const r = await postQuery(env, who, { ...body, live });
+        if (r.error) return err(r.error, r.status || 400, r.needs_accept ? { needs_accept: true } : {});
         if (r.notify) { const job = notifyQuery(env, r.notify).catch(() => {}); if (ctx && ctx.waitUntil) ctx.waitUntil(job); else await job; }
         return json({ q: r.q });
       }
@@ -1025,6 +1027,18 @@ export default {
           const b = method === 'POST' ? await request.json().catch(() => ({})) : {}; const r = await withdrawFalseDuplicates(env, who, (sum && sum.flags) || [], { apply: method === 'POST' && b.apply === true, doneSchools: done });
           if (r.apply) await logActivity(env, who, 'Withdrew queries raised in error', `${r.withdraw.length} withdrawn, ${r.notes.length} noted`);
           return json({ ...r, withdrawn_list: method === 'GET' && url.searchParams.get('list') ? await listWithdrawn(env) : undefined });
+        } catch (e) { return err(String(e.message || e), 502); }
+      }
+      if (path === '/api/admin/queries-reopen') { // dry run by default (GET); POST {apply:true} brings back approved count/identity checks whose problem is still in the data. Nothing is deleted; a full copy is saved first.
+        try {
+          const sum = await sumNow(env); const b = method === 'POST' ? await request.json().catch(() => ({})) : {};
+          const r = await reopenUnfixed(env, who, (sum && sum.flags) || [], { apply: method === 'POST' && b.apply === true });
+          if (r.apply && r.reopen.length) {
+            await logActivity(env, who, 'Brought back approved checks with no data change', `${r.reopen.length} checks`);
+            const hq = (await loadHq(env)).users.filter((u) => u.active !== false && u.level !== 'viewer' && (u.review_level || 0) >= 2); const ids = new Set(hq.map((u) => 'hq:' + u.id));
+            const job = pushTo(env, (w) => w.role === 'hq' && ids.has(w.id), { title: `${r.reopen.length} approved checks came back`, body: 'They were approved but the data still shows the problem. Correct the records, or accept each as it is with a reason.', url: '/#allq' }).catch(() => {}); if (ctx && ctx.waitUntil) ctx.waitUntil(job); else await job;
+          }
+          return json(r);
         } catch (e) { return err(String(e.message || e), 502); }
       }
       if (path === '/api/admin/answer-scan') { try { const r = await answerScan(env, who, Object.fromEntries(url.searchParams)); if (!r.error && !Number(url.searchParams.get('after'))) await logActivity(env, who, 'Ran the answer scan', r.year || ''); return r.error ? err(r.error, r.status || 422) : json(r); } catch (e) { return err(String(e.message || e), 502); } }

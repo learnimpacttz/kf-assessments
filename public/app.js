@@ -74,7 +74,7 @@ const fmtAt = (iso) => new Date(iso).toLocaleString('en-GB', { day: 'numeric', m
 // ---- the approval chain on a query: response, team review, first HQ review, final approval ----
 const STAGE_IX = { open: 0, rework: 0, team: 1, hq1: 2, final: 3, approved: 4 };
 const STAGE_TXT = { open: 'Waiting for the response', rework: 'Sent back for rework', team: 'Team review (RC or ARC)', hq1: 'First HQ review', final: 'Final approval', approved: 'Approved and closed' };
-const ACT_TXT = { submitted: 'wrote the response', resubmitted: 'sent the response again', approved: 'approved', edited_approved: 'edited and approved', rejected: 'sent it back', skipped: 'skipped', closed: 'closed it' };
+const ACT_TXT = { submitted: 'wrote the response', resubmitted: 'sent the response again', approved: 'approved', edited_approved: 'edited and approved', rejected: 'sent it back', skipped: 'skipped', closed: 'closed it', accepted_as_is: 'accepted it as it is', reopened: 'brought it back' };
 const wfOf = (f) => (f.q && f.q.wf) || { stage: 'open', history: [] };
 function qAbility(f) {
   const w = wfOf(f), me = S.who || {}, st = w.stage || 'open', H = w.history || []; const out = { respond: false, review: false, remind: false };
@@ -356,7 +356,7 @@ async function pgSchoolLoad(id) {
 }
 const pgSchoolOk = () => Boolean(S.who && (['rc', 'arc'].includes(S.who.role) || (S.who.role === 'hq' && !(Array.isArray(S.who.hide) && S.who.hide.length))));
 const NOTE_ST = { sent: ['sent', 'good'], late: ['late', 'bad'], due: ['due today', 'warn'], upcoming: ['not due yet', 'mute'] };
-const HIST_LAB = { submitted: 'Response sent', resubmitted: 'Response sent again', approved: 'Approved', rejected: 'Sent back', edited_approved: 'Edited and approved', skipped: 'Team review skipped', closed: 'Closed' };
+const HIST_LAB = { submitted: 'Response sent', resubmitted: 'Response sent again', approved: 'Approved', rejected: 'Sent back', edited_approved: 'Edited and approved', skipped: 'Team review skipped', closed: 'Closed', accepted_as_is: 'Accepted as it is', reopened: 'Brought back' };
 const LEVEL_LAB = { responder: 'response', team: 'team review', hq1: 'first HQ review', final: 'final approval', admin: 'admin' };
 function pgQuery(q) {
   const tone = q.status === 'open' ? (q.waiting && q.waiting.overdue ? 'bad' : 'warn') : q.status === 'resolved' ? 'good' : 'mute';
@@ -3598,7 +3598,8 @@ document.addEventListener('click', async (e) => {
       else if (m === 'respond') body = { ...body, action: 'respond', text };
       else if (m === 'edit') body = { ...body, action: 'review', decision: 'edit', text };
       else body = { ...body, action: 'review', decision: 'reject', note: text };
-      try { await api('/api/query', { method: 'POST', body }); S.qOpen = null; await loadData(); } catch (e) { alert(e.message); }
+      try { await api('/api/query', { method: 'POST', body }); S.qOpen = null; await loadData(); }
+      catch (e) { if (e.data && e.data.needs_accept) { const why = prompt(e.message + '\n\nIf you accept it as it is, write why here. Otherwise press Cancel and correct the records first.'); if (why && why.trim().length >= 15) { try { await api('/api/query', { method: 'POST', body: { ...body, accept_note: why.trim() } }); S.qOpen = null; await loadData(); } catch (e2) { alert(e2.message); } } else if (why) alert('Please write at least 15 characters, or correct the records first.'); } else alert(e.message); }
       render();
     }
     else if (a === 'saveRec') { const bad = S.recRows.find((r) => r.email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(r.email.trim())); if (bad) { alert('This email address is not valid: ' + bad.email); return; } const rows = S.recRows.filter((r) => r.email.trim()).map((r) => ({ email: r.email.trim(), name: r.name.trim(), role: r.role, region: r.role === 'hq' ? '' : r.region, copy: r.copy, paused: !r.active, from: r.from, backup: r.backup })); const lost = S.recRows.filter((r) => r.email.trim() && r.role !== 'hq' && !r.region); if (lost.length && !confirm(lost.length + ' RC/ARC row(s) have no region and will get no regional emails. Save anyway?')) return; await api('/api/admin/recipients', { method: 'POST', body: { rows } }); S.recRows = null; await loadAdmin(); render(); }

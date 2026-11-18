@@ -22,6 +22,11 @@ export const loadQueries = async (env) => (await kv(env).get(KEY)) || {};
 // 3. HQ first review ("Joram's level"), 4. HQ final approval ("Mundo's level"). Each reviewer can approve, reject (with a reason)
 // or edit and approve. Every step stays in the history, visible to everyone involved.
 export const STAGES = { open: 'Waiting for the response', rework: 'Sent back for rework', team: 'Team review (RC or ARC)', hq1: 'First HQ review', final: 'Final approval', approved: 'Approved and closed' };
+// An approval must come with a real change to the data. A count or identity problem (more or fewer pupils than the sample, the same pupil tested twice,
+// a pupil not on the sampling list) can only be closed at the last step when the data no longer shows it, or when the final approver writes why it is accepted as it is.
+export const DATA_FIX = new Set(['over', 'short', 'dup', 'notlist', 'nosample']);
+export const ACCEPT_MIN = 15;
+export const NEEDS_FIX_MSG = 'The data still shows this problem and no correction has been made. Correct the records first (Data cleaning, then Edit or Delete requests); the check clears by itself when the numbers are right. If the numbers are right as they are, write why you accept it as it is (at least 15 characters).';
 export const STEP_LABEL = { team: 'Team review', hq1: 'First HQ review', final: 'Final approval' };
 const parseKey = (key) => { const [type, school, grade, date, admin] = String(key).split('|'); return { type, school, grade, date, admin: admin || '' }; };
 const isMundo = (who) => who.role === 'hq' && (who.hq_id === 'h1' || /mundo/i.test(who.name || ''));
@@ -61,7 +66,7 @@ function canReview(who, stage, q, ri) {
 }
 const push = (q, who, level, action, text, from, to, extra = {}) => { (q.wf.history ||= []).push({ at: new Date().toISOString(), by: who.name, by_id: who.hq_id || who.id, role: who.role === 'hq' ? 'HQ' : (who.position || who.role), level, action, text: String(text || '').slice(0, 600), from, to, ...extra }); if (q.wf.history.length > MAXH) q.wf.history = q.wf.history.slice(-MAXH); };
 
-export async function postQuery(env, who, { key, text, action, decision, note }) {
+export async function postQuery(env, who, { key, text, action, decision, note, live, accept_note }) {
   if (!key) return { error: 'Missing flag', status: 400 };
   const queries = await loadQueries(env);
   const q = (queries[key] ||= { status: 'open', thread: [] });
@@ -88,6 +93,8 @@ export async function postQuery(env, who, { key, text, action, decision, note })
       push(q, who, stage, 'rejected', n, stage, 'rework'); q.wf.stage = 'rework'; q.wf.rework_note = n; notify = { to_stage: 'rework', region: ri.region, responder_id: ri.st?.id ?? q.wf.response?.by_id, reviewer: who.name };
     } else if (decision === 'approve' || decision === 'edit') {
       const next = stage === 'team' ? 'hq1' : stage === 'hq1' ? 'final' : 'approved';
+      let accepted = null; // closing a count or identity check while the data still shows it needs a written reason; a correction clears the check by itself
+      if (next === 'approved' && live === true && DATA_FIX.has(parseKey(key).type)) { const a = String(accept_note || '').trim(); if (a.length < ACCEPT_MIN) return { error: NEEDS_FIX_MSG, status: 409, needs_accept: true }; accepted = { by: who.name, at: now, note: a.slice(0, 300) }; push(q, who, stage, 'accepted_as_is', 'Accepted as it is, no data change: ' + accepted.note, stage, stage); q.wf.accepted = accepted; }
       if (decision === 'edit') { const t = String(text || '').trim(); if (t.length < 10) return { error: 'Write the corrected response (at least a sentence).', status: 422 }; const before = q.wf.response.text; q.wf.response = { ...q.wf.response, text: t.slice(0, 600), edited_by: who.name, edited_at: now }; q.wf.versions.push({ at: now, by: who.name, text: t.slice(0, 600) }); push(q, who, stage, 'edited_approved', t, stage, next, { before: before.slice(0, 600), note: String(note || '').slice(0, 300) }); }
       else push(q, who, stage, 'approved', String(note || '').slice(0, 300), stage, next);
       q.wf.stage = next; if (next === 'approved') { q.status = 'resolved'; q.wf.approved_at = now; }
@@ -159,4 +166,27 @@ export async function archiveClosedByChange(env, liveFlags, targets, requestId) 
   }
   if (out.length) { await kv(env).put('v2:queries:backup:' + now, JSON.parse(keep)); await kv(env).put(KEY, queries); }
   return out;
+}
+
+// ---------- bring back approvals that came without a data change ----------
+// Before the rule above, a count or identity check could be approved while the data still showed the problem (for example Kimembe 19 of 20 and Msimbazi 14 of 13 stayed
+// wrong for weeks after "approved"). Such a check is brought back to the first HQ review, with a note, until the data is corrected or someone writes why it is accepted as it is.
+// Nothing is deleted: the reply and the whole history stay, and a full copy of the queries is saved first.
+export const REOPEN_NOTE = 'Brought back: this check was approved, but the data still shows the problem and no correction was made. An approval should come with a real change to the records. Correct them (Data cleaning, then Edit or Delete requests); the check then clears by itself. If the numbers are right as they are, accept it as it is and write why.';
+export async function reopenUnfixed(env, who, currentFlags, { apply = false } = {}) {
+  const queries = await loadQueries(env); const live = new Set((currentFlags || []).map(flagKey));
+  const out = { apply, reopen: [], left: [] };
+  for (const [k, q] of Object.entries(queries)) {
+    if (k.startsWith('withdrawn|') || k.startsWith('closed|') || !DATA_FIX.has(typeOf(k)) || !live.has(k)) continue;
+    if (stageOf(q) !== 'approved') continue;
+    if (q.wf && q.wf.accepted) { out.left.push({ key: k, why: 'accepted as it is, with a reason' }); continue; }
+    out.reopen.push({ key: k, type: typeOf(k), school: k.split('|')[1], grade: k.split('|')[2], approved_at: (q.wf && q.wf.approved_at) || null });
+  }
+  if (!apply || !out.reopen.length) return out;
+  const now = new Date().toISOString(); await kv(env).put('v2:queries:backup:' + now, queries); // a full copy first, so this can be undone
+  for (const r of out.reopen) {
+    const q = queries[r.key]; q.status = 'open'; q.wf = { ...(q.wf || {}), stage: 'hq1', rework_note: null, approved_at: null, reopened: [...((q.wf && q.wf.reopened) || []), now] };
+    push(q, { name: 'Command Center', role: 'system' }, 'hq1', 'reopened', REOPEN_NOTE, 'approved', 'hq1');
+  }
+  await kv(env).put(KEY, queries); out.backup = 'v2:queries:backup:' + now; return out;
 }
