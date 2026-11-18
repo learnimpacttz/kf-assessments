@@ -35,6 +35,13 @@ ok('queries open: all four checks wait for a reply', br2.queries.open === 4 && b
   ok('the need says it is at HQ and not overdue from the teams', brq.needs.some((n) => /waited more than 2 working days at HQ/.test(n.title) && /not overdue from the teams/.test(n.text)), JSON.stringify(brq.needs.map((n) => n.title)));
   ok('an approved query counts: closed per day and the median approval time are no longer empty', brq.queries.median_to_approve === 0 && brq.queries.closed_per_day > 0, JSON.stringify([brq.queries.median_to_approve, brq.queries.closed_per_day]));
 }
+{ // an approved check that was brought back because the data still shows the problem is listed until it is corrected or accepted
+  const qb = { [`dup|${b.id}|1|2026-10-27|P Two`]: { status: 'open', thread: [], wf: { stage: 'hq1', response: { at: '2026-10-27T08:00:00Z', by: 'P Two' }, history: [{ at: '2026-11-18T19:00:00Z', action: 'reopened', level: 'hq1', text: 'Brought back' }] } } };
+  const bb = await computeBridge(env, who, { sum, queries: qb, today: day, pred: null });
+  ok('a check that was brought back is listed in Needs now', bb.needs.some((n) => /brought back: the data still shows the problem/.test(n.title) && n.sev === 'bad'), JSON.stringify(bb.needs.map((n) => n.title)));
+  const qa = { [`dup|${b.id}|1|2026-10-27|P Two`]: { status: 'resolved', thread: [], wf: { stage: 'approved', response: { at: 'x', by: 'P Two' }, accepted: { by: 'Mundo', at: 'x', note: 'the count is right' }, history: [{ action: 'reopened' }, { action: 'approved' }] } } };
+  ok('once it is accepted or corrected it is no longer listed', !(await computeBridge(env, who, { sum, queries: qa, today: day, pred: null })).needs.some((n) => /brought back/.test(n.title)));
+}
 ok('Joram\'s level sees the request in needs', (await computeBridge(env, { ...who, review_level: 2, name: 'Joram' }, { sum, queries: {}, today: day })).needs.some((n) => /first HQ review/.test(n.title)));
 ok('the quota warning appears when it runs out before field close', br.needs.some((n) => /KoBo submissions/.test(n.title)));
 ok('a region below 50% on time is a warning', br.warnings.some((w) => /Tanga is below/.test(w.title)));
